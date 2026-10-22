@@ -1,0 +1,129 @@
+{
+  "roomSummary": "A modern open-plan kitchen and hallway area featuring clean white walls, tiled kitchen flooring, and light timber floorboards along the circulation zone.",
+  "camera": "The camera stands in the open circulation area looking toward the kitchen cabinets and rear exterior door.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "stairs",
+      "description": "Glass balustrade of the staircase on the far left",
+      "box": [
+        0,
+        0,
+        0.12,
+        0.9
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "door",
+      "description": "Dark grey exterior door at the rear left",
+      "box": [
+        0.11,
+        0.32,
+        0.17,
+        0.72
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "window",
+      "description": "Full-height window next to the rear exterior door",
+      "box": [
+        0.28,
+        0.36,
+        0.41,
+        0.67
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "light_fitting",
+      "description": "Black conical pendant light hanging above the peninsula",
+      "box": [
+        0.46,
+        0.13,
+        0.51,
+        0.34
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "kitchen_bench",
+      "description": "Kitchen peninsula with white countertop, sink, and dishwasher",
+      "box": [
+        0.34,
+        0.56,
+        0.58,
+        0.87
+      ]
+    },
+    {
+      "id": "L6",
+      "type": "kitchen_cabinetry",
+      "description": "Timber-look upper cabinets above the main kitchen counter",
+      "box": [
+        0.53,
+        0,
+        1,
+        0.42
+      ]
+    },
+    {
+      "id": "L7",
+      "type": "appliance",
+      "description": "Built-in oven and ceramic cooktop on the back bench",
+      "box": [
+        0.63,
+        0.57,
+        0.8,
+        0.84
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Rear exterior wall",
+      "description": "Wall at the back containing the exterior door and window",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    },
+    {
+      "name": "Kitchen backsplash wall",
+      "description": "Tiled wall behind the cooktop and below the upper cabinetry",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "Kitchen zone",
+      "description": "Tiled work area containing the peninsula, oven, and cabinetry"
+    },
+    {
+      "name": "Circulation corridor",
+      "description": "Timber floor connecting the stairs, kitchen, and rear exit"
+    }
+  ],
+  "kitchenVisible": true,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "diningSpace": {
+    "fits": "none",
+    "reason": "The visible floor is a primary circulation corridor linking the stairs and exterior door; placing a dining table would obstruct essential walkways."
+  },
+  "layout": [],
+  "relationships": [],
+  "avoid": [
+    "Do not place furniture on the timber floor that obstructs the walkway between the stairs and the rear door.",
+    "Do not add bar stools to the peninsula as it lacks a seating overhang.",
+    "Do not block access to the dishwasher or kitchen sink."
+  ],
+  "keepUntouched": [
+    "Glass stair balustrade on the left",
+    "Pendant light fixture above the kitchen peninsula",
+    "Exterior door and window at the rear",
+    "All kitchen cabinetry, appliances, and countertops"
+  ]
+}

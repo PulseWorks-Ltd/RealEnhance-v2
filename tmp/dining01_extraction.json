@@ -1,0 +1,268 @@
+{
+  "baseline": {
+    "openings": [
+      {
+        "id": "W1",
+        "type": "window",
+        "bbox": [
+          0.481,
+          0.35,
+          0.7688,
+          0.6778
+        ],
+        "area_pct": 9.42,
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "verticalBand": "mid_zone",
+        "wallCoverageBand": "20-40",
+        "orientation": "landscape",
+        "paneStructure": "fixed_plus_opening",
+        "doorLeafState": "unknown",
+        "confidence": 0.98,
+        "wallPosition": "near_wall",
+        "relativeHorizontalPosition": "center",
+        "shape": "window",
+        "touchesFloor": false,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "D2",
+        "type": "door",
+        "bbox": [
+          0.8438,
+          0.162,
+          1,
+          1
+        ],
+        "area_pct": 13.12,
+        "wallIndex": 1,
+        "horizontalBand": "right_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "20-40",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "open",
+        "confidence": 0.95,
+        "wallPosition": "right_wall",
+        "relativeHorizontalPosition": "right_third",
+        "shape": "door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "D1",
+        "type": "door",
+        "bbox": [
+          0,
+          0.2843,
+          0.4604,
+          0.9167
+        ],
+        "area_pct": 29.18,
+        "wallIndex": 3,
+        "horizontalBand": "left_third",
+        "verticalBand": "mid_zone",
+        "wallCoverageBand": "60+",
+        "orientation": "landscape",
+        "paneStructure": "sliding_panel",
+        "doorLeafState": "ajar",
+        "confidence": 0.95,
+        "wallPosition": "left_wall",
+        "relativeHorizontalPosition": "left_third",
+        "shape": "door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      }
+    ],
+    "anchorFixtures": [
+      {
+        "id": "L2",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.4573,
+          0.0546,
+          0.4734,
+          0.0769
+        ],
+        "confidence": 0.85
+      },
+      {
+        "id": "L1",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.5281,
+          0.2917,
+          0.551,
+          0.3204
+        ],
+        "confidence": 0.9
+      },
+      {
+        "id": "F1",
+        "type": "fireplace",
+        "wallIndex": 1,
+        "horizontalBand": "right_third",
+        "bbox": [
+          0.7729,
+          0.4306,
+          0.8432,
+          0.875
+        ],
+        "confidence": 0.9
+      }
+    ],
+    "graphMeta": {
+      "graphStable": false,
+      "graphConfidence": 0.5,
+      "extractionAgreement": 0.5,
+      "passCount": 1,
+      "openingCountVariance": 0,
+      "imageHash": "bbeca91fb418b4cb5530e8f1e3f01daea98e948bfe5b81dbfe866ff6b8f447c9",
+      "graphHash": "1bb1bd40aecaa68f4be794159837f7e49e7e1a0692be231af9f533ccd8bb05f7",
+      "cacheStatus": "unstable",
+      "candidateGraphHashes": [
+        "1bb1bd40aecaa68f4be794159837f7e49e7e1a0692be231af9f533ccd8bb05f7"
+      ],
+      "openingCountRange": {
+        "min": 3,
+        "max": 3
+      },
+      "confirmedAt": "2026-08-13T21:23:59.012Z",
+      "baselineMethod": "graph_consensus",
+      "geminiCalls": 1,
+      "verification": {
+        "attempted": false,
+        "accepted": true,
+        "modelAccepted": true,
+        "additionalOpeningCount": 0,
+        "missingOpeningCount": 0,
+        "materiallyDifferentCount": 0,
+        "notPresentCount": 0,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [],
+        "openingStatuses": [],
+        "additionalOpenings": [],
+        "missingOpenings": []
+      }
+    }
+  },
+  "walls": [
+    {
+      "id": "wall_3",
+      "wallLabel": "Left wall with sliding door",
+      "extent": {
+        "polygon": [
+          [
+            0,
+            0.112
+          ],
+          [
+            0.463,
+            0.178
+          ],
+          [
+            0.452,
+            0.939
+          ],
+          [
+            0,
+            0.917
+          ]
+        ]
+      },
+      "openingIds": [
+        "D1"
+      ],
+      "usableWidthFraction": 0,
+      "usableSegments": [],
+      "confidence": 1
+    },
+    {
+      "id": "wall_0",
+      "wallLabel": "Center wall with window",
+      "extent": {
+        "polygon": [
+          [
+            0.463,
+            0.178
+          ],
+          [
+            0.778,
+            0.224
+          ],
+          [
+            0.768,
+            0.949
+          ],
+          [
+            0.452,
+            0.939
+          ]
+        ]
+      },
+      "openingIds": [
+        "W1",
+        "L2",
+        "L1"
+      ],
+      "usableWidthFraction": 0.1,
+      "usableSegments": [
+        {
+          "range": [
+            0,
+            0.07
+          ],
+          "widthFraction": 0.07,
+          "description": "Left of window"
+        },
+        {
+          "range": [
+            0.97,
+            1
+          ],
+          "widthFraction": 0.03,
+          "description": "Right of window"
+        }
+      ],
+      "confidence": 1
+    },
+    {
+      "id": "wall_1",
+      "wallLabel": "Right wall with door and fireplace",
+      "extent": {
+        "polygon": [
+          [
+            0.778,
+            0.224
+          ],
+          [
+            1,
+            0.161
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            0.768,
+            0.949
+          ]
+        ]
+      },
+      "openingIds": [
+        "D2",
+        "F1"
+      ],
+      "usableWidthFraction": 0,
+      "usableSegments": [],
+      "confidence": 1
+    }
+  ]
+}

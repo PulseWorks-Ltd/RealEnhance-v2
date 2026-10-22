@@ -1,0 +1,54 @@
+[
+  {
+    "photo": "Kitchen 01",
+    "roomType": "kitchen_living_dining",
+    "new": {
+      "ok": true,
+      "model": "gemini-3.8-flash",
+      "issues": [],
+      "seconds": 26.9,
+      "calls": 1,
+      "byModel": {
+        "gemini-3.8-flash": 1
+      },
+      "inputTokens": 2278,
+      "outputTokens": 1186,
+      "thinkingTokens": 1286,
+      "usageFromSdk": [
+        {
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2278,
+          "outputTokens": 1186,
+          "thinkingTokens": 1286,
+          "latencyMs": 26831
+        }
+      ]
+    }
+  },
+  {
+    "photo": "Kitchen 12",
+    "roomType": "living_dining",
+    "new": {
+      "ok": true,
+      "model": "gemini-3.8-flash",
+      "issues": [],
+      "seconds": 23.6,
+      "calls": 1,
+      "byModel": {
+        "gemini-3.8-flash": 1
+      },
+      "inputTokens": 2228,
+      "outputTokens": 1409,
+      "thinkingTokens": 1705,
+      "usageFromSdk": [
+        {
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2228,
+          "outputTokens": 1409,
+          "thinkingTokens": 1705,
+          "latencyMs": 23581
+        }
+      ]
+    }
+  }
+]

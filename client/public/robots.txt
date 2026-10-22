@@ -1,0 +1,26 @@
+# Public marketing pages are open to search engines; the signed-in app is not.
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /agency
+Disallow: /billing
+Disallow: /settings/
+Disallow: /home
+Disallow: /upload
+Disallow: /processing
+Disallow: /editor
+Disallow: /results
+Disallow: /my-photos
+Disallow: /region-edit
+Disallow: /enhanced-history
+Disallow: /dashboard
+Disallow: /change-password
+Disallow: /accept-invite
+Disallow: /auth/
+Disallow: /start-trial
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+
+Sitemap: https://www.realenhance.co.nz/sitemap.xml

@@ -1,0 +1,43 @@
+Virtual Staging Instructions for nano banana (or Pro)
+
+As a virtual staging assistant, add only realistic, correctly-scaled furniture and decor to this room photo for New Zealand real-estate marketing. Produce a high-quality, fully staged, listing-ready result — do not default to sparse or minimal staging.
+
+Strictly preserve every structural and permanent feature of this photograph exactly as it is. Under NZ law (Fair Trading Act 1986, Real Estate Agents Act 2008), a listing photo that misrepresents the property is illegal — treat every rule below as a legal requirement, not a style preference.
+
+Do not alter, in any way — move, remove, resize, reshape, recolor, or hide:
+- Walls, windows, doors, doorways, archways, and skylights, including their frames, glass, hardware, and the view through them. Keep the floor area in front of and within the swing-path of any door completely clear.
+- Floor material (e.g. hardwood, carpet, tile) and ceiling finish. If two or more distinct flooring materials are visible, each must stay exactly in its original location and boundary — do not blend, unify, or extend one material over another, or smooth over a visible seam. Only place rugs and furniture on top of the existing floor.
+- Fireplaces, built-in joinery/cabinetry, stairs, beams, columns, HVAC vents, thermostats, switches, outlets, wall-mounted AC units, baseboards, crown molding, railings, and any other fixed fitting or built-in feature — even if not individually named here.
+- Existing ceiling- or wall-mounted light fixtures — these must be preserved exactly as-is.
+
+Do not add any new ceiling-mounted or wall-mounted light fixture as staging decor (no chandeliers, pendant lights, hanging fixtures, or wall sconces). Free-standing or table/floor lamps are permitted as movable decor.
+
+GEOMETRIC ENVELOPE LOCK — ZERO TOLERANCE:
+The architectural envelope must remain visually and geometrically identical to the original photo, independent of camera movement. Do NOT change wall positions, lengths, or angles; alter corner locations; modify ceiling height or plane geometry; change window-to-wall or door-to-wall ratio; alter visible wall spacing; adjust depth perspective or compression; or modify vanishing point alignment. Do not "improve" room proportions or reinterpret spatial depth, even subtly or to make the room look larger.
+
+Camera & Perspective Constraint:
+The camera viewpoint, lens perspective, and framing must remain exactly as in the original photo — do not zoom, crop, rotate, widen, narrow, or otherwise shift camera position or perspective. The final image must look like the same photo with furniture simply placed into the scene.
+
+If you are uncertain whether an element is permanent, treat it as permanent and do not alter it.
+
+ROOM-SPECIFIC PROTECTED FEATURES — detected in this photo, each must remain exactly as shown and fully unobstructed:
+* This room has An exterior doorway on the far right of the front wall, which is open to a wooden deck., located at/on wall_0 (Front wall with window and door), right portion, in the full-height area. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has A landscape-oriented window with a dark brown wood frame on the front wall, covered by white horizontal blinds., located at/on wall_0 (Front wall with window and door), right portion, in the middle area. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has A kitchen window on the back wall above the counter, covered with white horizontal blinds., located at/on wall_2 (Far kitchen wall), center, in the middle area. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has A kitchen window on the left wall, covered by white horizontal blinds and partially occluded by a cabinet., located at/on wall_3 (Left kitchen wall), left portion, in the middle area. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has A semi-flush mount ceiling light with a bowl-shaped shade in the main living area., located at/on wall_0 (Front wall with window and door), right portion. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has A ceiling-mounted track light fixture with multiple spotlights in the kitchen area., located at/on wall_2 (Far kitchen wall), center. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has A stainless steel kitchen sink set into the countertop on the back wall., located at/on wall_2 (Far kitchen wall), center. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has A fixed kitchen peninsula with a dark countertop and a two-toned white and blue-green base, extending from the left wall., located at/on wall_3 (Left kitchen wall), left portion. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has A set of three cone-shaped pendant lights hanging over the kitchen peninsula., located at/on wall_3 (Left kitchen wall), left portion. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+
+KITCHEN ZONE — LIGHT STAGING ONLY (must be followed exactly)
+
+* The kitchen's existing cabinetry, countertops, island, and appliances are permanent fixtures, already protected above. Do not add, remove, resize, relocate, or otherwise alter any of them.
+* Do NOT add any large furniture to the kitchen area — no dining table, no chairs, stools, or bar stools (including at a kitchen island), no other floor-standing furniture of any kind.
+* You may add ONLY small, countertop/surface-level items: up to 2 small appliances (e.g. kettle, toaster, coffee machine) and up to 3 small decor or accessory items (e.g. fruit bowl, cookbooks, a utensil holder, a knife block, a folded dish towel, a small plant). Place these only on existing countertops or open shelving — never on the floor, and never inside the sink.
+* Do not obstruct, cover, or place any new item in front of any detected window, opening, or fixture named in the protected-features section above — including on a countertop or windowsill directly beneath a window.
+
+EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
+
+Beyond the kitchen rules above and the structural constraints above, use your own professional staging judgment to complete the space appropriately, producing a realistic, market-ready real estate listing photo. Do not leave the space sparse or under-furnished outside the kitchen zone; stage it as a professional would for a real listing.

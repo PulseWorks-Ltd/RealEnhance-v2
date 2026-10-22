@@ -1,0 +1,362 @@
+{
+  "baseline": {
+    "openings": [
+      {
+        "id": "W1",
+        "type": "window",
+        "bbox": [
+          0.264,
+          0.371,
+          0.567,
+          0.64
+        ],
+        "area_pct": 8.16,
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "verticalBand": "mid_zone",
+        "wallCoverageBand": "20-40",
+        "orientation": "portrait",
+        "paneStructure": "fixed_plus_opening",
+        "doorLeafState": "unknown",
+        "confidence": 1,
+        "description": "Large white-framed window with a grey roller blind, located on the front wall.",
+        "wallPosition": "near_wall",
+        "relativeHorizontalPosition": "center",
+        "shape": "window",
+        "touchesFloor": false,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "A1",
+        "type": "walkthrough",
+        "bbox": [
+          0.91,
+          0,
+          1,
+          1
+        ],
+        "area_pct": 9,
+        "wallIndex": 1,
+        "horizontalBand": "right_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "20-40",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "open",
+        "confidence": 1,
+        "description": "An open, unframed walkthrough opening on the right wall.",
+        "wallPosition": "right_wall",
+        "relativeHorizontalPosition": "right_third",
+        "shape": "walkthrough",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "W2",
+        "type": "window",
+        "bbox": [
+          0.718,
+          0.364,
+          0.916,
+          0.444
+        ],
+        "area_pct": 1.58,
+        "wallIndex": 1,
+        "horizontalBand": "right_third",
+        "verticalBand": "mid_zone",
+        "wallCoverageBand": "10-20",
+        "orientation": "landscape",
+        "paneStructure": "single_fixed",
+        "doorLeafState": "unknown",
+        "confidence": 1,
+        "description": "Small, high, horizontal window with a white frame and grey roller blind on the right wall.",
+        "wallPosition": "right_wall",
+        "relativeHorizontalPosition": "right_third",
+        "shape": "window",
+        "touchesFloor": false,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "D1",
+        "type": "door",
+        "bbox": [
+          0,
+          0,
+          0.11,
+          1
+        ],
+        "area_pct": 11,
+        "wallIndex": 3,
+        "horizontalBand": "left_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "20-40",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "ajar",
+        "confidence": 0.95,
+        "description": "White panelled room entry door, ajar on the far left, with a dark metal lever handle.",
+        "wallPosition": "left_wall",
+        "relativeHorizontalPosition": "left_third",
+        "shape": "door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "C1",
+        "type": "closet_door",
+        "bbox": [
+          0.08,
+          0.118,
+          0.261,
+          0.887
+        ],
+        "area_pct": 14,
+        "wallIndex": 3,
+        "horizontalBand": "left_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "40-60",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "closed",
+        "confidence": 1,
+        "description": "Sliding closet door with a mirrored panel and white frame on the left wall.",
+        "wallPosition": "left_wall",
+        "relativeHorizontalPosition": "left_third",
+        "shape": "closet_door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      }
+    ],
+    "anchorFixtures": [
+      {
+        "id": "L2",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.558,
+          0.281,
+          0.583,
+          0.294
+        ],
+        "confidence": 1,
+        "description": "A second small, circular, white flush-mount ceiling light, located centrally in the room."
+      },
+      {
+        "id": "L1",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "left_third",
+        "bbox": [
+          0.344,
+          0.25,
+          0.372,
+          0.264
+        ],
+        "confidence": 1,
+        "description": "A small, circular, white flush-mount ceiling light."
+      }
+    ],
+    "graphMeta": {
+      "graphStable": false,
+      "graphConfidence": 0.5,
+      "extractionAgreement": 0.5,
+      "passCount": 1,
+      "openingCountVariance": 0,
+      "imageHash": "dd4eec3d760d5b05b63f2d960fd4cae0e668e21474c87744c91ff659434d9892",
+      "graphHash": "313b9e6052af763319602b0415230844fb700ce270be30cbcc45e9649d705d19",
+      "cacheStatus": "unstable",
+      "candidateGraphHashes": [
+        "313b9e6052af763319602b0415230844fb700ce270be30cbcc45e9649d705d19"
+      ],
+      "openingCountRange": {
+        "min": 5,
+        "max": 5
+      },
+      "confirmedAt": "2026-08-14T02:56:42.239Z",
+      "baselineMethod": "graph_consensus",
+      "geminiCalls": 1,
+      "verification": {
+        "attempted": false,
+        "accepted": true,
+        "modelAccepted": true,
+        "additionalOpeningCount": 0,
+        "missingOpeningCount": 0,
+        "materiallyDifferentCount": 0,
+        "notPresentCount": 0,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [],
+        "openingStatuses": [],
+        "additionalOpenings": [],
+        "missingOpenings": []
+      }
+    }
+  },
+  "walls": [
+    {
+      "id": "wall_0",
+      "wallLabel": "front_wall",
+      "extent": {
+        "polygon": [
+          [
+            0.258,
+            0.288
+          ],
+          [
+            0.718,
+            0.305
+          ],
+          [
+            0.725,
+            0.895
+          ],
+          [
+            0.208,
+            0.88
+          ]
+        ]
+      },
+      "openingIds": [
+        "W1",
+        "L2",
+        "L1"
+      ],
+      "usableWidthFraction": 0.65,
+      "usableSegments": [
+        {
+          "range": [
+            0,
+            0.3
+          ],
+          "widthFraction": 0.3,
+          "description": "Clear wall space to the left of the window."
+        },
+        {
+          "range": [
+            0.65,
+            1
+          ],
+          "widthFraction": 0.35,
+          "description": "Clear wall space to the right of the window."
+        }
+      ],
+      "confidence": 1
+    },
+    {
+      "id": "wall_1",
+      "wallLabel": "right_wall",
+      "extent": {
+        "polygon": [
+          [
+            0.718,
+            0.305
+          ],
+          [
+            0.91,
+            0.29
+          ],
+          [
+            0.91,
+            1
+          ],
+          [
+            0.725,
+            0.895
+          ]
+        ]
+      },
+      "openingIds": [
+        "A1",
+        "W2"
+      ],
+      "usableWidthFraction": 0.6,
+      "usableSegments": [
+        {
+          "range": [
+            0,
+            0.6
+          ],
+          "widthFraction": 0.6,
+          "description": "Clear wall space from the corner to the high window."
+        }
+      ],
+      "confidence": 1
+    },
+    {
+      "id": "wall_3",
+      "wallLabel": "left_wall",
+      "extent": {
+        "polygon": [
+          [
+            0,
+            0.17
+          ],
+          [
+            0.258,
+            0.288
+          ],
+          [
+            0.208,
+            0.88
+          ],
+          [
+            0,
+            1
+          ]
+        ]
+      },
+      "openingIds": [
+        "D1",
+        "C1"
+      ],
+      "usableWidthFraction": 0.2,
+      "usableSegments": [
+        {
+          "range": [
+            0.8,
+            1
+          ],
+          "widthFraction": 0.2,
+          "description": "Clear wall space between the closet and the corner."
+        }
+      ],
+      "confidence": 1
+    }
+  ],
+  "analysis": [
+    {
+      "wallId": "wall_0",
+      "qualifies": true,
+      "largestSegment": 0.35,
+      "edgeCropped": false,
+      "coLocatedItems": [
+        "W1 (Large white-framed window with a grey roller blind, located on the front wall.)",
+        "L2 (A second small, circular, white flush-mount ceiling light, located centrally in the room.)",
+        "L1 (A small, circular, white flush-mount ceiling light.)"
+      ],
+      "RISK_CONDITION": true
+    },
+    {
+      "wallId": "wall_1",
+      "qualifies": true,
+      "largestSegment": 0.6,
+      "edgeCropped": false,
+      "coLocatedItems": [
+        "A1 (An open, unframed walkthrough opening on the right wall.)",
+        "W2 (Small, high, horizontal window with a white frame and grey roller blind on the right wall.)"
+      ],
+      "RISK_CONDITION": true
+    },
+    {
+      "wallId": "wall_3",
+      "qualifies": false,
+      "reason": "largestSegment 0.200 < 0.35"
+    }
+  ],
+  "attempt": 3
+}

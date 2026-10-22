@@ -8,13 +8,19 @@ export const ISSUE_TYPES = {
   OPENING_RESIZED_MINOR: "opening_resized_minor",
   OPENING_OCCLUSION: "opening_occlusion",
   OPENING_ANOMALY: "opening_anomaly",
+  OPENING_FABRICATED: "opening_fabricated",
+  WINDOW_ARTWORK_REPLACEMENT: "window_artwork_replacement",
+  ARTWORK_ON_DOOR_SURFACE: "artwork_on_door_surface",
+  LANDMARK_VANISHED: "landmark_vanished",
   ROOM_ENVELOPE_CHANGED: "room_envelope_changed",
   WALL_CHANGED: "wall_changed",
   ENVELOPE_ANOMALY: "envelope_anomaly",
   ENVELOPE_VERTICAL_EDGE_LOSS: "envelope_vertical_edge_loss",
   ENVELOPE_CORNER_FLATTENED: "envelope_corner_flattened",
   FIXTURE_CHANGED: "fixture_changed",
+  FIXTURE_FABRICATED: "fixture_fabricated",
   FIXTURE_ANOMALY: "fixture_anomaly",
+  DOOR_ACCESS_BLOCKED: "door_access_blocked",
   HVAC_CHANGED: "hvac_changed",
   FAUCET_CHANGED: "faucet_changed",
   FLOOR_CHANGED: "floor_changed",
@@ -59,9 +65,14 @@ export const CRITICAL_ISSUES = new Set<ValidationIssueType>([
   ISSUE_TYPES.OPENING_SEALED,
   ISSUE_TYPES.OPENING_RELOCATED,
   ISSUE_TYPES.OPENING_RESIZED_MAJOR,
+  ISSUE_TYPES.OPENING_FABRICATED,
+  ISSUE_TYPES.WINDOW_ARTWORK_REPLACEMENT,
+  ISSUE_TYPES.ARTWORK_ON_DOOR_SURFACE,
+  ISSUE_TYPES.LANDMARK_VANISHED,
   ISSUE_TYPES.WALL_CHANGED,
   ISSUE_TYPES.ROOM_ENVELOPE_CHANGED,
   ISSUE_TYPES.FIXTURE_CHANGED,
+  ISSUE_TYPES.FIXTURE_FABRICATED,
   ISSUE_TYPES.HVAC_CHANGED,
   ISSUE_TYPES.FAUCET_CHANGED,
   ISSUE_TYPES.GEMINI_STRUCTURE,
@@ -79,6 +90,11 @@ export const REVIEW_ISSUES = new Set<ValidationIssueType>([
   ISSUE_TYPES.FLOOR_CHANGED,
   ISSUE_TYPES.FLOOR_ANOMALY,
   ISSUE_TYPES.UNIFIED_FAILURE,
+  // New, uncalibrated check (RealEnhance validator-scope audit finding H1) —
+  // classified "review" rather than "critical" until it has the kind of
+  // real-production-case track record every other critical check here was
+  // built against. See doorAccessClearanceCheck.ts's own header.
+  ISSUE_TYPES.DOOR_ACCESS_BLOCKED,
 ]);
 
 export const ADVISORY_ISSUES = new Set<ValidationIssueType>([

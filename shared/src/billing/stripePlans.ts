@@ -2,6 +2,7 @@
 // Stripe billing configuration with multi-currency support
 
 import type { PlanTier } from "../auth/types.js";
+import { PLAN_LIMITS } from "../plans.js";
 
 export type BillingCountry = "NZ" | "AU" | "ZA";
 export type BillingCurrency = "nzd" | "aud" | "zar" | "usd";
@@ -83,7 +84,9 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
   starter: {
     planCode: "starter",
     displayName: "Starter",
-    mainAllowance: 75,
+    // Same number the app spends from (shared/src/plans.ts), so the billing
+    // page and the Stripe webhook can't disagree with it.
+    mainAllowance: PLAN_LIMITS.starter.mainAllowance,
     stagingAllowance: 0,
     seatLimit: null,
     allowInvites: true,
@@ -101,7 +104,9 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
   pro: {
     planCode: "pro",
     displayName: "Pro",
-    mainAllowance: 150,
+    // Same number the app spends from (shared/src/plans.ts), so the billing
+    // page and the Stripe webhook can't disagree with it.
+    mainAllowance: PLAN_LIMITS.pro.mainAllowance,
     stagingAllowance: 0,
     seatLimit: null,
     allowInvites: true,
@@ -119,7 +124,9 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
   agency: {
     planCode: "agency",
     displayName: "Agency",
-    mainAllowance: 300,
+    // Same number the app spends from (shared/src/plans.ts), so the billing
+    // page and the Stripe webhook can't disagree with it.
+    mainAllowance: PLAN_LIMITS.agency.mainAllowance,
     stagingAllowance: 0,
     seatLimit: null,
     allowInvites: true,

@@ -1,0 +1,46 @@
+Virtual Staging Instructions for nano banana (or Pro)
+
+As a virtual staging assistant, add only realistic, correctly-scaled furniture and decor to this room photo for New Zealand real-estate marketing. Produce a high-quality, fully staged, listing-ready result — do not default to sparse or minimal staging.
+
+STRUCTURAL PRESERVATION — NON-NEGOTIABLE, ZERO TOLERANCE
+
+Strictly preserve every structural and permanent feature of this photograph exactly as it is. You are explicitly and completely prohibited from making ANY change — moving, removing, resizing, reshaping, recoloring, or hiding — to any of the following. Under NZ law (Fair Trading Act 1986, Real Estate Agents Act 2008), a listing photo that misrepresents the property is illegal — every rule below is a legal requirement, not a style preference, and breaking any of them is exactly as serious as fabricating a room that does not exist.
+
+Do not alter, in any way:
+- Walls, windows, doors, doorways, archways, and skylights, including their frames, glass, hardware, and the view through them. Keep the floor area in front of and within the swing-path of any door completely clear.
+- Floor material (e.g. hardwood, carpet, tile) and ceiling finish. If two or more distinct flooring materials are visible, each must stay exactly in its original location and boundary — do not blend, unify, or extend one material over another, or smooth over a visible seam. Only place rugs and furniture on top of the existing floor.
+- Fireplaces, built-in joinery/cabinetry, stairs, beams, columns, HVAC vents, thermostats, switches, outlets, wall-mounted AC units, baseboards, crown molding, railings, and any other fixed fitting or built-in feature — even if not individually named here.
+- Existing ceiling- or wall-mounted light fixtures — these must be preserved exactly as-is.
+
+Do not add any new ceiling-mounted or wall-mounted light fixture as staging decor (no chandeliers, pendant lights, hanging fixtures, or wall sconces). Free-standing or table/floor lamps are permitted as movable decor.
+
+GEOMETRIC ENVELOPE LOCK — NON-NEGOTIABLE, ZERO TOLERANCE:
+This is not a lighter or secondary rule compared to the list above — it carries exactly the same weight. The architectural envelope — every wall's position, length, and angle; every corner location; the room's overall shape and proportions — must remain visually and geometrically IDENTICAL to the original photo, independent of and in addition to camera movement. A photo where the room's geometry has been redrawn is just as much a misrepresentation of the property as a photo with a wall or window removed, even if nothing was technically "deleted." You are explicitly and completely prohibited from:
+* changing wall positions, lengths, or angles, or altering corner locations
+* modifying ceiling height or plane geometry
+* changing window-to-wall or door-to-wall ratio, or altering visible wall spacing
+* adjusting depth perspective or compression, or modifying vanishing point alignment
+* moving any window, door, or fixture to a different wall than the one it appears on in the original photo, or changing which wall of the room it sits on
+* mirroring, rotating, or reorganizing the room's layout, even if every individual object is still present somewhere in the result
+Perspective lines, wall intersections, and opening proportions must align exactly with the original image. Do NOT "improve" room proportions, straighten perspective, extend wall planes for symmetry, or reinterpret spatial depth in any way, even subtly or to make the room look larger — the camera may stay perfectly still while the room's geometry is redrawn, and that is equally prohibited.
+
+Camera & Perspective Constraint — NON-NEGOTIABLE:
+The camera viewpoint, lens perspective, and framing must remain exactly as in the original photo — do not zoom, crop, rotate, widen, narrow, or otherwise shift camera position or perspective. The final image must be immediately recognizable as the same room from the same vantage point with furniture simply placed into the scene — not a reconstruction, reinterpretation, or mirrored/rotated version of it.
+
+If you are uncertain whether an element is permanent, or whether a change would alter the room's geometry, treat it as permanent/unchanged and do not alter it.
+
+ROOM-SPECIFIC PROTECTED FEATURES — detected in this photo, each must remain exactly as shown and fully unobstructed:
+* This room has Large, white-framed landscape window on the right wall, composed of multiple glass panels, including smaller top-hinged awning windows., located at/on wall_1 (Wall with large window), right portion, in the middle area. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has Closed curtain fully covering wall, no glass visible — window inferred from curtain/rod presence, not directly confirmed. A short, gathered fabric panel with a pattern of blue and yellow diagonal stripes on a light background, hung on the wall like a piece of art., located at/on wall_3, center, in the middle area. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has A simple, single-bulb flush-mount ceiling light with a metallic base and a small, fluted glass shade., located at/on wall_0 (Wall behind the bed), center. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+* This room has A small white square fixture mounted high on the wall above the bed, likely a smoke alarm or security sensor., located at/on wall_0 (Wall behind the bed), right portion. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.
+
+ANCHOR ITEM — BED (must be followed exactly)
+
+* Place the bed against wall_2 in the room analysis, referred to as "Wall segment on the far right", within the clear segment described as "Full wall width" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
+* Orient the bed so its foot end points toward W1 (the window on wall_1) — NOT toward the camera. The camera should see the long side profile of the bed, not the headboard/footboard face-on. wall_2 is only partially visible in the frame (truncated at the right edge). Edge-cropped placement is acceptable.
+* wall_2 is only partially visible in this photo, so its full extent cannot be verified. Do NOT place any wall-mounted artwork, mirrors, shelving, or other decor above the bed on this wall, even if it looks like there is room for it — leave the wall above the headboard bare.
+
+EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
+
+Beyond the bed placement above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a bedroom, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above, including the protected features named above and the no-decor-above-bed rule if it applies. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.

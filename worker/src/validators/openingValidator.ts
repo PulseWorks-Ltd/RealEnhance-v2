@@ -1,3 +1,4 @@
+import { nLog, vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
@@ -111,7 +112,7 @@ const OPENING_ADDED_CONSENSUS_MIN_IOU = Number(process.env.OPENING_ADDED_CONSENS
 const OPENING_ADDED_STRUCTURAL_PRECHECK_MIN_MATCHES = Number(process.env.OPENING_ADDED_STRUCTURAL_PRECHECK_MIN_MATCHES || 1);
 
 function logOpeningInstrumentation(event: string, payload: Record<string, unknown>): void {
-  console.log(JSON.stringify({
+  vDetailLog(JSON.stringify({
     event,
     ...payload,
   }));
@@ -1132,7 +1133,7 @@ export function parseOpeningResult(rawText: string): OpeningValidatorResult {
     reason,
   };
 
-  console.log("[OPENINGS_COMPARISON]", comparisonResult);
+  vDetailLog("[OPENINGS_COMPARISON]", comparisonResult);
 
   return {
     status: pass ? "pass" : "fail",
@@ -1416,7 +1417,7 @@ export async function runOpeningValidator(
     skipped: options?.baseline ? true : false,
   });
   const baselineOpenings = extractBaselineOpenings(baseline);
-  console.log("[OPENINGS_BASELINE]", baselineOpenings);
+  vDetailLog("[OPENINGS_BASELINE]", baselineOpenings);
 
   try {
   if (Array.isArray(baseline.openings) && baseline.openings.length > 0) {
@@ -1519,7 +1520,7 @@ export async function runOpeningValidator(
       const structuralContinuityPassed = firstPassContinuity.passed && secondPassContinuity.passed;
       if (!structuralContinuityPassed) {
         openingAddedStructuralContinuityUnresolved = true;
-        console.log("[OPENING_ADDED_PRECHECK_UNRESOLVED]", {
+        vDetailLog("[OPENING_ADDED_PRECHECK_UNRESOLVED]", {
           jobId: options?.jobId,
           imageId: options?.imageId,
           firstPassMatchedReferenceOpenings: firstPassContinuity.matchedReferenceOpenings,
@@ -1535,7 +1536,7 @@ export async function runOpeningValidator(
       );
       if (!deterministicStrongAddedOpening) {
         openingAddedConsensusUnstable = true;
-        console.log("[OPENING_ADDED_CONSENSUS_UNSTABLE]", {
+        vDetailLog("[OPENING_ADDED_CONSENSUS_UNSTABLE]", {
           jobId: options?.jobId,
           imageId: options?.imageId,
           firstPassCandidates: firstPassAddedSignals.length,
@@ -1543,7 +1544,7 @@ export async function runOpeningValidator(
           action: "added_opening_advisory_only",
         });
       } else {
-        console.log("[OPENING_ADDED_CONSENSUS_CONFIRMED]", {
+        vDetailLog("[OPENING_ADDED_CONSENSUS_CONFIRMED]", {
           jobId: options?.jobId,
           imageId: options?.imageId,
           firstPassCandidates: firstPassAddedSignals.length,
@@ -1707,7 +1708,7 @@ export async function runOpeningValidator(
       confidenceBands,
       summary: observabilitySummary,
     };
-    console.log("[OPENING_OBSERVABILITY_EVIDENCE]", {
+    vDetailLog("[OPENING_OBSERVABILITY_EVIDENCE]", {
       jobId: options?.jobId,
       imageId: options?.imageId,
       summary: observabilitySummary,
@@ -1914,7 +1915,7 @@ export async function runOpeningValidator(
 
     if (deterministicHardFailButOcclusionSusceptible) {
       advisorySignals.push("opening_occlusion_susceptible_requires_semantic_review");
-      console.log("[OPENING_OCCLUSION_SUSCEPTIBLE_PATH]", {
+      vDetailLog("[OPENING_OCCLUSION_SUSCEPTIBLE_PATH]", {
         jobId: options?.jobId,
         imageId: options?.imageId,
         attempt: options?.attempt,
@@ -1950,7 +1951,7 @@ export async function runOpeningValidator(
         if (addedCorroboration.analysis) {
           advisorySignals.push(`light_anchor_added_corroboration_analysis:${addedCorroboration.analysis.replace(/\|/g, "/")}`);
         }
-        console.log("[OPENING_ADDED_HARD_FAIL_CORROBORATED]", {
+        vDetailLog("[OPENING_ADDED_HARD_FAIL_CORROBORATED]", {
           jobId: options?.jobId,
           imageId: options?.imageId,
           deterministicStrongAddedOpening,
@@ -1960,7 +1961,7 @@ export async function runOpeningValidator(
       } else if (addedCorroboration?.openingAdded) {
         advisorySignals.push("light_anchor_opening_added_review");
         advisorySignals.push(`light_anchor_added_unconfirmed_confidence:${addedCorroboration.confidence.toFixed(3)}`);
-        console.log("[OPENING_ADDED_ADVISORY_ONLY]", {
+        vDetailLog("[OPENING_ADDED_ADVISORY_ONLY]", {
           jobId: options?.jobId,
           imageId: options?.imageId,
           deterministicStrongAddedOpening,
@@ -2001,7 +2002,7 @@ export async function runOpeningValidator(
       coherenceAnalysis.primaryDestructiveStates.length > 0 &&
       coherenceAnalysis.supportiveModifiers.length > 0
     ) {
-      console.log("[OPENING_COHERENCE_REINFORCED]", {
+      vDetailLog("[OPENING_COHERENCE_REINFORCED]", {
         primaryIssueType,
         destructiveStates: coherenceAnalysis.primaryDestructiveStates,
         supportiveModifiers: coherenceAnalysis.supportiveModifiers,
@@ -2012,7 +2013,7 @@ export async function runOpeningValidator(
 
     if (!signalCoherent && (deterministicHardFailIssue || hasHighConfidenceMicroHardFailSignal || addedHardFailCorroborated) && hardFailConfidence >= HARD_FAIL_CONFIDENCE_THRESHOLD) {
       advisorySignals.push("opening_signal_incoherent_downgraded");
-      console.log("[OPENING_COHERENCE_DOWNGRADE]", {
+      vDetailLog("[OPENING_COHERENCE_DOWNGRADE]", {
         primaryIssueType,
         reasonParts,
         hasResize: openingSizeReductionDetected || !!deterministic.summary.openingResized,
@@ -2101,8 +2102,8 @@ export async function runOpeningValidator(
       objectHint: primaryFinding?.openingType,
     });
 
-    console.log("[OPENINGS_COMPARISON]", comparisonResult);
-    console.log("[SPECIALIST_REVIEW][OPENING]", {
+    vDetailLog("[OPENINGS_COMPARISON]", comparisonResult);
+    nLog("[SPECIALIST_REVIEW][OPENING]", {
       hardFail,
       deterministicHardFailIssue,
       hardFailConfidence: hardFailConfidence.toFixed(3),

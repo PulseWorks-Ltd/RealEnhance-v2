@@ -209,6 +209,14 @@ Restore the original ${targetLabel} content that should exist inside this region
 
 ${buildModeSceneHint(sceneHint)}
 
+A STAGE_1A_BASELINE_IMAGE (the original property photo, before enhancement) is provided
+alongside the current photo. Use it as the authoritative reference for exactly what
+belongs in this region — match its structure, material, and appearance faithfully. Do
+NOT copy furniture, decor, or staging from the baseline image; keep the current photo's
+furniture, staging, and lighting outside the immediate restored feature unchanged, and
+adjust only what's needed (nearby shadows, reflections, adjacent surfaces) so the
+reinstated feature blends naturally into the current scene.
+
 Reinstatement requirements:
 - Restore the original structure, material, and appearance faithfully.
 - Do not redesign or improve the content. Restore it faithfully.

@@ -10,6 +10,9 @@ import {
 
 jest.mock("../src/ai/gemini", () => ({
   getGeminiClient: jest.fn(() => ({ models: { generateContent: jest.fn() } })),
+  // 2.5 Flash Image (the model these tests use) takes no imageConfig.
+  modelSupportsImageConfig: jest.fn(() => false),
+  closestGeminiAspectRatio: jest.fn(() => "4:3"),
 }));
 
 const runWithPrimaryThenFallbackMock = jest.fn();
@@ -33,6 +36,10 @@ jest.mock("../src/utils/images", () => ({
   writeImageDataUrl: (outputPath: string) => {
     fs.writeFileSync(outputPath, "ok");
   },
+  // Added to stage2.ts after this test was written: logging only, and the
+  // portrait resize is a no-op for these placeholder files.
+  logImageContentHash: () => {},
+  normalizePortraitImageForGemini: async (inputPath: string) => inputPath,
 }));
 
 jest.mock("../src/utils/debugImageUrls", () => ({

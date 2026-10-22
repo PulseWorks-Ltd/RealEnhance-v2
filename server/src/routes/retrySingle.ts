@@ -20,6 +20,7 @@ import { findScopedEnhancedImageByUrl } from "../services/enhancedImages.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { REDIS_URL } from "../config.js";
 import { jobHasEditedArtifact } from "./retry-policy.js";
+import { toPublicMessage } from "../utils/publicError.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -190,7 +191,7 @@ const CANONICAL_ROOM_TYPES = new Set([
   "kitchen_dining",
   "kitchen_living",
   "living_dining",
-  "multiple_living",
+  "kitchen_living_dining",
   "study",
   "office",
   "bathroom",
@@ -225,11 +226,17 @@ function normalizeRoomType(raw: unknown): string {
     "living-room": "living_room",
     "dining": "dining_room",
     "dining-room": "dining_room",
-    "multiple-living-areas": "multiple_living",
-    "multiple_living_areas": "multiple_living",
-    "multiple-living": "multiple_living",
-    "multiple living": "multiple_living",
-    "multi-living": "multiple_living",
+    // "multiple_living" retired -> "kitchen_living_dining" (real
+    // simultaneous 3-zone support). Kept as an input alias, not deleted —
+    // see the matching comment in upload.ts's normalizeRoomType.
+    "multiple-living-areas": "kitchen_living_dining",
+    "multiple_living_areas": "kitchen_living_dining",
+    "multiple-living": "kitchen_living_dining",
+    "multiple living": "kitchen_living_dining",
+    "multiple_living": "kitchen_living_dining",
+    "multi-living": "kitchen_living_dining",
+    "kitchen & living & dining": "kitchen_living_dining",
+    "kitchen-living-dining": "kitchen_living_dining",
     "kitchen & dining": "kitchen_dining",
     "kitchen-and-dining": "kitchen_dining",
     "kitchen & living": "kitchen_living",
@@ -787,6 +794,9 @@ export function retrySingleRouter() {
 
       console.log(`[RETRY_SINGLE] imageId=${parentImageId || 'n/a'} sourceStage=${retrySourceStage || 'missing'} sourceUrl=${retrySourceUrl || 'missing'} sourceKey=${retrySourceKey || 'n/a'} userId=${sessUser.id}`);
 
+      // Deliberately does not forward enhanceExteriorSky or enhanceExteriorDusk —
+      // a retry of a job should not silently re-request either checkbox's
+      // one-off transformation. Do not "fix" this by adding them.
       const options: any = {
         declutter: effectiveDeclutterWithFallback,
         declutterMode: declutterMode ?? undefined,
@@ -1165,7 +1175,7 @@ export function retrySingleRouter() {
       return res.status(200).json({ success: true, jobId });
     } catch (err: any) {
       console.error("[retry-single] ERROR:", err);
-      return res.status(500).json({ success: false, error: err?.message || "Retry job failed" });
+      return res.status(500).json({ success: false, error: toPublicMessage(err?.message || "Retry job failed") });
     }
   });
 

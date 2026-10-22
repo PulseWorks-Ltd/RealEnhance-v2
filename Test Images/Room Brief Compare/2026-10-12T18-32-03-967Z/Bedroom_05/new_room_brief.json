@@ -1,0 +1,115 @@
+{
+  "roomSummary": "A modern carpeted bedroom with high clerestory windows on the left wall and a large picture window on the right wall.",
+  "camera": "The camera stands near the room entry looking toward the far corner between the left and right walls.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "window",
+      "description": "High rectangular clerestory window on the upper left wall",
+      "box": [
+        0.16,
+        0.02,
+        0.45,
+        0.28
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "window",
+      "description": "Large double-pane window on the right wall overlooking the street",
+      "box": [
+        0.6,
+        0.08,
+        0.9,
+        0.66
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "switch_or_outlet",
+      "description": "Double power outlet low on the left wall",
+      "box": [
+        0.23,
+        0.72,
+        0.26,
+        0.76
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "switch_or_outlet",
+      "description": "Power outlet near the floor close to the far corner on the left wall",
+      "box": [
+        0.47,
+        0.61,
+        0.48,
+        0.63
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Left wall",
+      "description": "Long wall with high clerestory windows near ceiling and open floor space below",
+      "usableForLargeFurniture": true,
+      "partlyVisible": true
+    },
+    {
+      "name": "Right wall",
+      "description": "Wall dominated by a large picture window with low sill",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "Sleeping zone",
+      "description": "Along the left wall beneath the high clerestory windows extending into the center floor"
+    }
+  ],
+  "kitchenVisible": false,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "diningSpace": {
+    "fits": "none",
+    "reason": "Bedroom layout only."
+  },
+  "bedSpace": {
+    "bed": "queen",
+    "bedsideTables": 2,
+    "reason": "The left wall provides ample unobstructed width below the clerestory window for a queen bed and two nightstands."
+  },
+  "layout": [
+    {
+      "item": "Queen bed",
+      "placement": "centered against the left wall beneath the high rectangular clerestory window"
+    },
+    {
+      "item": "Bedside table",
+      "placement": "against the left wall to the left of the queen bed"
+    },
+    {
+      "item": "Bedside table",
+      "placement": "against the left wall to the right of the queen bed near the far corner"
+    },
+    {
+      "item": "Area rug",
+      "placement": "centered under the queen bed extending into the middle of the room"
+    }
+  ],
+  "relationships": [
+    "The bed sits centered under the high clerestory window facing the large window on the right.",
+    "Bedside tables flank both sides of the bed without extending past the corner."
+  ],
+  "avoid": [
+    "Do not place the headboard against the right wall blocking the large window.",
+    "Do not block walking space from the foreground entrance into the room."
+  ],
+  "keepUntouched": [
+    "High rectangular clerestory window on the upper left wall",
+    "Large window on the right wall",
+    "Wall outlets and baseboards"
+  ]
+}

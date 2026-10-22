@@ -1,0 +1,148 @@
+{
+  "roomSummary": "A spacious open-plan living room in the foreground connected through a wide cased opening to a bright dining room in the background, both finished with dark carpeting.",
+  "camera": "The camera stands in the corner of the foreground living area, looking diagonally across the room toward the right curtained window and through the wide opening into the dining room.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "curtain",
+      "description": "floor-length patterned curtains covering the large window on the right wall of the foreground room",
+      "box": [
+        0.54,
+        0,
+        1,
+        50
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "switch_or_outlet",
+      "description": "wall outlet and switch located near the base of the partition wall between the opening and the right wall",
+      "box": [
+        0.54,
+        0.42,
+        0.57,
+        0.46
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "doorway",
+      "description": "wide cased opening connecting the foreground living space to the rear dining room",
+      "box": [
+        0.06,
+        0,
+        0.41,
+        0.53
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "window",
+      "description": "large window with grey curtains on the far back wall of the rear dining room",
+      "box": [
+        0.86,
+        0.1,
+        0.29,
+        0.36
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "window",
+      "description": "side window with curtains on the right wall of the rear dining room",
+      "box": [
+        0.34,
+        0.1,
+        0.4,
+        0.36
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Foreground right wall",
+      "description": "wall dominated by large patterned curtains covering the window",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    },
+    {
+      "name": "Foreground divider wall",
+      "description": "solid white partition wall to the right of the cased opening",
+      "usableForLargeFurniture": true,
+      "partlyVisible": true
+    },
+    {
+      "name": "Dining far wall",
+      "description": "rear wall in the adjoining room featuring a wide window",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "Living Area",
+      "description": "the large carpeted foreground space adjacent to the curtained right window"
+    },
+    {
+      "name": "Dining Area",
+      "description": "the dedicated adjoining room visible through the wide cased opening"
+    }
+  ],
+  "kitchenVisible": false,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "diningSpace": {
+    "fits": "full",
+    "reason": "The dedicated room visible through the cased opening has substantial open floor space easily accommodating a 4- to 6-person dining set without hindering pathways."
+  },
+  "bedSpace": {
+    "bed": "queen",
+    "bedsideTables": 0,
+    "reason": ""
+  },
+  "layout": [
+    {
+      "item": "Area Rug",
+      "placement": "centered on the floor of the foreground living room to define the main seating zone"
+    },
+    {
+      "item": "3-Seater Sofa",
+      "placement": "positioned on the area rug in the foreground living area, facing inward toward the center of the space"
+    },
+    {
+      "item": "Coffee Table",
+      "placement": "centered in front of the 3-seater sofa on the area rug in the foreground living room"
+    },
+    {
+      "item": "Armchair",
+      "placement": "placed at an angle beside the coffee table on the area rug, facing toward the sofa"
+    },
+    {
+      "item": "Dining Table",
+      "placement": "centered on the floor of the adjoining room visible through the wide cased opening"
+    },
+    {
+      "item": "Dining Chairs",
+      "placement": "arranged neatly around the dining table in the adjoining room"
+    }
+  ],
+  "relationships": [
+    "The living room furniture forms an independent conversation zone in the foreground space without spilling into the walkway.",
+    "The dining suite is entirely contained within the adjoining rear room, visible through the cased opening.",
+    "A clear walking corridor is maintained through the cased opening between the two rooms."
+  ],
+  "avoid": [
+    "Do not place dining furniture in the foreground living space.",
+    "Do not obstruct the wide cased opening between the two rooms with any seating or tables.",
+    "Do not place tall furniture against the patterned curtains on the right wall.",
+    "Do not block the light switch and outlet near the floor on the divider wall."
+  ],
+  "keepUntouched": [
+    "patterned curtains and window on the right wall of the foreground room",
+    "wide cased opening frame and trim dividing the two rooms",
+    "windows and curtains in the rear adjoining room",
+    "dark wall-to-wall carpeting throughout both spaces"
+  ]
+}

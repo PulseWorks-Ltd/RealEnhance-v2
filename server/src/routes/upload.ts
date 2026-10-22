@@ -6,17 +6,19 @@ import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser, updateUser } from "../services/users.js";
 import { cancelEnqueuedJob, createAwaitingPaymentEnhanceJob, enqueueEnhanceJob, listAwaitingPaymentEnhanceJobs } from "../services/jobs.js";
-import { createPresignedUploadUrl, getS3PublicUrl, uploadOriginalToS3 } from "../utils/s3.js";
+import { createPresignedUploadUrl, getS3PublicUrl, uploadOriginalToS3, s3ObjectExists } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { getUserByEmail, getUserById } from "../services/users.js";
 import { enforceRetentionLimit } from "../services/imageRetention.js";
 import { reserveAllowance, commitReservation, releaseReservation, getUsageSnapshot } from "../services/usageLedger.js";
 import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
-import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
+import { declutterStageExtraCreditEnabled, estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
+import { loadFurniturePrecheck, type FurniturePrecheckRecord } from "./furniturePrecheck.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { findOrCreateProperty } from "../services/properties.js";
 import * as crypto from "node:crypto";
+import { toPublicMessage } from "../utils/publicError.js";
 
 function timingSafeEqual(a: string, b: string): boolean {
   try {
@@ -70,6 +72,16 @@ interface DirectUploadedImage {
   key: string;
 }
 
+// Direct-upload S3 keys are always createPresignedUploadUrl's
+// `${prefix}/${Date.now()}-${randomUUID()}-${safeName}` — recover the
+// original (sanitized) filename from the key for jobs that never carry a
+// multipart `f` (the direct-upload-to-S3 flow bypasses req.files entirely).
+function extractOriginalFilenameFromKey(key: string): string | undefined {
+  const base = key.split("/").pop() || "";
+  const match = base.match(/^\d+-[0-9a-fA-F-]{36}-(.+)$/);
+  return (match ? match[1] : base) || undefined;
+}
+
 function safeParseUploadedKeys(raw: unknown): DirectUploadedImage[] {
   const parsed = typeof raw === "string"
     ? (() => {
@@ -108,7 +120,7 @@ const CANONICAL_ROOM_TYPES = new Set([
   "kitchen_dining",
   "kitchen_living",
   "living_dining",
-  "multiple_living",
+  "kitchen_living_dining",
   "study",
   "office",
   "bathroom",
@@ -141,11 +153,22 @@ function normalizeRoomType(raw: unknown): string {
     "living-room": "living_room",
     "dining": "dining_room",
     "dining-room": "dining_room",
-    "multiple-living-areas": "multiple_living",
-    "multiple_living_areas": "multiple_living",
-    "multiple-living": "multiple_living",
-    "multiple living": "multiple_living",
-    "multi-living": "multiple_living",
+    // "multiple_living" is retired (replaced by "kitchen_living_dining",
+    // which supports all three zones — kitchen, living, and dining —
+    // simultaneously, rather than "living + one of dining/other"). Kept as
+    // an input alias, not deleted outright: roomType is persisted
+    // long-term (server/src/services/images.ts writes it into
+    // server/data/images.json) and retrySingle.ts re-validates it against
+    // this same canonical set on every retry — a hard rename would 400 any
+    // pre-existing record or client still holding the old value.
+    "multiple-living-areas": "kitchen_living_dining",
+    "multiple_living_areas": "kitchen_living_dining",
+    "multiple-living": "kitchen_living_dining",
+    "multiple living": "kitchen_living_dining",
+    "multiple_living": "kitchen_living_dining",
+    "multi-living": "kitchen_living_dining",
+    "kitchen & living & dining": "kitchen_living_dining",
+    "kitchen-living-dining": "kitchen_living_dining",
     "kitchen & dining": "kitchen_dining",
     "kitchen-and-dining": "kitchen_dining",
     "kitchen & living": "kitchen_living",
@@ -207,7 +230,7 @@ export function uploadRouter() {
       return res.json({ url: signed.url, key: signed.key });
     } catch (error: any) {
       console.error("[upload-url] failed to create signed URL", error);
-      return res.status(503).json({ error: "upload_url_failed", message: error?.message || "Failed to create upload URL" });
+      return res.status(503).json({ error: "upload_url_failed", message: toPublicMessage(error?.message || "Failed to create upload URL") });
     }
   });
 
@@ -294,6 +317,8 @@ export function uploadRouter() {
     const stagingStyleForm = normalizeStagingStyle((req.body as any)?.stagingStyle);
     const stagingPreferenceForm = String((req.body as any)?.stagingPreference || "").trim();
     const stage2OnlyForm = String((req.body as any)?.stage2Only ?? "").toLowerCase() === "true";
+    const enhanceExteriorSkyForm = String((req.body as any)?.enhanceExteriorSky ?? "").toLowerCase() === "true";
+    const enhanceExteriorDuskForm = String((req.body as any)?.enhanceExteriorDusk ?? "").toLowerCase() === "true";
     const stage2VariantForm = String((req.body as any)?.stage2Variant || "").trim();
     const furnishedStateForm = String((req.body as any)?.furnishedState || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
@@ -489,6 +514,17 @@ export function uploadRouter() {
     let requiresPayment = false;
     let deficit = 0;
 
+    // Furniture pre-check answers (run on the website before submit). They
+    // decide, per photo, whether staging needs a declutter first (2 credits)
+    // or not (1), and are passed to the job so it is routed as quoted.
+    const precheckRecords: Array<FurniturePrecheckRecord | null> = await Promise.all(
+      Array.from({ length: uploadCount }, (_unused, i) => {
+        const meta = metaByIndex[i] || {};
+        const opts: any = optionsList[i] ?? {};
+        return loadFurniturePrecheck(meta.furniturePrecheckId ?? opts.furniturePrecheckId, String(sessUser.id));
+      })
+    );
+
     try {
       const estimateImages = Array.from({ length: uploadCount }, (_unused, i) => {
         const meta = metaByIndex[i] || {};
@@ -496,27 +532,10 @@ export function uploadRouter() {
         const sceneType = String(meta.sceneType || opts.sceneType || "auto").toLowerCase();
         const declutter = meta.declutter !== undefined ? meta.declutter : (opts.declutter !== undefined ? opts.declutter : declutterForm);
         const virtualStage = meta.virtualStage !== undefined ? meta.virtualStage : (opts.virtualStage !== undefined ? opts.virtualStage : allowStagingForm);
-        const stage2Variant =
-          (meta.stage2Variant === "2A" || meta.stage2Variant === "2B")
-            ? meta.stage2Variant
-            : ((opts.stage2Variant === "2A" || opts.stage2Variant === "2B")
-              ? opts.stage2Variant
-              : (stage2VariantForm === "2A" || stage2VariantForm === "2B" ? stage2VariantForm : undefined));
-        const furnishedState =
-          (meta.furnishedState === "furnished" || meta.furnishedState === "empty")
-            ? meta.furnishedState
-            : ((opts.furnishedState === "furnished" || opts.furnishedState === "empty")
-              ? opts.furnishedState
-              : (furnishedStateForm === "furnished" || furnishedStateForm === "empty"
-                ? furnishedStateForm
-                : (stage2Variant === "2A" ? "furnished" : stage2Variant === "2B" ? "empty" : undefined)));
-
-        // Declutter+Stage projected billing: empty -> 1 credit (skip 1B), furnished/unknown -> 2 credits.
-        const stage1BProjected = !!declutter && (!virtualStage || furnishedState !== "empty");
-
+        // Staged image = 2 credits when BILLING_DECLUTTER_STAGE_EXTRA_CREDIT is on
+        // (with or without declutter); anything else 1. Exteriors are 1.
         return {
           sceneType: sceneType === "exterior" ? "exterior" : "interior",
-          userSelectedStage1B: stage1BProjected,
           userSelectedStage2: !!virtualStage,
         };
       });
@@ -623,6 +642,8 @@ export function uploadRouter() {
       if (meta.roomType) opts.roomType = normalizeRoomType(meta.roomType);
       if (meta.declutter !== undefined) opts.declutter = !!meta.declutter;
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
+      if (meta.enhanceExteriorSky !== undefined) opts.enhanceExteriorSky = !!meta.enhanceExteriorSky;
+      if (meta.enhanceExteriorDusk !== undefined) opts.enhanceExteriorDusk = !!meta.enhanceExteriorDusk;
       if (meta.manualSceneOverride !== undefined) opts.manualSceneOverride = !!meta.manualSceneOverride;
       // Pass scenePrediction to worker for SKY_SAFE forcing logic
       if (meta.scenePrediction) opts.scenePrediction = meta.scenePrediction;
@@ -663,6 +684,12 @@ export function uploadRouter() {
         opts.stage2Only = !!meta.stage2Only;
       } else if (stage2OnlyForm) {
         opts.stage2Only = true;
+      }
+      if (opts.enhanceExteriorSky === undefined && enhanceExteriorSkyForm) {
+        opts.enhanceExteriorSky = true;
+      }
+      if (opts.enhanceExteriorDusk === undefined && enhanceExteriorDuskForm) {
+        opts.enhanceExteriorDusk = true;
       }
             if (typeof opts.roomType === "string") {
               opts.roomType = normalizeRoomType(opts.roomType);
@@ -809,7 +836,27 @@ export function uploadRouter() {
 
       const jobId = "job_" + crypto.randomUUID();
       const finalVirtualStage = parseStrictBool(opts.virtualStage);
-      const requiredImages = 1;
+      // Staging an interior photo = 2 credits when BILLING_DECLUTTER_STAGE_EXTRA_CREDIT
+      // is on (with or without declutter); anything else 1. The worker refunds
+      // what isn't delivered (staging that falls back). The quote is passed to
+      // the job: it is the most that is charged. The furniture pre-check
+      // answer is still reused for routing so the photo is processed as shown.
+      const precheckRecord = precheckRecords[i] ?? null;
+      const stagedInterior =
+        String(opts.sceneType || "").toLowerCase() !== "exterior" &&
+        finalVirtualStage;
+      const requiredImages = stagedInterior && declutterStageExtraCreditEnabled() ? 2 : 1;
+      opts.quotedCredits = requiredImages;
+      if (precheckRecord && precheckRecord.status === "done" && typeof precheckRecord.localEmpty === "boolean") {
+        opts.furniturePrecheck = {
+          localEmpty: precheckRecord.localEmpty,
+          analysis: precheckRecord.analysis ?? null,
+        };
+      }
+      delete opts.furniturePrecheckId;
+      // Free-trial images are counted per image (trial use is not reconciled
+      // after the job, so it can't be refunded if staging falls back).
+      const trialRequiredImages = 1;
 
       const trialEligible = Boolean(
         agencyId &&
@@ -822,14 +869,14 @@ export function uploadRouter() {
 
       if (!requiresPayment && agencyId && trialEligible) {
         try {
-          const trialReserve = await reserveTrialCredits({ agencyId, jobId, requiredImages });
+          const trialReserve = await reserveTrialCredits({ agencyId, jobId, requiredImages: trialRequiredImages });
           if (trialReserve.allowed) {
             trialReservedJobs.push(jobId);
             usedTrial = true;
             if (trialSummary) {
               trialSummary = {
                 ...trialSummary,
-                remaining: Math.max(0, trialSummary.remaining - requiredImages),
+                remaining: Math.max(0, trialSummary.remaining - trialRequiredImages),
               };
             }
           } else if (trialReserve.reason === "TRIAL_DEPLETED" || trialReserve.reason === "TRIAL_EXPIRED") {
@@ -876,6 +923,36 @@ export function uploadRouter() {
         remoteOriginalKey = directUpload.key;
         remoteOriginalUrl = getS3PublicUrl(directUpload.key);
         recordOriginalPath = directUpload.key;
+
+        // H4 fix (RealEnhance audit): the client asserts it already PUT
+        // this file straight to S3 via a presigned URL — until now that
+        // assertion was trusted with no confirmation. A failed/aborted
+        // client-side upload would previously sail through into a queued
+        // job, consuming a reservation/credit and a job slot before
+        // failing later, opaquely, when the worker tried to download it.
+        // Mirrors the strict/non-strict duality already used for the
+        // server-side multipart upload path just below, so both upload
+        // paths fail the same way on a genuine S3 problem.
+        try {
+          const headResult = await s3ObjectExists(directUpload.key);
+          if (!headResult.exists) {
+            console.warn(`[upload] direct-upload key not found in S3 for item ${i}: ${directUpload.key}`);
+            await releaseReservations();
+            return res.status(400).json({
+              ok: false,
+              error: "upload_incomplete",
+              message: `The uploaded file for item ${i} was not found in storage — the upload may not have completed. Please retry.`,
+            });
+          }
+        } catch (headErr: any) {
+          const strict = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
+          const msg = headErr?.message || String(headErr);
+          console.warn('[upload] direct-upload existence check failed', msg, strict ? '(strict mode: aborting)' : '(non-strict: continuing without confirmation)');
+          if (strict) {
+            await releaseReservations();
+            return res.status(503).json({ ok: false, error: 's3_unavailable', message: msg });
+          }
+        }
       } else {
         const localFinalPath = path.join(userDir, f.filename || f.originalname);
         finalPath = localFinalPath;
@@ -945,6 +1022,8 @@ export function uploadRouter() {
         userId: sessUser.id,
         imageId,
         clientBatchId,
+        originalFilename: f?.originalname || (directUpload ? extractOriginalFilenameFromKey(directUpload.key) : undefined),
+        batchTotalJobs: uploadCount,
         remoteOriginalUrl,
         remoteOriginalKey,
         agencyId,
@@ -957,6 +1036,8 @@ export function uploadRouter() {
           roomType: opts.roomType,
           sceneType: opts.sceneType,
           replaceSky: opts.replaceSky,
+          enhanceExteriorSky: !!opts.enhanceExteriorSky,
+          enhanceExteriorDusk: !!opts.enhanceExteriorDusk,
           manualSceneOverride: opts.manualSceneOverride,
           scenePrediction: opts.scenePrediction,
           sampling: opts.sampling,
@@ -964,6 +1045,10 @@ export function uploadRouter() {
           stagingStyle: opts.stagingStyle,
           stage2Variant: opts.stage2Variant,
           furnishedState: opts.furnishedState,
+          // Credits quoted before submit (most that is charged) and the
+          // furniture pre-check answer the worker reuses for routing.
+          quotedCredits: opts.quotedCredits,
+          ...(opts.furniturePrecheck ? { furniturePrecheck: opts.furniturePrecheck } : {}),
         },
       };
 

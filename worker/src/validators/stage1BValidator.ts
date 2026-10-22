@@ -1,16 +1,6 @@
 import sharp from "sharp";
 import type { BaseArtifacts } from "./baseArtifacts";
 import { StructuralMask } from "./structuralMask";
-import { segmentImageClasses, SegmentationResult } from "./semanticSegmenter";
-import {
-  compareWalls,
-  compareWindows,
-  compareDoors,
-  compareFloorMaterial,
-  compareGrassConcrete,
-  compareDrivewayPresence,
-  compareVehicles,
-} from "./classComparisons";
 
 export type Stage1BValidationResult = {
   ok: boolean;
@@ -19,61 +9,44 @@ export type Stage1BValidationResult = {
   structuralIoU?: number;
   meta?: {
     compliance?: string[];
+    /**
+     * H3 (RealEnhance audit): always true — see this function's doc
+     * comment. Present so a caller or log reader can tell, from the result
+     * object itself, that no per-class structural comparison occurred.
+     */
+    unimplemented?: boolean;
     [key: string]: any;
   };
 };
 
-function computeIoU(a: Uint8Array, b: Uint8Array): number {
-  let inter = 0, uni = 0;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] | b[i]) uni++;
-    if (a[i] & b[i]) inter++;
-  }
-  return uni > 0 ? inter / uni : 1;
-}
-
-function maskEdges(edges: Uint8Array, mask: StructuralMask): Uint8Array {
-  const out = new Uint8Array(edges.length);
-  for (let i = 0; i < edges.length; i++) {
-    out[i] = edges[i] & mask.data[i];
-  }
-  return out;
-}
-
-async function cannyEdge(imagePath: string): Promise<Uint8Array> {
-  // Simple Sobel-based edge for now
-  const meta = await sharp(imagePath).greyscale().raw().toBuffer({ resolveWithObject: true });
-  const buf = new Uint8Array(meta.data.buffer, meta.data.byteOffset, meta.data.byteLength);
-  const { width, height } = meta.info;
-  const edge = new Uint8Array(buf.length);
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const i = y * width + x;
-      const gx = (
-        buf[i - width - 1] + 2 * buf[i - 1] + buf[i + width - 1] -
-        buf[i - width + 1] - 2 * buf[i + 1] - buf[i + width + 1]
-      );
-      const gy = (
-        buf[i - width - 1] + 2 * buf[i - width] + buf[i - width + 1] -
-        buf[i + width - 1] - 2 * buf[i + width] - buf[i + width + 1]
-      );
-      const g = Math.sqrt(gx * gx + gy * gy);
-      if (g > 38) edge[i] = 1;
-    }
-  }
-  return edge;
-}
-
+/**
+ * H3 (RealEnhance audit): this function's per-class structural comparison
+ * (walls/windows/doors/floor) was never actually implemented. It depended
+ * entirely on semanticSegmenter.ts's segmentImageClasses (a stub that
+ * always returns zero masks) and classComparisons.ts (every comparator
+ * hardcoded `return {pass:true}`), so it could never register a finding
+ * regardless of real image content — both are quarantined under
+ * validators/_unimplemented/ now (see that folder's README). On top of
+ * that, every return path in this function — including the one genuine,
+ * non-stub check below (dimension comparison) — returned `ok:true`
+ * unconditionally, so this validator could never hard-fail even in
+ * principle. This function is called live from pipeline/stage1B.ts, so its
+ * silent no-op gave the impression that Stage 1B structural validation was
+ * running, when nothing was actually being checked.
+ *
+ * This is a status-explicit pass, not a behavior change: the dead
+ * per-class call chain has been removed (rather than left calling stubs
+ * that could only ever pass) and the one real check (dimension change) is
+ * preserved exactly as before, still advisory-only (logged into
+ * meta.compliance, does not affect `ok`). Do not read `ok:true` from this
+ * function as evidence that structural integrity was verified.
+ */
 export async function validateStage1BStructural(
   canonicalBasePath: string,
   stage1BPath: string,
   masks: { structuralMask: StructuralMask },
   baseArtifacts?: BaseArtifacts
 ): Promise<Stage1BValidationResult> {
-  // Segment both images
-  const baseSeg = await segmentImageClasses(canonicalBasePath);
-  const candSeg = await segmentImageClasses(stage1BPath);
-  // Hard fail if dimensions change
   const baseMeta = baseArtifacts?.path === canonicalBasePath
     ? { width: baseArtifacts.width, height: baseArtifacts.height }
     : await sharp(canonicalBasePath).metadata();
@@ -82,20 +55,9 @@ export async function validateStage1BStructural(
   if (baseMeta.width !== outMeta.width || baseMeta.height !== outMeta.height) {
     compliance.push("dimension_change");
   }
-  // Run per-class checks
-  const wallRes = compareWalls(baseSeg, candSeg);
-  if (!wallRes.pass) compliance.push(wallRes.code || "wall_layout_changed");
-  const winRes = compareWindows(baseSeg, candSeg);
-  if (!winRes.pass) compliance.push(winRes.code || "windows_changed");
-  const doorRes = compareDoors(baseSeg, candSeg);
-  if (!doorRes.pass) compliance.push(doorRes.code || "doors_changed");
-  const floorRes = compareFloorMaterial(baseSeg, candSeg);
-  if (!floorRes.pass) compliance.push(floorRes.code || "floor_material_changed");
-  // Log debug metrics (IoU, brightness, etc.)
-  // ...existing code...
   if (compliance.length > 0) {
     console.warn('[validateStage1BStructural] Compliance issues:', compliance);
-    return { ok: true, meta: { compliance } };
+    return { ok: true, meta: { compliance, unimplemented: true } };
   }
-  return { ok: true };
+  return { ok: true, meta: { unimplemented: true } };
 }

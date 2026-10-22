@@ -43,7 +43,7 @@ export const IMAGE_BUNDLES: Record<BundleCode, ImageBundle> = {
     images: 20,
     priceNZD: 49,
     name: "Small Pack",
-    description: "20 enhanced images - top up your balance quickly",
+    description: "20 credits - top up your balance quickly (1 per enhanced image, 2 per staged room)",
     stripePriceIdByCurrency: {
       nzd: STRIPE_ADDON_PRICES.small.nzd,
       aud: STRIPE_ADDON_PRICES.small.aud,
@@ -54,7 +54,7 @@ export const IMAGE_BUNDLES: Record<BundleCode, ImageBundle> = {
     images: 50,
     priceNZD: 99,
     name: "Standard Pack",
-    description: "50 enhanced images - ideal for steady monthly volume",
+    description: "50 credits - ideal for steady monthly volume (1 per enhanced image, 2 per staged room)",
     stripePriceIdByCurrency: {
       nzd: STRIPE_ADDON_PRICES.standard.nzd,
       aud: STRIPE_ADDON_PRICES.standard.aud,
@@ -65,7 +65,7 @@ export const IMAGE_BUNDLES: Record<BundleCode, ImageBundle> = {
     images: 100,
     priceNZD: 179,
     name: "Large Pack",
-    description: "100 enhanced images - best value for high-volume needs",
+    description: "100 credits - best value for high-volume needs (1 per enhanced image, 2 per staged room)",
     stripePriceIdByCurrency: {
       nzd: STRIPE_ADDON_PRICES.large.nzd,
       aud: STRIPE_ADDON_PRICES.large.aud,

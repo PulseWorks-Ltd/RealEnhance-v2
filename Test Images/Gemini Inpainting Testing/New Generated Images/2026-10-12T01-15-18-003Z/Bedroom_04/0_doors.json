@@ -1,0 +1,13 @@
+[
+  {
+    "id": "door_1",
+    "type": "door",
+    "description": "entry door",
+    "bbox": [
+      0,
+      0.159,
+      0.029,
+      0.936
+    ]
+  }
+]

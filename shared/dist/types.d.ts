@@ -115,6 +115,8 @@ export interface EnhanceJobPayload {
     propertyId?: string | null;
     listingId?: string;
     manualSceneOverride?: boolean;
+    originalFilename?: string;
+    batchTotalJobs?: number;
     options: {
         declutter: boolean;
         virtualStage: boolean;

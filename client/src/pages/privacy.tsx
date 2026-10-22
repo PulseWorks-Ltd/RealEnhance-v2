@@ -1,10 +1,17 @@
+import { usePageMeta } from "@/hooks/usePageMeta";
+
+const PAGE_TITLE = "Privacy Policy – RealEnhance";
+const PAGE_DESCRIPTION =
+  "How RealEnhance collects, uses and protects your information and the listing photos you upload.";
+
 export default function PrivacyPage() {
+  usePageMeta(PAGE_TITLE, PAGE_DESCRIPTION, "/privacy");
   return (
     <div className="bg-slate-50">
       <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8 lg:py-12">
         <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-10">
           <header className="mb-8 space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Privacy Policy (Draft)</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Privacy Policy</h1>
             <p className="text-sm text-slate-600">Effective Date: 9 March 2026</p>
             <p className="text-slate-700">
               RealEnhance respects your privacy and is committed to protecting your personal information.
@@ -45,10 +52,15 @@ export default function PrivacyPage() {
             <section className="space-y-3">
               <h2 className="text-xl font-semibold text-slate-900">Third-Party Services</h2>
               <p>
-                RealEnhance may use third-party infrastructure providers, payment processors, and AI services to
-                operate the platform.
+                To provide the Service, RealEnhance uses trusted third-party providers for hosting, image processing,
+                data storage and payments. Some of these providers are located outside New Zealand.
               </p>
-              <p>These providers may process data only as necessary to provide their services.</p>
+              <p>
+                When we share information with them, we take reasonable steps to make sure it is protected to a
+                standard comparable to the New Zealand Privacy Act 2020. These providers may process data only as
+                necessary to provide their services.
+              </p>
+              <p>We do not sell your images or personal information.</p>
             </section>
 
             <section className="space-y-3">

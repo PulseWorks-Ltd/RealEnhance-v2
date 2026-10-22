@@ -1,3 +1,4 @@
+import { requiredCreditsForJobOptions } from "@realenhance/shared/billing/rules.js";
 import { getUserById } from "./users.js";
 import { commitReservation, getUsageSnapshot, releaseReservation, reserveAllowance } from "./usageLedger.js";
 import { enqueueStoredEnhanceJob, listAwaitingPaymentEnhanceJobs } from "./jobs.js";
@@ -54,18 +55,20 @@ export async function releaseAwaitingPaymentJobs(userId: string): Promise<{
   const releasedJobIds: string[] = [];
 
   for (const pending of awaiting) {
-    const available = await getAvailableCredits(userId);
-    if (available < 1) break;
-
     const payload: any = pending.payload || {};
     const requestedStage2 = !!payload?.options?.virtualStage;
+    // The job's own quote (a staged interior is 2 credits when
+    // BILLING_DECLUTTER_STAGE_EXTRA_CREDIT is on).
+    const requiredImages = requiredCreditsForJobOptions(payload?.options || {});
+    const available = await getAvailableCredits(userId);
+    if (available < requiredImages) break;
 
     try {
       await reserveAllowance({
         jobId: pending.jobId,
         agencyId,
         userId,
-        requiredImages: 1,
+        requiredImages,
         requestedStage12: true,
         requestedStage2,
       });

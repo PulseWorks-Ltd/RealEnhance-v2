@@ -1,0 +1,150 @@
+{
+  "roomSummary": "A spacious open-plan living and dining space with dark carpeting, an adjoining hard-floored area at the rear right, a fireplace in the left foreground, and sliding doors opening onto an elevated deck.",
+  "camera": "The camera stands in the living area foreground looking toward the sliding doors on the left, the rear wall with its central window, and the dining space on the right.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "sliding_door",
+      "description": "Black-framed sliding glass doors leading to an outdoor timber deck on the far left",
+      "box": [
+        0.29,
+        0.44,
+        0.59,
+        0.42
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "curtain",
+      "description": "Full-length salmon curtains gathered beside the sliding door",
+      "box": [
+        0.28,
+        0,
+        0.6,
+        0.1
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "fireplace",
+      "description": "Dark freestanding fireplace unit with stone tile hearth base in the left foreground",
+      "box": [
+        0.55,
+        0,
+        0.88,
+        0.19
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "light_fitting",
+      "description": "White ceiling fan with central light mounted in the middle of the ceiling",
+      "box": [
+        0.15,
+        0.32,
+        0.3,
+        0.65
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "window",
+      "description": "Window with exterior views on the back wall",
+      "box": [
+        0.31,
+        0.6,
+        0.48,
+        0.77
+      ]
+    },
+    {
+      "id": "L6",
+      "type": "curtain",
+      "description": "Salmon curtains and sheer lace drapes flanking the back window",
+      "box": [
+        0.31,
+        0.55,
+        0.54,
+        0.81
+      ]
+    },
+    {
+      "id": "L7",
+      "type": "other_fixture",
+      "description": "Distinct lighter-colored hard flooring section in the rear right corner",
+      "box": [
+        0.53,
+        0.53,
+        0.69,
+        1
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Rear wall",
+      "description": "Off-white rear wall containing the sliding door frame, middle wall with small sconce, and rear window",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    },
+    {
+      "name": "Right wall",
+      "description": "Plain white interior wall bounding the dining and living spaces on the right side",
+      "usableForLargeFurniture": true,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "Living Zone",
+      "description": "The carpeted central and foreground space between the fireplace hearth and the right side of the room"
+    },
+    {
+      "name": "Dining Zone",
+      "description": "The hard-floored area located at the rear right of the room beneath the rear window"
+    }
+  ],
+  "kitchenVisible": false,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "layout": [
+    {
+      "item": "Dining table with four chairs",
+      "placement": "Centered on the lighter hard flooring section at the rear right, aligned comfortably away from the rear and right walls"
+    },
+    {
+      "item": "Large area rug",
+      "placement": "Centered on the dark carpet in the middle of the living space, directly under the ceiling fan"
+    },
+    {
+      "item": "Three-seater sofa",
+      "placement": "Placed on the central area rug facing toward the sliding doors and fireplace, leaving ample walking space behind it toward the dining area"
+    },
+    {
+      "item": "Coffee table",
+      "placement": "Set on the area rug directly in front of the three-seater sofa"
+    },
+    {
+      "item": "Armchair",
+      "placement": "Angled on the near side of the area rug, facing toward the center of the living conversation area"
+    }
+  ],
+  "relationships": [
+    "The dining table stays entirely within the hard flooring section in the rear right.",
+    "The living room seating forms a cohesive conversation area on the carpeted floor, oriented to enjoy both the fireplace and the deck views.",
+    "A clear walking pathway remains open between the living zone and the sliding glass doors."
+  ],
+  "avoid": [
+    "Do not block the sliding glass doors or impede access to the outdoor deck.",
+    "Do not place any furniture on or touching the stone fireplace hearth.",
+    "Do not spill dining furniture out of the hard flooring section into the main living circulation path."
+  ],
+  "keepUntouched": [
+    "Black-framed sliding glass doors and outdoor deck railing",
+    "Freestanding fireplace unit and stone tile hearth",
+    "Ceiling fan and light fixture",
+    "Rear window and its hanging salmon and lace curtains"
+  ]
+}

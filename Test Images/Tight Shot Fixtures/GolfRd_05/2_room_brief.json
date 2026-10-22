@@ -1,0 +1,146 @@
+{
+  "roomSummary": "A bright bedroom with polished timber floors, a solid plain wall on the left, and a large window with draped curtains across the back wall.",
+  "camera": "The camera stands near the doorway, looking toward the large back window and the solid left wall.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "window",
+      "description": "Large multi-pane window centered on the back wall overlooking garden greenery",
+      "box": [
+        0.31,
+        0.05,
+        7.89,
+        0.62
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "curtain",
+      "description": "Floor-length grey curtain hanging to the left of the back window",
+      "box": [
+        0.25,
+        0.03,
+        0.35,
+        0.88
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "curtain",
+      "description": "Floor-length grey curtain hanging to the right of the back window",
+      "box": [
+        0.76,
+        0,
+        0.88,
+        1
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "curtain",
+      "description": "Curtain rod mounted above the back window",
+      "box": [
+        0.25,
+        0,
+        0.79,
+        0.06
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "door",
+      "description": "Interior door leaf and handle partially visible at the far right edge",
+      "box": [
+        0.95,
+        0,
+        1,
+        1
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Left wall",
+      "description": "Smooth plain solid wall without any doors, windows, or fixtures",
+      "usableForLargeFurniture": true,
+      "partlyVisible": true
+    },
+    {
+      "name": "Back wall",
+      "description": "Wall dominated by the large window, curtain rod, and draped curtains",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    },
+    {
+      "name": "Right wall",
+      "description": "Wall containing the entry door, mostly out of frame on the right",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "Sleeping zone",
+      "description": "Along the plain left wall and center floor area"
+    },
+    {
+      "name": "Entryway walkway",
+      "description": "Clear floor area on the right side leading from the door into the room"
+    }
+  ],
+  "kitchenVisible": false,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "diningSpace": {
+    "fits": "none",
+    "reason": "This is a bedroom with no dining area."
+  },
+  "bedSpace": {
+    "bed": "queen",
+    "bedsideTables": 1,
+    "wallMetres": 2.5,
+    "depthMetres": 2.8,
+    "wallRunsOffPhoto": true,
+    "measuredWith": "the visible back window width (~1.8 m) and door height (~2.0 m) on the right",
+    "reason": "The solid left wall is completely plain with no doors or windows. A queen bed with a single bedside table on the far corner side fits cleanly on the visible stretch while keeping the entry path from the door completely open."
+  },
+  "layout": [
+    {
+      "item": "Queen bed",
+      "placement": "with its headboard placed against the plain left wall, extending out into the middle of the room, leaving a clear gap before the back corner — pushed to the end of the wall furthest from the door (against the corner or out to the edge of the photo, which may cut part of it off), leaving at least one door-width of clear wall before the door frame; it must not be centred on the wall"
+    },
+    {
+      "item": "Bedside table",
+      "placement": "against the plain left wall in the corner between the queen bed and the left curtain of the back window"
+    },
+    {
+      "item": "Table lamp",
+      "placement": "on the bedside table"
+    },
+    {
+      "item": "Framed artwork",
+      "placement": "centered on the plain left wall directly above the bed headboard"
+    },
+    {
+      "item": "Area rug",
+      "placement": "placed under the queen bed on the timber floor, extending out toward the center and foot of the bed"
+    }
+  ],
+  "relationships": [
+    "The queen bed sits against the solid left wall, leaving the entire walking route from the right entry door clear to the window.",
+    "The single bedside table is positioned on the window side of the bed, keeping the near side open to circulation."
+  ],
+  "avoid": [
+    "Do not place the bed directly under or against the back window.",
+    "Do not block the entry door or its swing on the right.",
+    "Do not place furniture that overlaps the hanging grey curtains on the left or right."
+  ],
+  "keepUntouched": [
+    "The large window, white sill, and frame on the back wall",
+    "The curtain rod and grey curtain drapes framing the window",
+    "The visible door frame and door handle on the right edge",
+    "The timber flooring and white baseboards"
+  ]
+}

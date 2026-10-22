@@ -65,7 +65,7 @@ interface SubscriptionInfo {
 }
 
 interface PromoRedeemSuccess {
-  promoType: "trial" | "credit_bundle";
+  promoType: "trial" | "credit_bundle" | "lifetime_bonus";
   code: string;
   expiresAt: string | null;
   creditsTotal: number;
@@ -83,32 +83,32 @@ const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
     value: "starter",
     displayName: "Starter",
     monthlyPriceNZD: 149,
-    monthlyAllowance: 75,
-    listingsRange: "Covers ~5-8 listings per month",
+    monthlyAllowance: 80,
+    listingsRange: "Covers ~10 listings per month",
     subtext: "Ideal for occasional use",
-    helperText: "Based on ~10-15 images per listing",
-    imageAllowanceText: "Includes ~75 images per month",
+    helperText: "Based on 1 exterior + 3–4 staged rooms per listing",
+    imageAllowanceText: "Includes 80 credits per month (1 per enhanced image, 2 per staged room)",
   },
   {
     value: "pro",
     displayName: "Pro",
     monthlyPriceNZD: 249,
-    monthlyAllowance: 150,
-    listingsRange: "Covers ~8-15 listings per month",
+    monthlyAllowance: 160,
+    listingsRange: "Covers ~20 listings per month",
     subtext: "Best for agencies running multiple listings each week",
-    helperText: "Based on ~10-15 images per listing",
-    imageAllowanceText: "Includes ~150 images per month",
+    helperText: "Based on 1 exterior + 3–4 staged rooms per listing",
+    imageAllowanceText: "Includes 160 credits per month (1 per enhanced image, 2 per staged room)",
     badge: "⭐ Most Popular",
   },
   {
     value: "agency",
     displayName: "Agency",
     monthlyPriceNZD: 449,
-    monthlyAllowance: 300,
-    listingsRange: "Covers ~15-30 listings per month",
+    monthlyAllowance: 320,
+    listingsRange: "Covers ~40 listings per month",
     subtext: "Designed for teams using this across most or all listings",
-    helperText: "Based on ~10-15 images per listing",
-    imageAllowanceText: "Includes ~300 images per month",
+    helperText: "Based on 1 exterior + 3–4 staged rooms per listing",
+    imageAllowanceText: "Includes 320 credits per month (1 per enhanced image, 2 per staged room)",
   },
 ];
 
@@ -280,22 +280,30 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           AGENCY_ALREADY_USED_TRIAL: "This agency has already used a trial before.",
           AGENCY_PREVIOUSLY_SUBSCRIBED: "This agency has already had a paid subscription and is not eligible.",
           AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF: "This agency has already purchased a one-off bundle and is not eligible.",
+          AGENCY_ALREADY_USED_NEW_USER_PROMO: "This agency has already used a new-user promo code.",
+          PROMO_MAXED_FOR_AGENCY: "This agency has already used that promo code.",
+          PROMO_ALREADY_REDEEMED_THIS_MONTH: "That promo code has already been used this month.",
+          LIFETIME_BONUS_ALREADY_REDEEMED: "That code has already been used.",
+          LIFETIME_BONUS_REQUIRES_SUBSCRIPTION: "This code needs an active subscription. Please subscribe first, then enter it again.",
         };
         throw new Error(messageMap[errorCode] || errorCode);
       }
 
       setPromoCode("");
       setPromoRedeemSuccess({
-        promoType: data?.promoType === "credit_bundle" ? "credit_bundle" : "trial",
+        promoType:
+          data?.promoType === "credit_bundle" || data?.promoType === "lifetime_bonus" ? data.promoType : "trial",
         code: data?.code || code,
         expiresAt: data?.trial?.expiresAt || data?.grant?.expiresAt || null,
-        creditsTotal: Number(data?.trial?.creditsTotal || data?.grant?.creditsTotal || 0),
+        creditsTotal: Number(data?.trial?.creditsTotal || data?.grant?.creditsTotal || data?.bonus?.monthlyCredits || 0),
         remaining: Number(data?.trial?.remaining || data?.grant?.remaining || 0),
       });
       toast({
         title: "Promo redeemed",
         description:
-          data?.promoType === "credit_bundle"
+          data?.promoType === "lifetime_bonus"
+            ? `Thank you! ${Number(data?.bonus?.monthlyCredits || 0)} bonus credits are now added to your plan every month.`
+            : data?.promoType === "credit_bundle"
             ? "Your promotional credits have been applied."
             : "Your free Starter trial has been applied.",
       });
@@ -538,7 +546,9 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           {promoRedeemSuccess && (
             <Alert>
               <AlertDescription>
-                {promoRedeemSuccess.promoType === "credit_bundle"
+                {promoRedeemSuccess.promoType === "lifetime_bonus"
+                  ? `Code ${promoRedeemSuccess.code} applied. ${promoRedeemSuccess.creditsTotal} bonus credits are added to your monthly allowance for as long as your subscription is active.`
+                  : promoRedeemSuccess.promoType === "credit_bundle"
                   ? `Promo code ${promoRedeemSuccess.code} applied. ${promoRedeemSuccess.remaining ?? promoRedeemSuccess.creditsTotal} credits are now available and expire on ${promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.`
                   : `Promo code ${promoRedeemSuccess.code} applied. Your Starter trial is active for ${promoRedeemSuccess.creditsTotal} images and expires on ${promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.`}
               </AlertDescription>
@@ -710,7 +720,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           <div className="text-xs text-muted-foreground pt-4 border-t">
             <p>✓ Unlimited users per agency</p>
             <p>✓ Monthly image allowances reset on your billing date</p>
-            <p>✓ Purchase additional image bundles anytime</p>
+            <p>✓ Purchase additional credit packs anytime</p>
           </div>
         </CardContent>
 
@@ -729,12 +739,12 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium">{formatPlanDisplayName(option.planTier, option.displayName)}</p>
-                      <p className="text-xs text-muted-foreground">{option.monthlyAllowance} images / month</p>
+                      <p className="text-xs text-muted-foreground">{option.monthlyAllowance} credits / month</p>
                     </div>
                     <p className="text-sm font-semibold">{option.priceFormatted || `${option.price / 100}`}</p>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    ${(option.price / 100 / option.monthlyAllowance).toFixed(2)} per image
+                    ${(option.price / 100 / option.monthlyAllowance).toFixed(2)} per credit
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {option.seatLimit ? `${option.seatLimit} seats included` : "Unlimited seats"}
@@ -783,7 +793,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
               size="lg"
               title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
             >
-              {heroPackLoading ? "Loading..." : "Hero Pack - 7 images - $19"}
+              {heroPackLoading ? "Loading..." : "Hero Pack - 7 credits - $19"}
             </Button>
             <Button
               onClick={handleBuyListingPack}
@@ -793,16 +803,16 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
               variant="outline"
               title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
             >
-              {listingPackLoading ? "Loading..." : "Listing Pack - 20 images - $49"}
+              {listingPackLoading ? "Loading..." : "Listing Pack - 20 credits - $49"}
             </Button>
           </div>
           {listingPackCredits > 0 && (
             <p className="text-sm text-muted-foreground text-center">
-              You have <span className="font-medium text-foreground">{listingPackCredits}</span> images remaining from your listing pack
+              You have <span className="font-medium text-foreground">{listingPackCredits}</span> credits remaining from your one-off packs
             </p>
           )}
           <p className="text-xs text-muted-foreground text-center">
-            Hero Pack: 7 images for $19. Listing Pack: 20 images for $49. No subscription required.
+            Hero Pack: 7 credits for $19. Listing Pack: 20 credits for $49. No subscription required. 1 credit per enhanced or decluttered image, 2 per staged room.
           </p>
         </CardContent>
       </Card>

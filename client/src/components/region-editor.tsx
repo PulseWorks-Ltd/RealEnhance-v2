@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Brush, ZoomIn, ZoomOut, Move, RotateCcw, Sparkles, Loader2, Download } from "lucide-react";
+import { toPublicText } from "@/lib/publicText";
 
 function stripTransientQueryParams(urlValue?: string | null): string {
   if (!urlValue) return "";
@@ -737,7 +738,7 @@ export function RegionEditor({
           console.error("[region-editor]   - Status:", response.status);
           console.error("[region-editor]   - Response body:", errorData);
           // Extract user-friendly message if available
-          errorMessage = errorData.message || errorData.error || response.statusText;
+          errorMessage = toPublicText(errorData.message || errorData.error || response.statusText);
         } catch {
           console.error(
             "[region-editor] ❌ HTTP ERROR - Could not read response body",
@@ -890,7 +891,7 @@ export function RegionEditor({
               console.error("[region-editor] ❌ Job failed:", item.error);
               toast({
                 title: "Enhancement failed",
-                description: item.error || "Edit failed",
+                description: toPublicText(item.error || "Edit failed"),
                 variant: "destructive",
               });
               onError?.(item.error || "Edit failed");

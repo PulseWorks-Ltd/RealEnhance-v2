@@ -13,6 +13,10 @@ node_modules/
 .venv/
 venv/
 
+# Test images (~1 GB) — used only by local test scripts, never by the
+# deployed services, so keep them out of every build.
+Test Images/
+
 # Transient local artifacts
 dist/
 **/dist/

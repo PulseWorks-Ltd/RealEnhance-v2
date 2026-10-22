@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/Modal";
-import { apiJson } from "@/lib/api";
+import { apiFetch, apiJson } from "@/lib/api";
 
 type PlanTier = "starter" | "pro" | "agency";
 
@@ -266,6 +266,49 @@ export default function ProfileSettings() {
   const [subLoading, setSubLoading] = useState(false);
   const [subError, setSubError] = useState<string | null>(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [stagedLabelEnabled, setStagedLabelEnabled] = useState<boolean | null>(null);
+  const [savingStagedLabel, setSavingStagedLabel] = useState(false);
+  const isAgencyAdmin = user?.role === "owner" || user?.role === "admin";
+
+  useEffect(() => {
+    if (!user?.agencyId) return;
+    let cancelled = false;
+    apiJson<any>("/api/agency/info")
+      .then((data) => {
+        if (!cancelled) setStagedLabelEnabled(data?.agency?.stagedLabelEnabled === true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.agencyId]);
+
+  const handleToggleStagedLabel = async (enabled: boolean) => {
+    const previous = stagedLabelEnabled;
+    setStagedLabelEnabled(enabled);
+    setSavingStagedLabel(true);
+    try {
+      const res = await apiFetch("/api/agency/settings/staged-label", {
+        method: "PATCH",
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update setting");
+      }
+      toast({
+        title: "Saved",
+        description: enabled
+          ? "Downloaded staged images will now include a \"Virtually Staged\" label."
+          : "Downloaded staged images will no longer include a label.",
+      });
+    } catch (err: any) {
+      setStagedLabelEnabled(previous);
+      toast({ title: "Error", description: err?.message || "Failed to update setting", variant: "destructive" });
+    } finally {
+      setSavingStagedLabel(false);
+    }
+  };
 
   useEffect(() => {
     if (!loading && !user) {
@@ -365,6 +408,41 @@ export default function ProfileSettings() {
         </CardContent>
       </Card>
 
+      {user?.agencyId && stagedLabelEnabled !== null && (
+        <div className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Listing images</CardTitle>
+              <CardDescription>Settings for the images your agency downloads.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold">"Virtually Staged" label</p>
+                  <p className="text-xs text-muted-foreground">
+                    Adds a small "Virtually Staged" label to the bottom-left corner of staged images when they are
+                    downloaded. Enhanced and decluttered images are never labelled.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm shrink-0">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={stagedLabelEnabled}
+                    onChange={(e) => handleToggleStagedLabel(e.target.checked)}
+                    disabled={!isAgencyAdmin || savingStagedLabel}
+                  />
+                  {stagedLabelEnabled ? "ON" : "OFF"}
+                </label>
+              </div>
+              {!isAgencyAdmin && (
+                <p className="text-xs text-muted-foreground">Only agency owners/admins can change this setting.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <div className="mt-6">
         <Card>
           <CardHeader>
@@ -383,8 +461,8 @@ export default function ProfileSettings() {
                   <div>
                     <p className="text-sm text-muted-foreground">Current plan</p>
                     <p className="text-xl font-semibold">{subscription.planDisplayName}</p>
-                    <p className="text-xs text-muted-foreground">{getPlanLabel(subscription.planTier)} · {subscription.allowance.monthlyIncluded} images / month</p>
-                    <p className="text-xs text-muted-foreground">Add-on balance: {subscription.addOns.balance} images</p>
+                    <p className="text-xs text-muted-foreground">{getPlanLabel(subscription.planTier)} · {subscription.allowance.monthlyIncluded} credits / month</p>
+                    <p className="text-xs text-muted-foreground">Add-on balance: {subscription.addOns.balance} credits</p>
                   </div>
                   {statusConfig && (
                     <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>

@@ -1,0 +1,399 @@
+{
+ "1": {
+  "staged": "Bedroom 02 - Staged 2.jpg",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "2": {
+  "staged": "Bedroom 11 - Staged 1.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "3": {
+  "staged": "Bedroom 11 - Staged 2.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "4": {
+  "staged": "Bedroom 11-staged-FIXED-controlled.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "5": {
+  "staged": "Bedroom 11-staged-incidenttest.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "6": {
+  "staged": "Bedroom 11-staged-UNFIXED-controlled.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "7": {
+  "staged": "Bedroom 12-2.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "8": {
+  "staged": "Bedroom 12-anchor-only-staged-v2-repeat.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "9": {
+  "staged": "Bedroom 12-anchor-only-staged-v3.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "10": {
+  "staged": "Bedroom 12-anchor-only-staged.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "possibly unsalvageable"
+ },
+ "11": {
+  "staged": "Bedroom 12-aspectfix-AFTER-contain.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "12": {
+  "staged": "Bedroom 12-aspectfix-BEFORE-stretch.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "13": {
+  "staged": "Bedroom 12-benchmark-hsv_hue_weighted-composite.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "14": {
+  "staged": "Bedroom 12-layoutguided-staged-v2.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "15": {
+  "staged": "Bedroom 12-staged-sharedpath.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable",
+  "note": "shape fine; furniture blocks doorways, so re-staged anyway"
+ },
+ "16": {
+  "staged": "Bedroom 12-tierrebuild-staged.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "17": {
+  "staged": "Bedroom 14 - Staged 1.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable",
+  "note": "shape fine; furniture blocks doorways, so re-staged anyway"
+ },
+ "18": {
+  "staged": "Bedroom 14-2.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "19": {
+  "staged": "Bedroom 14-staged-wallfixed.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "20": {
+  "staged": "Bedroom 14-tierrebuild-staged.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "21": {
+  "staged": "Bedroom 2 - Staged 1.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "22": {
+  "staged": "Bedroom 02 (Enhanced).webp",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "23": {
+  "staged": "Bedroom 06 (Enhanced).webp",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "24": {
+  "staged": "Bedroom 07 (Enhanced).webp",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "unsalvageable"
+ },
+ "25": {
+  "staged": "Bedroom 11 (Enhanced).webp",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "26": {
+  "staged": "Bedroom 12 (Enhanced).webp",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "27": {
+  "staged": "Bedroom 14 (Enhanced).webp",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "28": {
+  "staged": "enhanced_Bedroom 11-01.jpg",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "29": {
+  "staged": "enhanced_Bedroom 14-02.jpg",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "30": {
+  "staged": "enhanced_Bedroom 14-03.jpg",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "31": {
+  "staged": "Bedroom 02 (Enhanced).webp",
+  "group": "Bedroom (Staged)",
+  "owner_label": "unsalvageable"
+ },
+ "32": {
+  "staged": "Bedroom 03 (Enhanced).webp",
+  "group": "Bedroom (Staged)",
+  "owner_label": "salvageable"
+ },
+ "33": {
+  "staged": "Bedroom 06 (Enhanced).webp",
+  "group": "Bedroom (Staged)",
+  "owner_label": "unsalvageable"
+ },
+ "34": {
+  "staged": "Bedroom 07 (Enhanced).webp",
+  "group": "Bedroom (Staged)",
+  "owner_label": "unsalvageable"
+ },
+ "35": {
+  "staged": "Bedroom 09 (Enhanced).webp",
+  "group": "Bedroom (Staged)",
+  "owner_label": "salvageable"
+ },
+ "36": {
+  "staged": "Bedroom 11 (Enhanced).webp",
+  "group": "Bedroom (Staged)",
+  "owner_label": "salvageable"
+ },
+ "37": {
+  "staged": "Bedroom 12 (Enhanced).webp",
+  "group": "Bedroom (Staged)",
+  "owner_label": "salvageable"
+ },
+ "38": {
+  "staged": "Bedroom 14 (Enhanced).webp",
+  "group": "Bedroom (Staged)",
+  "owner_label": "salvageable"
+ },
+ "39": {
+  "staged": "Karaka - Image 02 Decluttered-normalized.webp",
+  "group": "Kitchen",
+  "owner_label": "unsalvageable"
+ },
+ "40": {
+  "staged": "Karaka - Image 02 Decluttered.jpg",
+  "group": "Kitchen",
+  "owner_label": "unsalvageable"
+ },
+ "41": {
+  "staged": "Karaka 02-anchor-only-staged.webp",
+  "group": "Kitchen",
+  "owner_label": "unsalvageable"
+ },
+ "42": {
+  "staged": "Living 07-staged-precisefloorcheck.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "43": {
+  "staged": "Living 07-staged-temp0.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "44": {
+  "staged": "Living 07-staged-temp015.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "45": {
+  "staged": "Living 07-staged-universalprotection.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "46": {
+  "staged": "Living 07-staged-v2.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "47": {
+  "staged": "Living 07-staged-v3.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "48": {
+  "staged": "Living 07-staged-v4.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "49": {
+  "staged": "Living 07-staged-v5-zonematerial.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "50": {
+  "staged": "Living 10-staged-v3.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "unsalvageable"
+ },
+ "51": {
+  "staged": "Rental 03-staged.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "52": {
+  "staged": "Rental 07-anchor-locked-livingonly-staged.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "53": {
+  "staged": "33 Kaipuke - Image 06 (Staged).jpg",
+  "group": "Living (Staged)",
+  "owner_label": "salvageable"
+ },
+ "54": {
+  "staged": "33 Kaipuke - Image 07 (Staged).jpg",
+  "group": "Living (Staged)",
+  "owner_label": "salvageable"
+ },
+ "55": {
+  "staged": "Bedroom 04 (Enhanced).webp",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "56": {
+  "staged": "Bedroom 05 (Enhanced).webp",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "57": {
+  "staged": "Bedroom 16 (Enhanced).webp",
+  "group": "Bedroom (Staged 2)",
+  "owner_label": "salvageable"
+ },
+ "58": {
+  "staged": "Diningroom 01-staged-v1.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "59": {
+  "staged": "Living 07-staged-sharedpath.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "60": {
+  "staged": "Living 10-staged-sharedpath.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "61": {
+  "staged": "Bedroom 12-anchor-only-staged-v2.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "62": {
+  "staged": "Bedroom 12-benchmark-lab_chroma_weighted-composite.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "63": {
+  "staged": "Bedroom 12-benchmark-lab_cie76-composite.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "64": {
+  "staged": "Bedroom 12-benchmark-rgb_euclidean-composite.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "65": {
+  "staged": "Bedroom 12-furniture-layer-composite-hard.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "66": {
+  "staged": "Bedroom 12-furniture-layer-composite-soft.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "67": {
+  "staged": "Bedroom 12-layoutguided-staged.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "68": {
+  "staged": "Bedroom 12-planner-guided-staged-strongframing.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "69": {
+  "staged": "Bedroom 12-planner-guided-staged.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "70": {
+  "staged": "Bedroom 12-staged-universalprotection.webp",
+  "group": "Bedroom (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "71": {
+  "staged": "Bedroom 16 (Enhanced).webp",
+  "group": "Bedroom (Staged)",
+  "owner_label": "salvageable"
+ },
+ "72": {
+  "staged": "Karaka 02-anchor-locked-kitchen-staged.webp",
+  "group": "Kitchen",
+  "owner_label": "salvageable"
+ },
+ "73": {
+  "staged": "Diningroom 01-staged-v2.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "74": {
+  "staged": "Living 07-staged.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "75": {
+  "staged": "Living 10-staged-sharedpath-retry2.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "76": {
+  "staged": "Living 10-staged-universalprotection.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "77": {
+  "staged": "Living 10-staged-v2.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "78": {
+  "staged": "Living 10-staged-v4.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ },
+ "79": {
+  "staged": "Living 10-staged.webp",
+  "group": "Living (Baseline)",
+  "owner_label": "salvageable"
+ }
+}

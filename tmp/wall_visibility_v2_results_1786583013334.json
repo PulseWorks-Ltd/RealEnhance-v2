@@ -1,0 +1,317 @@
+{
+  "run1": {
+    "runLabel": "run1",
+    "durationMs": 49584,
+    "overlayPath": "/workspaces/RealEnhance-v2/Test Images/Bedroom (Baseline)/Bedroom 12-wallvis-v2-run1-overlay.png",
+    "parsed": {
+      "wallCount": 3,
+      "wallCountReasoning": "Three distinct wall planes are visible, defined by two clear vertical corners. The first corner (center-left) separates the wall with the glass door from the wall with the walkthrough opening. The second corner is on the far right of the image, revealing a third, receding wall plane.",
+      "walls": [
+        {
+          "id": "wall_0",
+          "wallLabel": "Wall with walkthrough opening",
+          "extent": {
+            "polygon": [
+              [
+                0.612,
+                0.331
+              ],
+              [
+                0.998,
+                0.306
+              ],
+              [
+                0.998,
+                0.871
+              ],
+              [
+                0.612,
+                0.865
+              ]
+            ]
+          },
+          "openingIds": [
+            "A1"
+          ],
+          "usableWidthFraction": 0.71,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                0.05
+              ],
+              "widthFraction": 0.05,
+              "description": "Very narrow space to the left of the opening"
+            },
+            {
+              "range": [
+                0.336,
+                1
+              ],
+              "widthFraction": 0.664,
+              "description": "Usable wall space to the right of the opening"
+            }
+          ],
+          "confidence": 1
+        },
+        {
+          "id": "wall_1",
+          "wallLabel": "Far right wall",
+          "extent": {
+            "polygon": [
+              [
+                0.998,
+                0.306
+              ],
+              [
+                1,
+                0.302
+              ],
+              [
+                1,
+                0.873
+              ],
+              [
+                0.998,
+                0.871
+              ]
+            ]
+          },
+          "openingIds": [],
+          "usableWidthFraction": 1,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "widthFraction": 1,
+              "description": "Clear wall space"
+            }
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "wall_3",
+          "wallLabel": "Wall with glass door and AC unit",
+          "extent": {
+            "polygon": [
+              [
+                0,
+                0.222
+              ],
+              [
+                0.612,
+                0.331
+              ],
+              [
+                0.612,
+                0.865
+              ],
+              [
+                0,
+                0.852
+              ]
+            ]
+          },
+          "openingIds": [
+            "D1",
+            "AC1"
+          ],
+          "usableWidthFraction": 0.34,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                0.312
+              ],
+              "widthFraction": 0.312,
+              "description": "Space to the left of the glass door"
+            },
+            {
+              "range": [
+                0.79,
+                0.802
+              ],
+              "widthFraction": 0.012,
+              "description": "Very narrow space between door frame and AC unit"
+            },
+            {
+              "range": [
+                0.982,
+                1
+              ],
+              "widthFraction": 0.018,
+              "description": "Very narrow space to the right of the AC unit"
+            }
+          ],
+          "confidence": 1
+        }
+      ]
+    }
+  },
+  "run2": {
+    "runLabel": "run2",
+    "durationMs": 40835,
+    "overlayPath": "/workspaces/RealEnhance-v2/Test Images/Bedroom (Baseline)/Bedroom 12-wallvis-v2-run2-overlay.png",
+    "parsed": {
+      "wallCount": 4,
+      "wallCountReasoning": "Four distinct wall planes are identified, separated by three visible vertical corners where the surfaces meet at an angle. The first corner separates the wall with the sliding door from the wall with the walkthrough. The second corner separates the wall with the walkthrough from the adjacent blank wall. The third corner separates the blank wall from the final wall segment on the far right.",
+      "walls": [
+        {
+          "id": "wall_0",
+          "wallLabel": "Wall with walkthrough",
+          "extent": {
+            "polygon": [
+              [
+                0.615,
+                0.335
+              ],
+              [
+                0.748,
+                0.418
+              ],
+              [
+                0.725,
+                0.855
+              ],
+              [
+                0.59,
+                0.86
+              ]
+            ]
+          },
+          "openingIds": [
+            "A1"
+          ],
+          "usableWidthFraction": 0.304,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                0.304
+              ],
+              "widthFraction": 0.304,
+              "description": "Space between left corner and walkthrough"
+            }
+          ],
+          "confidence": 0.99
+        },
+        {
+          "id": "wall_1",
+          "wallLabel": "Blank wall",
+          "extent": {
+            "polygon": [
+              [
+                0.748,
+                0.418
+              ],
+              [
+                0.96,
+                0.42
+              ],
+              [
+                0.98,
+                0.83
+              ],
+              [
+                0.725,
+                0.855
+              ]
+            ]
+          },
+          "openingIds": [],
+          "usableWidthFraction": 1,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "widthFraction": 1,
+              "description": "Empty wall"
+            }
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "wall_2",
+          "wallLabel": "Wall segment by right edge",
+          "extent": {
+            "polygon": [
+              [
+                0.96,
+                0.42
+              ],
+              [
+                1,
+                0.42
+              ],
+              [
+                1,
+                0.825
+              ],
+              [
+                0.98,
+                0.83
+              ]
+            ]
+          },
+          "openingIds": [],
+          "usableWidthFraction": 1,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                1
+              ],
+              "widthFraction": 1,
+              "description": "Empty wall segment"
+            }
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "wall_3",
+          "wallLabel": "Wall with sliding door and AC unit",
+          "extent": {
+            "polygon": [
+              [
+                0,
+                0.25
+              ],
+              [
+                0.615,
+                0.335
+              ],
+              [
+                0.59,
+                0.86
+              ],
+              [
+                0,
+                0.875
+              ]
+            ]
+          },
+          "openingIds": [
+            "D1",
+            "AC1"
+          ],
+          "usableWidthFraction": 0.323,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                0.323
+              ],
+              "widthFraction": 0.323,
+              "description": "Space to the left of the sliding door"
+            }
+          ],
+          "confidence": 0.99
+        }
+      ]
+    }
+  }
+}

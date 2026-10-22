@@ -125,6 +125,8 @@ This includes:
 - rugs
 - small decor items (vases, lamps, accessories)
 
+EXCEPTION — WINDOW COVERINGS ARE NOT DECOR: Curtains, drapes, blinds, and any other window covering are NEVER included in "artwork and wall decor" or any other part of this restyling instruction, even if a curtain's fabric pattern, color, or placement makes it look like wall decor or artwork. Every curtain, drape, and blind visible in the original photo — including one that is closed or fully drawn, where no window frame or glass is visible behind it — MUST remain exactly as shown: same fabric, same color, same position, same rod/track. Do NOT remove, replace, repaint, restyle, or reinterpret any curtain as artwork, a wall hanging, or any other decor item, and do NOT add new curtains, blinds, or rods. This exception overrides the "artwork and wall decor" line above and every general restyling instruction elsewhere in this prompt — it is not optional and does not bend to style requirements.
+
 Do NOT leave original soft furnishings or decor unchanged if they do not match the target style.
 
 Do NOT partially update a scene.

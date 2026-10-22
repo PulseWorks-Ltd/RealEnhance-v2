@@ -118,10 +118,10 @@ export function BundlePurchase() {
       <CardHeader>
         <div className="flex items-center gap-2">
           <Package className="h-5 w-5" />
-          <CardTitle>Additional Images</CardTitle>
+          <CardTitle>Additional Credits</CardTitle>
         </div>
         <CardDescription>
-          Need more images on top of your plan? Purchase a one-time image bundle
+          Need more credits on top of your plan? Purchase a one-time credit bundle
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -153,11 +153,11 @@ export function BundlePurchase() {
 
                 <div className="space-y-1 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Images included:</span>
-                    <span className="font-medium">{bundle.images} images</span>
+                    <span className="text-muted-foreground">Credits included:</span>
+                    <span className="font-medium">{bundle.images} credits</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Price per image:</span>
+                    <span className="text-muted-foreground">Price per credit:</span>
                     <span className="font-medium">
                       ${(bundle.priceNZD / bundle.images).toFixed(2)} NZD
                     </span>

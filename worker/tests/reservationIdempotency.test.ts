@@ -204,6 +204,80 @@ describe("finalizeReservationFromWorker — idempotency guard", () => {
     expect(refundMutations).toHaveLength(1);
   });
 
+  it("declutter + stage reserved 2 from a listing pack, charged 1: refunds 1 listing-pack credit", async () => {
+    __mockClient = {
+      query: buildMockClient({
+        reservationRow: {
+          reservation_status: "committed",
+          agency_id: "agency_1",
+          yyyymm: "202602",
+          reserved_images: 2,
+          reserved_from_included: 0,
+          reserved_from_addon: 0,
+          reserved_from_listing_pack: 2,
+          reserved_from_pilot_promo: 0,
+          requested_stage12: true,
+          requested_stage2: true,
+          stage12_from_included: 0,
+          stage12_from_addon: 0,
+          stage2_from_included: 0,
+          stage2_from_addon: 0,
+        },
+      }),
+    };
+
+    await finalizeReservationFromWorker({
+      jobId: "job_listing_pack_refund",
+      stage12Success: true,
+      stage2Success: false,
+      actualCharge: 1,
+    });
+
+    const calls = __mockClient.query.mock.calls as Array<[string, unknown[]]>;
+    const packRefund = calls.find(([q]) => q.includes("listing_pack_credits = listing_pack_credits + $1"));
+    expect(packRefund).toBeDefined();
+    expect(packRefund![1][0]).toBe(1);
+    const resUpdate = calls.find(([q]) => q.includes("reserved_from_listing_pack = reserved_from_listing_pack - $2"));
+    expect(resUpdate).toBeDefined();
+    expect(resUpdate![1].slice(0, 3)).toEqual([1, 1, 0]);
+  });
+
+  it("declutter + stage reserved 2 from pilot promo, charged 1: refunds 1 promo credit", async () => {
+    __mockClient = {
+      query: buildMockClient({
+        reservationRow: {
+          reservation_status: "committed",
+          agency_id: "agency_1",
+          yyyymm: "202602",
+          reserved_images: 2,
+          reserved_from_included: 0,
+          reserved_from_addon: 0,
+          reserved_from_listing_pack: 0,
+          reserved_from_pilot_promo: 2,
+          pilot_promo_redemption_id: 7,
+          requested_stage12: true,
+          requested_stage2: true,
+          stage12_from_included: 0,
+          stage12_from_addon: 0,
+          stage2_from_included: 0,
+          stage2_from_addon: 0,
+        },
+      }),
+    };
+
+    await finalizeReservationFromWorker({
+      jobId: "job_pilot_refund",
+      stage12Success: true,
+      stage2Success: false,
+      actualCharge: 1,
+    });
+
+    const calls = __mockClient.query.mock.calls as Array<[string, unknown[]]>;
+    const promoRefund = calls.find(([q]) => q.includes("UPDATE pilot_promo_redemptions"));
+    expect(promoRefund).toBeDefined();
+    expect(promoRefund![1]).toEqual([1, 7]);
+  });
+
   // ── Test 4 ─  Explicit crash-recovery simulation ─────────────────────────
   it("simulates: normal completion then crash-recovery — second call sees 'consumed' and no pool mutation", async () => {
     // Simulate first pass: reservation is in initial state → will be marked 'consumed'

@@ -25,9 +25,9 @@ export default function Home() {
     && (shouldHighlightSignupCredits || agencyOnboarding?.promoCreditsGranted === true || !user.agencyId);
   const isUnverified = !!user && user.emailVerified !== true;
   const welcomeMessage = isUnverified
-    ? "Verify your email to unlock your 3 free images."
+    ? "Verify your email to unlock your 5 free credits."
     : shouldHighlightSignupCredits
-      ? "Your email is confirmed and your 3 free images are ready."
+      ? "Your email is confirmed and your 5 free credits are ready."
       : "Upload your first property photo to get started.";
 
   useEffect(() => {
@@ -128,7 +128,7 @@ export default function Home() {
             <AlertDescription>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div>Please verify your email to unlock your 3 free images and enable downloads and billing features.</div>
+                  <div>Please verify your email to unlock your 5 free credits and enable downloads and billing features.</div>
                   <div className="text-xs text-slate-600 mt-1">
                     Didn&apos;t receive the verification email?
                   </div>

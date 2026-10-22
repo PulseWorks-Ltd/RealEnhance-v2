@@ -18,6 +18,16 @@ export const NZ_REAL_ESTATE_PRESETS = {
     topK: 40,
     styleName: "nz-real-estate-exterior",
   },
+  // Dusk/twilight exterior transformation needs real creative latitude (sky
+  // repaint, synthesized window/path lighting) — the near-deterministic
+  // daylight preset above is tuned for "don't change anything" and would
+  // suppress the repaint this mode explicitly asks for.
+  stage1AExteriorDusk: <StagePresetConfig>{
+    temperature: 0.35,
+    topP: 0.85,
+    topK: 40,
+    styleName: "nz-real-estate-exterior-dusk",
+  },
   stage2Interior: <StagePresetConfig>{
     temperature: 0.33,
     topP: 0.78,

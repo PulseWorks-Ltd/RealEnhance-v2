@@ -40,13 +40,19 @@ export interface PromoCodeRow {
 const CREDIT_GRANT_PROMO_CODES = new Set<string>([
   "giveme100",
   "newuser10",
+  "newuser20",
   "adminusermonthlytopup200",
 ]);
 
 const NEW_AGENCY_ONLY_PROMO_CODES = new Set<string>([
   "foundingmember",
   "newuser10",
+  "newuser20",
 ]);
+
+// New-user credit codes are one per agency in total: an agency that redeemed
+// NEWUSER10 can't also take NEWUSER20, and the other way round.
+const NEW_USER_CREDIT_PROMO_CODES = ["newuser10", "newuser20"];
 
 const PROMO_CREDIT_GRANT_SOURCE = "promo_code_credit_grant";
 
@@ -415,6 +421,24 @@ export async function redeemCreditPromoForExistingAgency(params: {
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
       `${PROMO_CREDIT_GRANT_SOURCE}:${params.agencyId}:${promo.code_normalized}`,
     ]);
+
+    if (NEW_USER_CREDIT_PROMO_CODES.includes(promo.code_normalized)) {
+      const otherNewUserCode = await client.query(
+        `SELECT 1
+           FROM addon_purchases
+          WHERE agency_id = $1
+            AND source = $2
+            AND metadata ->> 'promoCodeNormalized' = ANY($3::text[])
+            AND metadata ->> 'promoCodeNormalized' <> $4
+          LIMIT 1`,
+        [params.agencyId, PROMO_CREDIT_GRANT_SOURCE, NEW_USER_CREDIT_PROMO_CODES, promo.code_normalized]
+      );
+      if (otherNewUserCode.rowCount) {
+        const err: any = new Error("AGENCY_ALREADY_USED_NEW_USER_PROMO");
+        err.code = "AGENCY_ALREADY_USED_NEW_USER_PROMO";
+        throw err;
+      }
+    }
 
     // Count how many times this agency has already redeemed this promo.
     const agencyRedemptionRes = await client.query<{ count: string }>(

@@ -90,8 +90,19 @@ export async function applyStage1APostGenerationFinish(
 
   const isExterior = options.sceneType === "exterior";
   const branch = isExterior ? "exterior" : "interior";
-  const sharpenM2Base = isExterior ? 0.5 : 0.38;
+  // Interior lowered from a hardcoded 0.38 (image-quality fix, 2026-09-18):
+  // worker.ts's post-upscale delivery sharpen now carries more of the
+  // sharpening load for interior images (which still go through a lossy
+  // interpolation upscale there), so stacking a full-strength pass here too
+  // was amplifying JPEG/compression noise into visible grain. Exterior is
+  // left at its original value/behavior — see the exterior denoise gate
+  // below and the exterior model change in gemini.ts.
+  const sharpenM2Base = isExterior
+    ? parseBoundedNumber(process.env.STAGE1A_POSTFINISH_SHARPEN_M2_EXTERIOR, 0.5, 0, 2)
+    : parseBoundedNumber(process.env.STAGE1A_POSTFINISH_SHARPEN_M2_INTERIOR, 0.22, 0, 2);
   const contrastBase = isExterior ? 0.022 : 0.018;
+  const denoiseEnabled = !isExterior
+    && (parseOptionalBoolean(process.env.STAGE1A_POSTFINISH_DENOISE_ENABLED) ?? true);
   const sourceMeta = toTransformDiagnosticMeta(await sharp(inputPath).metadata().catch(() => null));
 
   const outPath = inputPath.replace(/\.webp$/i, "-postfinish.webp");
@@ -127,6 +138,12 @@ export async function applyStage1APostGenerationFinish(
           });
           logTransformDiagnostic("linear", "skipped", sourceMeta, branch);
         }
+      }
+
+      if (denoiseEnabled) {
+        logTransformDiagnostic("median_denoise", "before", sourceMeta, branch, { window: 3 });
+        pipeline = pipeline.median(3);
+        logTransformDiagnostic("median_denoise", "after", sourceMeta, branch);
       }
 
       if (sharpenEnabled && sharpenScale > 0) {

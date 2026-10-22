@@ -1,7 +1,10 @@
+import { nLog, vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
+import { grokAnalyzeImages, grokVisionModel } from "../ai/grok";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, splitIssueTokens, type StructuredIssue } from "./issueTypes";
+import { resolveValidatorModel } from "./occlusionVsRemovalCheck";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import { computeVerticalEdgeDelta, type VerticalEdgeDeltaResult } from "./verticalEdgeDelta";
 import type { StructuralSignal } from "./structuralSignal";
@@ -11,7 +14,7 @@ export type EnvelopeValidatorResult = ValidatorOutcome & {
 };
 
 function logEnvelopeEvent(event: string, payload: Record<string, unknown>): void {
-  console.log(JSON.stringify({ event, ...payload }));
+  vDetailLog(JSON.stringify({ event, ...payload }));
 }
 
 function logEnvelopePhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
@@ -141,7 +144,7 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     visualAmbiguity: parsed?.visualAmbiguity === true,
   });
 
-  console.log("[ENVELOPE_GEOMETRIC_CERTAINTY]", {
+  vDetailLog("[ENVELOPE_GEOMETRIC_CERTAINTY]", {
     envelopeDetectedChange,
     geometricCertainty,
     reason: reasonCode || "envelope_preserved",
@@ -168,7 +171,7 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
 export async function runEnvelopeValidator(
   beforeImageUrl: string,
   afterImageUrl: string,
-  options?: { jobId?: string; imageId?: string; attempt?: number }
+  options?: { jobId?: string; imageId?: string; attempt?: number; slidingDoorHints?: string[] }
 ): Promise<EnvelopeValidatorResult> {
   const validatorStartedAt = Date.now();
   logEnvelopeEvent("ENVELOPE_VALIDATOR_START", {
@@ -240,7 +243,10 @@ This catches:
 * doorway infill
 * closet recess flattening
 * wall extensions
-
+${options?.slidingDoorHints && options.slidingDoorHints.length > 0 ? `
+KNOWN EXCEPTION — CLOSED SLIDING/POCKET DOORS (MANDATORY)
+This room's baseline includes one or more SLIDING PANEL doors or closets: ${options.slidingDoorHints.join("; ")}. A CLOSED sliding or pocket door's visible face is normally a flat, continuous surface that can closely match the surrounding wall in color and texture — this is a NORMAL, EXPECTED appearance for these specific locations and must NOT by itself be treated as evidence of wall infill, a filled recess, or an added wall segment. Only set ok=false for one of these locations if you find OTHER independent evidence of genuine structural change beyond the door face looking flat — for example, the door's own track, frame, jamb, or reveal has visibly disappeared where it used to be, or the wall plane now extends further than that door's own footprint in a way a closed door could not explain.
+` : ""}
 Treat these as architectural invariants:
 * wall layout and envelope geometry
 * room proportions and segmentation
@@ -335,6 +341,32 @@ Non-fail certainty guard:
     return parsed;
   };
 
+  // STAGE2_VALIDATOR_MODEL=grok routing. Same prompt, same parseEnvelopeResult
+  // — only the call mechanics differ (no flash/pro escalation tier on Grok,
+  // just one call). Added per explicit request to close this untested gap;
+  // no change to the prompt content, the geometric-certainty logic, or the
+  // vertical-edge-delta merge below, all of which stay identical regardless
+  // of which model answered.
+  const runWithGrok = async (): Promise<EnvelopeValidatorResult> => {
+    const requestStartedAt = Date.now();
+    const text = await grokAnalyzeImages({
+      images: [
+        { buffer: Buffer.from(before, "base64"), mimeType: "image/webp", label: "IMAGE_BEFORE:" },
+        { buffer: Buffer.from(after, "base64"), mimeType: "image/webp", label: "IMAGE_AFTER:" },
+      ],
+      prompt,
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      reason: "envelope_check",
+      expectJson: true,
+    });
+    logEnvelopePhaseEnd(options?.jobId, "grok_call", Date.now() - requestStartedAt, { model: grokVisionModel() });
+    const parseStartedAt = Date.now();
+    const parsed = parseEnvelopeResult(text);
+    logEnvelopePhaseEnd(options?.jobId, "grok_parse", Date.now() - parseStartedAt, { model: grokVisionModel() });
+    return parsed;
+  };
+
   try {
     const verticalEdgeStartedAt = Date.now();
     // Run vertical-edge delta detection in parallel with Gemini calls.
@@ -355,22 +387,30 @@ Non-fail certainty guard:
         return undefined;
       });
 
-    // Gemini semantic analysis
+    // Semantic analysis — model chosen by STAGE2_VALIDATOR_MODEL, independent
+    // of STAGE2_PROMPT_VARIANT, same as occlusionVsRemovalCheck.ts. Grok has
+    // no flash/pro escalation tier, so that logic is simply skipped for it.
     let geminiResult: EnvelopeValidatorResult;
-    const flashResult = await runWithModel(ENVELOPE_MODEL_PRIMARY, "flash");
-    if (Number.isFinite(flashResult.confidence) && flashResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE) {
-      geminiResult = flashResult;
-      logEnvelopePhaseEnd(options?.jobId, "pro_escalation", 0, { skipped: true });
-      logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true });
+    if (resolveValidatorModel() === "grok") {
+      geminiResult = await runWithGrok();
+      logEnvelopePhaseEnd(options?.jobId, "pro_escalation", 0, { skipped: true, reason: "grok_no_escalation_tier" });
+      logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true, reason: "grok_no_escalation_tier" });
     } else {
-      try {
-        const proResult = await runWithModel(ENVELOPE_MODEL_ESCALATION, "pro");
-        geminiResult = (Number.isFinite(proResult.confidence) && proResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE)
-          ? proResult
-          : flashResult;
-      } catch {
+      const flashResult = await runWithModel(ENVELOPE_MODEL_PRIMARY, "flash");
+      if (Number.isFinite(flashResult.confidence) && flashResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE) {
         geminiResult = flashResult;
-        logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true, error: "pro_call_failed" });
+        logEnvelopePhaseEnd(options?.jobId, "pro_escalation", 0, { skipped: true });
+        logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true });
+      } else {
+        try {
+          const proResult = await runWithModel(ENVELOPE_MODEL_ESCALATION, "pro");
+          geminiResult = (Number.isFinite(proResult.confidence) && proResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE)
+            ? proResult
+            : flashResult;
+        } catch {
+          geminiResult = flashResult;
+          logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true, error: "pro_call_failed" });
+        }
       }
     }
 
@@ -382,7 +422,7 @@ Non-fail certainty guard:
     if (vedResult) {
       (geminiResult as EnvelopeValidatorResult).verticalEdgeDelta = vedResult;
 
-      console.log("[ENVELOPE_VERTICAL_EDGE_DELTA]", {
+      vDetailLog("[ENVELOPE_VERTICAL_EDGE_DELTA]", {
         verticalEdgeLoss: vedResult.verticalEdgeLossDetected,
         cornerPersistenceFailure: vedResult.cornerPersistenceFailure,
         worstRetention: vedResult.worstRetention.toFixed(3),
@@ -425,7 +465,7 @@ Non-fail certainty guard:
         }
         // Do NOT hard-fail autonomously — emit structural signal and let Gemini adjudicate via mandatory verification.
         // Hard-fail will come from Gemini confirming the structural claim in runValidation.
-        console.log("[SPECIALIST_REVIEW][ENVELOPE]", {
+        nLog("[SPECIALIST_REVIEW][ENVELOPE]", {
           event: "corner_persistence_failure",
           worstRetention: vedResult.worstRetention.toFixed(3),
           junctionCount: vedResult.junctions.length,

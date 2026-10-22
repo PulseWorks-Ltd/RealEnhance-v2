@@ -9,7 +9,7 @@ export type RoomType =
   | 'office'
   | 'kitchen'
   | 'bathroom'
-  | 'multiple_living'
+  | 'kitchen_living_dining'
   | 'kitchen_dining'
   | 'kitchen_living'
   | 'living_dining'
@@ -34,7 +34,7 @@ Classify based on ARCHITECTURAL FEATURES and BUILT-IN ELEMENTS only.
 
 Return JSON with this exact structure:
 {
-  "roomType": "living_room"|"bedroom"|"dining_room"|"office"|"kitchen"|"bathroom"|"multiple_living"|"kitchen_dining"|"kitchen_living"|"living_dining"|"other",
+  "roomType": "living_room"|"bedroom"|"dining_room"|"office"|"kitchen"|"bathroom"|"kitchen_living_dining"|"kitchen_dining"|"kitchen_living"|"living_dining"|"other",
   "confidence": "high"|"medium"|"low",
   "reasoning": "brief explanation of classification"
 }
@@ -233,9 +233,9 @@ LOW:
       .toLowerCase()
       .replace(/-/g, "_");
     const roomTypeAliases: Record<string, RoomType> = {
-      multiple_living_areas: "multiple_living",
-      multiple_living: "multiple_living",
-      multi_living: "multiple_living",
+      multiple_living_areas: "kitchen_living_dining",
+      multiple_living: "kitchen_living_dining",
+      multi_living: "kitchen_living_dining",
       kitchen_and_dining: "kitchen_dining",
       kitchen_and_living: "kitchen_living",
       living_and_dining: "living_dining",

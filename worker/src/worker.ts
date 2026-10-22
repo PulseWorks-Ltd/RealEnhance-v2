@@ -15,7 +15,7 @@ import {
   EditJobPayload,
   RegionEditJobPayload
 } from "@realenhance/shared/types";
-import { evaluateFairShare, markJobFinished, markJobStarted } from "@realenhance/shared";
+import { deliveredImageCharge, evaluateFairShare, markJobFinished, markJobStarted } from "@realenhance/shared";
 
 import fs from "fs";
 import path from "path";
@@ -26,6 +26,8 @@ import { runStage1A } from "./pipeline/stage1A";
 import type { Stage1AAnalysis } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { planStage2Layout, type Stage2LayoutPlan } from "./pipeline/layoutPlanner";
+import { clearWallVisibilityCacheForJob, shouldUseAnchorLockedLayoutPlanning } from "./pipeline/anchorLockedStaging";
+import { evaluateStage1BSourceStageInvariant } from "./pipeline/routingInvariants";
 import {
   isStage2RetryableGenerationError,
   runGeminiStructuralReviewPro,
@@ -33,8 +35,14 @@ import {
   resolveStage2Model,
   runStage2,
   runStage2GenerationAttempt,
+  roomBriefStyleFor,
 } from "./pipeline/stage2";
 import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
+import {
+  isOpeningEscalationCandidate as isOpeningEscalationCandidateShared,
+  shouldApplyOpeningOcclusionGuard as shouldApplyOpeningOcclusionGuardShared,
+  isEligibleForOpeningOcclusionDowngrade,
+} from "./validators/openingOcclusionGuard";
 import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
@@ -65,6 +73,9 @@ import {
 } from "./ai/furnitureDetector";
 import { runFurnitureDetectionSafe } from "./ai/runFurnitureDetectionSafe";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
+import { startFurniturePrecheckWorker } from "./precheck/furniturePrecheck";
+import { buildLayoutContext, type LayoutContextResult } from "./ai/layoutPlanner";
+import { roomBriefEnabled, startRoomBriefPrefetch } from "./pipeline/roomBrief";
 
 import {
   updateJob,
@@ -81,14 +92,22 @@ import { resolveStageUrl, mergeStageUrls, normalizeStageUrls } from "@realenhanc
 import { getJobMetadata, saveJobMetadata, JOB_META_TTL_PROCESSING_SECONDS, JOB_META_TTL_HISTORY_SECONDS, computeFallbackVersionKey } from "@realenhance/shared/imageStore";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { JobOwnershipMetadata } from "@realenhance/shared";
+import { acquireJobProcessingLock, releaseJobProcessingLock } from "./utils/jobProcessingLock";
 import { getGeminiClient } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { logEvent as logPipelineContextEvent, logGeminiUsage } from "./ai/usageTelemetry";
-import { toBase64, siblingOutPath } from "./utils/images";
+import { toBase64, siblingOutPath, logImageContentHash } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage, publishThumbnailVariant, type PublishResult } from "./utils/publish";
-import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl } from "./utils/debugImageUrls";
+import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl, trackDebugUpload, flushDebugUploads } from "./utils/debugImageUrls";
+import {
+  runMaskedStage2Job,
+  doorsFromStructuralBaseline,
+  maskedStage2Enabled,
+  maskedStage2DebugUploadEnabled,
+} from "./pipeline/stage2Masked/pipeline";
+import { MAX_RESTAGES as MASKED_STAGE2_MAX_RESTAGES } from "./pipeline/stage2Masked/core";
 import { downloadToTemp } from "./utils/remote";
 import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
 import { canMarkJobComplete, logCompletionGuard } from "./utils/completionGuard";
@@ -146,6 +165,7 @@ const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
   Number(process.env.STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS || 86400)
 );
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
+const PRODUCTION_LOG_MODE = process.env.PRODUCTION_LOG_MODE === "true";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
 const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "1") !== "0";
 const STAGE2_ANCHOR_MIN_CONFIDENCE = Number(process.env.STAGE2_ANCHOR_MIN_CONFIDENCE || 0.7);
@@ -155,9 +175,47 @@ const DELIVERY_EXPORT_MIN_LONG_SIDE = Math.max(1024, Number(process.env.DELIVERY
 const DELIVERY_EXPORT_JPEG_QUALITY = Math.max(85, Math.min(95, Number(process.env.DELIVERY_EXPORT_JPEG_QUALITY || 95)));
 const DELIVERY_EXPORT_SHARPEN_STRENGTH = Math.max(0.4, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_STRENGTH || 1.04)));
 const DELIVERY_EXPORT_GAMMA = Math.max(0.95, Math.min(1.1, Number(process.env.DELIVERY_EXPORT_GAMMA || 1.03)));
+// Image-quality fix (2026-09-18): read fresh per call (not module-level, unlike
+// the DELIVERY_EXPORT_* consts above) purely so a same-process verification
+// script can compare variants without respawning — production behavior is
+// identical either way since these env vars don't change at runtime.
+function getDeliveryExportSharpenTuning() {
+  return {
+    sharpenM2Upscaled: Math.max(0.2, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_M2_UPSCALED || 0.8))),
+    sharpenM2Native: Math.max(0.2, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_M2_NATIVE || 2.0))),
+    preResizeDenoiseEnabled: String(process.env.DELIVERY_EXPORT_PRE_RESIZE_DENOISE_ENABLED ?? "true").toLowerCase() !== "false",
+  };
+}
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
 // SINGLE-AUTHORITY: composite local validator always blocks
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" = "block";
+// This flag now governs ONLY the Stage 1B pre-flight use of
+// runGeminiStructuralReviewPro (evaluateStage1BLightPolicy) — a genuinely
+// non-redundant check: is Stage 1B's own output (the image Stage 2 is
+// about to use as its input) structurally sound, BEFORE Stage 2 spends a
+// generation attempt on a possibly-corrupted base image. Default restored
+// to "true" (2026-08-28) for that reason.
+//
+// The SEPARATE end-of-Stage-2 use of this same underlying function —
+// re-checking the final staged output for structural identity AFTER the
+// split/specialist validators already passed it — was removed entirely,
+// not just flag-gated (see the Stage 2 final-pre-publish-gate block further
+// down, now a permanent pass-through). That one was a single, holistic
+// Gemini PASS/FAIL judgment with no structured describe-then-classify step
+// — architecturally the same "v1" pattern occlusionVsRemovalCheck.ts's own
+// header documents as unstable and was specifically rebuilt away from —
+// and its entire checklist (wall positions, room proportions, opening
+// count/placement, closets, built-ins, camera viewpoint) duplicated what
+// the split validators already check, more granularly and more reliably,
+// against the same original baseline. It also failed CLOSED on any JSON
+// parse error, meaning a response hiccup unrelated to the actual image
+// could present as a structural violation. Real confirmed case: a job's
+// attempt 1 was rejected in production while every split validator AND a
+// fresh re-run of this exact gate both passed cleanly against the same
+// images — redundant risk at that specific point, with no unique
+// protective value there. The Stage 1B pre-flight use above doesn't share
+// that redundancy (nothing else validates 1B's output before Stage 2 uses
+// it), which is why it's kept.
 const ENABLE_FINAL_STRUCTURAL_REVIEW = String(process.env.ENABLE_FINAL_STRUCTURAL_REVIEW ?? "true").toLowerCase() !== "false";
 const STAGE1B_BLANK_STDDEV_MAX = Math.max(
   0.01,
@@ -213,7 +271,7 @@ import type { StructuralSignal } from "./validators/structuralSignal";
 import { deduplicateSignals } from "./validators/structuralSignal";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import type { StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
-import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
+import { vLog, nLog, vDetailLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
 import {
   VALIDATOR_FOCUS,
   STRUCTURAL_SIGNALS_MODE,
@@ -471,7 +529,7 @@ async function applyFinalPresentationPolish(buffer: Buffer, analysis: Stage1AAna
 
   const saturationBoost = isExterior ? 0.08 : 0.04;
 
-  console.log("[Stage2 Polish]", {
+  nLog("[Stage2 Polish]", {
     luminanceMean,
     luminanceStdev,
     brightnessLift,
@@ -531,13 +589,19 @@ function logJobErrorAndThrow(job: any, reason: string, extra: Record<string, any
 }
 
 function shouldLog(eventType?: string): boolean {
-  if (!VALIDATOR_LOGS_FOCUS) return true;
+  // This allowlist is the "key information and summaries" tier — enforced
+  // only under PRODUCTION_LOG_MODE=true (the top verbosity tier).
+  // VALIDATOR_LOGS_FOCUS (the middle tier) suppresses specialist-validator
+  // detail elsewhere (nLog/vDetailLog) but leaves these lifecycle/summary
+  // events alone.
+  if (!PRODUCTION_LOG_MODE) return true;
 
   const allowedEvents = new Set([
     "SYSTEM_START",
     "SYSTEM_ERROR",
     "UNHANDLED_EXCEPTION",
     "PIPELINE_START",
+    "SOURCE_RESOLVED",
     "AWS_S3_FAILURE",
     "MODEL_FAILURE",
     "FATAL_RETRY_EXHAUSTION",
@@ -559,7 +623,7 @@ function logStructured(event: string, payload: Record<string, any>) {
   try {
     logEvent(event, payload);
   } catch (err) {
-    if (!VALIDATOR_LOGS_FOCUS) {
+    if (!PRODUCTION_LOG_MODE) {
       nLog("[STRUCTURED_LOG_ERROR]", {
         event,
         error: (err as any)?.message || String(err),
@@ -603,7 +667,28 @@ type ForensicBatchState = {
   batchId: string;
   jobs: Map<string, ForensicJobEntry>;
   activeJobIds: Set<string>;
+  // Total jobs expected in this batch, known upfront from the upload
+  // request (payload.batchTotalJobs — stamped server-side, since the
+  // upload handler knows exactly how many files were submitted together).
+  // Real production incident (2026-08-24): without this, activeJobIds
+  // grows lazily as each job happens to START processing rather than all
+  // at once when the batch is known, so a fast job could drop the active
+  // count to zero and fire the summary before slower jobs in the SAME
+  // batch had even registered — one real 6-job batch produced 4 separate,
+  // partial summaries instead of one complete one. null when unknown
+  // (e.g. legacy/manual-retry jobs with no batch context) — falls back to
+  // the original activeJobIds-only completion check in that case.
+  expectedTotal: number | null;
+  // Grace-window timer used when expectedTotal is known but not yet fully
+  // registered (batch.jobs.size < expectedTotal) at the moment
+  // activeJobIds drains to zero — e.g. under WORKER_CONCURRENCY < batch
+  // size, later jobs haven't started yet, or (rarer) a job never reached
+  // the worker at all. Cleared/reset on every finalize; null when no
+  // timer is pending.
+  finalizeGraceTimer: NodeJS.Timeout | null;
 };
+
+const FORENSIC_BATCH_FINALIZE_GRACE_MS = 60_000;
 
 const batchForensicCollectors = new Map<string, ForensicBatchState>();
 const forensicJobBatchIndex = new Map<string, string>();
@@ -975,8 +1060,22 @@ function beginBatchForensicForJob(payload: any) {
       batchId,
       jobs: new Map<string, ForensicJobEntry>(),
       activeJobIds: new Set<string>(),
+      expectedTotal: null,
+      finalizeGraceTimer: null,
     };
     batchForensicCollectors.set(batchId, batch);
+  }
+
+  // Every job in the same real upload batch carries the same
+  // batchTotalJobs value (stamped once, server-side, at upload time) — set
+  // it from whichever job happens to register first; a defensive re-check
+  // in case an earlier-registering job's payload didn't carry it for some
+  // reason (e.g. a mixed batch with one legacy client).
+  if (batch.expectedTotal === null) {
+    const total = Number(payload?.batchTotalJobs);
+    if (Number.isFinite(total) && total > 0) {
+      batch.expectedTotal = total;
+    }
   }
 
   if (!batch.jobs.has(jobId)) {
@@ -1041,54 +1140,69 @@ function emitBatchForensicSummary(batch: ForensicBatchState) {
       ? jobs.reduce((sum, job) => sum + (job.attempts?.length || 0), 0) / jobsTotal
       : 0;
 
-  nLog("[BATCH_FORENSIC_SUMMARY]");
-  nLog(`batch=${batch.batchId}`);
-  nLog(`jobs=${jobsTotal}`);
-  nLog(`completed=${jobsCompleted}`);
-  nLog(`failed=${jobsFailed}`);
-  nLog(`avg_attempts=${avgStage2Attempts.toFixed(2)}`);
-
   const styleDistribution = jobs.reduce<Record<string, number>>((acc, job) => {
     const style = safeStyle(job.stagingStyle);
     acc[style] = (acc[style] || 0) + 1;
     return acc;
   }, {});
-  nLog("STAGING STYLE DISTRIBUTION");
+
+  // Built as one string and emitted via a single write below — the
+  // previous version made dozens of separate nLog() calls (one per field
+  // per attempt per job), and under real concurrency other jobs' unrelated
+  // log output interleaved between them, corrupting the summary in exactly
+  // the way this session's manual log analysis fought all night. A single
+  // atomic write is immune to that.
+  const lines: string[] = [];
+  lines.push("[BATCH_FORENSIC_SUMMARY]");
+  lines.push(`batch=${batch.batchId}`);
+  lines.push(`jobs=${jobsTotal}`);
+  lines.push(`expected_total=${batch.expectedTotal ?? "unknown"}`);
+  lines.push(`completed=${jobsCompleted}`);
+  lines.push(`failed=${jobsFailed}`);
+  lines.push(`avg_attempts=${avgStage2Attempts.toFixed(2)}`);
+
+  lines.push("STAGING STYLE DISTRIBUTION");
   for (const [style, count] of Object.entries(styleDistribution).sort((a, b) => a[0].localeCompare(b[0]))) {
-    nLog(`${style}: ${count}`);
+    lines.push(`${style}: ${count}`);
   }
 
   for (const job of jobs) {
-    nLog(`JOB ${job.jobId}`);
-    nLog(`image=${job.imageName || "unknown"}`);
-    nLog(`stagingStyle=${safeStyle(job.stagingStyle)}`);
-    nLog(`upload=${job.uploadUrl || ""}`);
-    nLog(`stage1A=${job.stage1AUrl || ""}`);
+    lines.push(`JOB ${job.jobId}`);
+    lines.push(`image=${job.imageName || "unknown"}`);
+    lines.push(`stagingStyle=${safeStyle(job.stagingStyle)}`);
+    lines.push(`upload=${job.uploadUrl || ""}`);
+    lines.push(`stage1A=${job.stage1AUrl || ""}`);
 
     const attempts = [...(job.attempts || [])].sort((a, b) => a.attemptNumber - b.attemptNumber);
     for (const attempt of attempts) {
-      nLog(`ATTEMPT ${attempt.attemptNumber}`);
-      nLog(`stagingStyle=${safeStyle(job.stagingStyle)}`);
-      nLog(`stage=${attempt.pipelineStage}`);
-      nLog(`model=${attempt.model}`);
-      nLog(`retry_reason=${attempt.retryReason}`);
-      nLog(`retry_trigger=${attempt.retryTrigger}`);
-      nLog(`validator_warnings=${attempt.validatorWarnings.join("|")}`);
-      nLog(`decision_source=${attempt.decisionSource}`);
-      nLog(`composite=${attempt.compositeDecision}`);
-      nLog(`gemini_confirmation=${attempt.geminiConfirmation}`);
-      nLog(`gemini_result=${attempt.geminiResult}`);
-      nLog(`candidate=${attempt.candidateUrl || ""}`);
-      nLog(`output=${attempt.outputUrl || ""}`);
-      nLog(`artifact_urls=${(attempt.artifactUrls || []).join(",")}`);
+      lines.push(`ATTEMPT ${attempt.attemptNumber}`);
+      lines.push(`stagingStyle=${safeStyle(job.stagingStyle)}`);
+      lines.push(`stage=${attempt.pipelineStage}`);
+      lines.push(`model=${attempt.model}`);
+      lines.push(`retry_reason=${attempt.retryReason}`);
+      lines.push(`retry_trigger=${attempt.retryTrigger}`);
+      lines.push(`validator_warnings=${attempt.validatorWarnings.join("|")}`);
+      lines.push(`decision_source=${attempt.decisionSource}`);
+      lines.push(`composite=${attempt.compositeDecision}`);
+      lines.push(`gemini_confirmation=${attempt.geminiConfirmation}`);
+      lines.push(`gemini_result=${attempt.geminiResult}`);
+      lines.push(`candidate=${attempt.candidateUrl || ""}`);
+      lines.push(`output=${attempt.outputUrl || ""}`);
+      lines.push(`artifact_urls=${(attempt.artifactUrls || []).join(",")}`);
     }
 
-    nLog("FINAL");
-    nLog(`status=${job.finalStatus}`);
-    nLog(`warnings=${job.warningsCount}`);
-    nLog(`completion_guard=${job.completionGuard}`);
-    nLog(`output=${job.finalOutputUrl || ""}`);
+    lines.push("FINAL");
+    lines.push(`status=${job.finalStatus}`);
+    lines.push(`warnings=${job.warningsCount}`);
+    lines.push(`completion_guard=${job.completionGuard}`);
+    lines.push(`output=${job.finalOutputUrl || ""}`);
   }
+
+  // Deliberately bypasses nLog: this summary must survive every log
+  // verbosity tier (VALIDATOR_LOGS_FOCUS, PRODUCTION_LOG_MODE) — it's the
+  // one thing meant to be kept regardless of how quiet the rest of the
+  // logs are.
+  console.log(lines.join("\n"));
 }
 
 async function finalizeBatchForensicForJob(jobId: string, payload: any) {
@@ -1123,7 +1237,13 @@ async function finalizeBatchForensicForJob(jobId: string, payload: any) {
   }
 
   batch.activeJobIds.delete(jobId);
-  if (batch.activeJobIds.size === 0) {
+
+  if (batch.finalizeGraceTimer) {
+    clearTimeout(batch.finalizeGraceTimer);
+    batch.finalizeGraceTimer = null;
+  }
+
+  const finalizeNow = () => {
     try {
       emitBatchForensicSummary(batch);
     } catch (err) {
@@ -1133,7 +1253,27 @@ async function finalizeBatchForensicForJob(jobId: string, payload: any) {
     for (const key of batch.jobs.keys()) {
       forensicJobBatchIndex.delete(key);
     }
+  };
+
+  if (batch.activeJobIds.size !== 0) return;
+
+  const allJobsRegistered = batch.expectedTotal === null || batch.jobs.size >= batch.expectedTotal;
+  if (allJobsRegistered) {
+    finalizeNow();
+    return;
   }
+
+  // expectedTotal is known but not every job in the batch has registered
+  // yet (still queued behind WORKER_CONCURRENCY, or — rarer — one never
+  // reached the worker at all, e.g. a payment/upload failure). Wait a
+  // grace window rather than firing immediately (would reintroduce the
+  // premature-fragmentation bug this fix targets) or waiting forever
+  // (would silently lose the summary for an otherwise-complete batch).
+  batch.finalizeGraceTimer = setTimeout(() => {
+    const stillPending = batchForensicCollectors.get(batchId);
+    if (!stillPending || stillPending.activeJobIds.size !== 0) return;
+    finalizeNow();
+  }, FORENSIC_BATCH_FINALIZE_GRACE_MS);
 }
 
 async function signS3Object(params: { bucket: string; key: string; expiresIn: number }): Promise<string> {
@@ -3260,20 +3400,6 @@ async function debugRunInvariantReplay() {
   }
 }
 
-function getStage1BGeminiConfig(attempt: number) {
-  const baseTemp = 33;
-  const baseTopP = 0.70;
-  const baseTopK = 30;
-
-  const decayFactor = Math.pow(0.9, Math.max(0, attempt));
-
-  return {
-    temperature: Math.round(baseTemp * decayFactor),
-    topP: parseFloat((baseTopP * decayFactor).toFixed(2)),
-    topK: Math.round(baseTopK * decayFactor),
-  };
-}
-
 async function estimateClutterHeuristic(imagePath: string): Promise<Stage1BClutterHeuristicResult> {
   const { data, info } = await sharp(imagePath)
     .rotate()
@@ -3754,9 +3880,19 @@ async function upscaleAndEnhanceForDelivery(
   const enhancementsApplied = DELIVERY_EXPORT_ENHANCE_ENABLED && !isStage2;
   const shouldApplyStage2Polish = isStage2;
 
+  const deliverySharpenTuning = getDeliveryExportSharpenTuning();
   let pipeline = baseImage.clone();
 
   if (shouldResize) {
+    // Image-quality fix (2026-09-18): denoise the small native source BEFORE
+    // the Lanczos upscale amplifies its JPEG/compression noise into grain
+    // that the sharpen below would then amplify a second time. Only runs
+    // when an actual interpolation upscale is happening (shouldResize) —
+    // once Stage 1A exterior lands natively at 2K via Gemini 3 Pro, this
+    // branch is skipped entirely and today's behavior is preserved exactly.
+    if (deliverySharpenTuning.preResizeDenoiseEnabled) {
+      pipeline = pipeline.median(3);
+    }
     pipeline = pipeline.resize({
       ...resizeOptions,
       fit: "inside",
@@ -3766,12 +3902,21 @@ async function upscaleAndEnhanceForDelivery(
   }
 
   if (enhancementsApplied) {
+    // Softened sharpen (was a flat m2:2.0) only when this image actually went
+    // through the interpolation upscale above — that's the case a strong
+    // unsharp mask amplifies noise/haloing instead of restoring real detail.
+    // An image already at/above the target resolution (native Gemini-3-Pro
+    // exterior output, or any already-large source) keeps the original,
+    // stronger m2:2.0 pass since there's no upscale softness to compensate for.
+    const deliverySharpenM2 = shouldResize
+      ? deliverySharpenTuning.sharpenM2Upscaled
+      : deliverySharpenTuning.sharpenM2Native;
     pipeline = pipeline
       .gamma(DELIVERY_EXPORT_GAMMA)
       .sharpen({
         sigma: DELIVERY_EXPORT_SHARPEN_STRENGTH,
         m1: 1.0,
-        m2: 2.0,
+        m2: deliverySharpenM2,
         x1: 2.0,
         y2: 10.0,
         y3: 20.0,
@@ -3891,9 +4036,7 @@ async function checkStage2AlreadyFinal(jobId: string, attemptedBy: string): Prom
           : attemptedBy === "stage2_only"
             ? "stage1B"
             : "partial";
-      if (!VALIDATOR_LOGS_FOCUS) {
-        console.log(`[COMPLETION_GUARD_BLOCKED] job=${jobId} attemptId=${attemptedBy} incomingType=${incomingType} finalStatusAlreadySet=true`);
-      }
+      nLog(`[COMPLETION_GUARD_BLOCKED] job=${jobId} attemptId=${attemptedBy} incomingType=${incomingType} finalStatusAlreadySet=true`);
       return true;
     }
   } catch {}
@@ -4358,7 +4501,7 @@ function emitValidatorBlockEnd(
   extra: Record<string, unknown> = {}
 ): void {
   try {
-    console.log(JSON.stringify({
+    vDetailLog(JSON.stringify({
       event: "VALIDATOR_BLOCK_END",
       jobId,
       validator,
@@ -4883,6 +5026,20 @@ function summarizeExteriorDeclutterStats(imageStats: ExteriorDeclutterImageStats
   };
 }
 
+// Return value drives real Stage 2 routing (see call site in
+// handleEnhanceJob): "present" -> anchor survived 1B, safe to run Refresh
+// mode as originally intended; "absent" -> the anchor that justified
+// Refresh mode is gone from the actual image Stage 2 will process, so the
+// caller should fall back to FROM_EMPTY/full mode instead, which carries
+// the much more robust structural-protection machinery (buildUniversal-
+// FeatureProtectionSection, wall-visibility, anchor-locked planning) that
+// Refresh mode's generic "keep the anchor exactly where it is" instruction
+// depends on an anchor actually existing to apply to. "inconclusive" ->
+// detector failed or gave no usable result; caller should fail back to
+// today's existing behavior (REFRESH), matching this codebase's established
+// precedent elsewhere of treating detector failure as "assume furnished."
+export type PostStage1BAnchorResult = "present" | "absent" | "inconclusive";
+
 async function runPostStage1BAnchorValidator(params: {
   payload: EnhanceJobPayload;
   imagePath: string;
@@ -4890,15 +5047,28 @@ async function runPostStage1BAnchorValidator(params: {
   detectorCacheStats: { requests: number; hits: number };
   intent: "stage" | "non_stage";
   stage1BRan: boolean;
+  // Whether a room-type-correct PRIMARY anchor was detected BEFORE Stage 1B
+  // ran (frozenRoutingSnapshot.hasPrimaryAnchor at the call site) — NOT the
+  // broader "any anchor-class item" signal. A room with no primary anchor
+  // (only secondary furniture like a chair/coffee table/wardrobe/cabinet)
+  // is unconditionally directed to Stage 2 from empty regardless of what
+  // Stage 1B's output shows — Stage 1B can only remove things, never
+  // invent a primary anchor from nothing, so there's nothing to re-check.
+  // Only a room that genuinely had its own primary anchor pre-1B is worth
+  // this re-check, to catch Stage 1B accidentally destroying it.
+  hadAnchorPreStage1B: boolean;
+  roomType?: string;
+  // Retained for existing POST_1B_DETECTOR_RESULT telemetry only — no
+  // longer used to gate whether this runs.
   initialState: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" | null;
-}): Promise<void> {
-  const { payload, imagePath, detectorCache, detectorCacheStats, intent, stage1BRan, initialState } = params;
+}): Promise<PostStage1BAnchorResult> {
+  const { payload, imagePath, detectorCache, detectorCacheStats, intent, stage1BRan, hadAnchorPreStage1B, roomType, initialState } = params;
   if (
     intent !== "stage"
     || stage1BRan !== true
-    || initialState !== "CLUTTERED"
+    || hadAnchorPreStage1B !== true
   ) {
-    return;
+    return "inconclusive";
   }
 
   try {
@@ -4923,17 +5093,32 @@ async function runPostStage1BAnchorValidator(params: {
         imageId: payload.imageId,
         error: "DETECTION_FAILED_AFTER_RETRIES",
       }));
-      return;
+      return "inconclusive";
     }
 
     const post1BState = deriveRoomState(post1BAnalysis);
+    const post1BGateDecision = resolveFurnishedGateDecision({
+      analysis: post1BAnalysis,
+      localEmpty: false,
+      roomType,
+    });
+    // Room-type-correct PRIMARY anchor specifically (see hasPrimaryAnchor's
+    // own comment) — this function only runs when the room genuinely had
+    // one pre-1B (hadAnchorPreStage1B), so the question here is precisely
+    // "did THAT survive Stage 1B," not "is any anchor-class item visible."
+    // A secondary item merely surviving alongside a real destroyed anchor
+    // (e.g. a nightstand remaining after the bed is gone) must not read as
+    // "anchor survived."
+    const anchorStillPresent = post1BGateDecision.hasPrimaryAnchor === true;
     logger.info("POST_1B_DETECTOR_RESULT", jobLogContext(payload, {
       event: "POST_1B_DETECTOR_RESULT",
       jobId: payload.jobId,
       imageId: payload.imageId,
       initialState,
       post1BState,
+      anchorStillPresent,
     }));
+    return anchorStillPresent ? "present" : "absent";
   } catch (error) {
     logger.warn("POST_1B_DETECTOR_FAILED", jobLogContext(payload, {
       event: "POST_1B_DETECTOR_FAILED",
@@ -4941,6 +5126,7 @@ async function runPostStage1BAnchorValidator(params: {
       imageId: payload.imageId,
       error: error instanceof Error ? error.message : String(error),
     }));
+    return "inconclusive";
   }
 }
 
@@ -4964,9 +5150,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }));
 
   if (isValidationFocusMode()) {
-    if (!VALIDATOR_LOGS_FOCUS) {
-      console.log("[VALIDATION_FOCUS_MODE] enabled — suppressing non-validator logs");
-    }
+    nLog("[VALIDATION_FOCUS_MODE] enabled — suppressing non-validator logs");
   }
 
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
@@ -5109,6 +5293,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage2Mode?: "FROM_EMPTY" | "REFRESH" | null;
     sourceStagePolicy?: "1A" | "1B-light" | "1B-stage-ready" | null;
     allowStage1AFallback?: boolean | null;
+    // Room-type-correct PRIMARY anchor only (bed/sofa-tv/dining_table/desk
+    // per room type) — narrower than geminiHasFurniture, which is true for
+    // ANY anchor-class item including secondary furniture (chair, coffee
+    // table, wardrobe, cabinet). null when unavailable (detector fallback,
+    // exterior, local-empty bypass) — see gateDecision.hasPrimaryAnchor.
+    hasPrimaryAnchor?: boolean | null;
   };
 
   let frozenRoutingSnapshot: RoutingSnapshot | null = null;
@@ -5548,6 +5738,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (stageOutputSigningCache.has(localPath)) {
       const cached = stageOutputSigningCache.get(localPath)!;
       annotateAttemptSignedUrl(stage, attempt, cached);
+      // Deliberately bypasses nLog, like [BATCH_FORENSIC_SUMMARY] below: this
+      // is the one per-attempt line meant to survive every log tier
+      // (PRODUCTION_LOG_MODE, VALIDATOR_LOGS_FOCUS) — every attempt, pass or
+      // fail, on every stage, is exactly what it's for. It was silently
+      // caught in the PRODUCTION_LOG_MODE=true blanket mute when that
+      // tiering was introduced; this restores it specifically.
       console.log(
         `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${cached.signedUrl || ""}`
       );
@@ -5561,39 +5757,60 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return cached;
     }
 
-    const signed = await createDebugSignedUrl(localPath, payload.jobId);
-    const imageKey = signed.key;
-    const signedUrl = signed.signedUrl;
-
-    console.log(
-      `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${signedUrl || ""}`
-    );
-
-    const snapshot = {
-      signedUrl,
-      imageKey,
-      publishedUrl: signedUrl,
+    logImageContentHash({
+      point: "pre_debug_upload",
+      filePath: localPath,
+      ctx: { jobId: payload.jobId, imageId: payload.imageId, stage, attempt },
+    });
+    // Debug upload in the background: read the image now (so temp-file
+    // cleanup can't race it), return at once, and fill in this same snapshot
+    // object (already handed to the attempt log) when the upload finishes.
+    const snapshot: { signedUrl: string | null; imageKey: string | null; publishedUrl: string | null } = {
+      signedUrl: null,
+      imageKey: null,
+      publishedUrl: null,
     };
     stageOutputSigningCache.set(localPath, snapshot);
+    const body = await fs.promises.readFile(localPath);
+    trackDebugUpload(
+      createDebugSignedUrl(localPath, payload.jobId, { body })
+        .then((signed) => {
+          const imageKey = signed.key;
+          const signedUrl = signed.signedUrl;
+          // Deliberately bypasses nLog — see comment on the cached branch above.
+          console.log(
+            `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${signedUrl || ""}`
+          );
+          snapshot.signedUrl = signedUrl;
+          snapshot.imageKey = imageKey;
+          snapshot.publishedUrl = signedUrl;
+          annotateAttemptSignedUrl(stage, attempt, snapshot);
+          const stage2Match = stage === "2"
+            ? stage2AttemptOutputs.find((entry) => entry.localPath === localPath)
+            : null;
+          if (stage2Match) {
+            stage2Match.signedUrl = signedUrl || undefined;
+            stage2Match.imageKey = imageKey || undefined;
+            stage2Match.publishedUrl = stage2Match.publishedUrl || signedUrl || undefined;
+          }
+          logStructured("STAGE_OUTPUT_SIGNED", {
+            jobId: payload.jobId,
+            stage,
+            attempt,
+            imageKey,
+            signedUrl,
+          });
+        })
+        .catch((signErr: any) => {
+          nLog("[STAGE_OUTPUT_SIGNED] background sign failed", {
+            jobId: payload.jobId,
+            stage,
+            attempt,
+            error: signErr?.message || String(signErr),
+          });
+        })
+    );
     annotateAttemptSignedUrl(stage, attempt, snapshot);
-
-    const stage2Match = stage === "2"
-      ? stage2AttemptOutputs.find((entry) => entry.localPath === localPath)
-      : null;
-    if (stage2Match) {
-      stage2Match.signedUrl = signedUrl || undefined;
-      stage2Match.imageKey = imageKey || undefined;
-      stage2Match.publishedUrl = stage2Match.publishedUrl || signedUrl || undefined;
-    }
-
-    logStructured("STAGE_OUTPUT_SIGNED", {
-      jobId: payload.jobId,
-      stage,
-      attempt,
-      imageKey,
-      signedUrl,
-    });
-
     return snapshot;
   };
 
@@ -5601,62 +5818,67 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (jobAttemptSummaryEmitted) return;
     jobAttemptSummaryEmitted = true;
 
-    logStructured("JOB_ATTEMPT_SUMMARY", {
-      ...jobAttemptLog,
-      detectorCacheStats: {
-        requests: jobContext.detectorCacheStats.requests,
-        hits: jobContext.detectorCacheStats.hits,
-        hitRate: jobContext.detectorCacheStats.requests > 0
-          ? Number((jobContext.detectorCacheStats.hits / jobContext.detectorCacheStats.requests).toFixed(4))
-          : 0,
-      },
-      finalStatus,
-    });
+    // Debug uploads run in the background; give any still in flight a moment
+    // (max 20 s) so the summaries carry their links. The job doesn't wait.
+    const writeSummary = () => {
+      logStructured("JOB_ATTEMPT_SUMMARY", {
+        ...jobAttemptLog,
+        detectorCacheStats: {
+          requests: jobContext.detectorCacheStats.requests,
+          hits: jobContext.detectorCacheStats.hits,
+          hitRate: jobContext.detectorCacheStats.requests > 0
+            ? Number((jobContext.detectorCacheStats.hits / jobContext.detectorCacheStats.requests).toFixed(4))
+            : 0,
+        },
+        finalStatus,
+      });
 
-    const lines: string[] = [];
-    lines.push("==============================");
-    lines.push("IMAGE JOB SUMMARY");
-    lines.push("==============================");
-    lines.push(`Image: ${payload.jobId}`);
-    lines.push(`Room: ${jobAttemptLog.roomType || payload.options.roomType || "unknown"}`);
-    lines.push(`Staging Style: ${normalizeForensicStagingStyle(jobAttemptLog.stagingStyle)}`);
-    lines.push(
-      `Detector Cache Hit Rate: ${jobContext.detectorCacheStats.requests > 0 ? `${Math.round((jobContext.detectorCacheStats.hits / jobContext.detectorCacheStats.requests) * 100)}%` : "0%"} (${jobContext.detectorCacheStats.hits}/${jobContext.detectorCacheStats.requests})`
-    );
-    lines.push("");
+      const lines: string[] = [];
+      lines.push("==============================");
+      lines.push("IMAGE JOB SUMMARY");
+      lines.push("==============================");
+      lines.push(`Image: ${payload.jobId}`);
+      lines.push(`Room: ${jobAttemptLog.roomType || payload.options.roomType || "unknown"}`);
+      lines.push(`Staging Style: ${normalizeForensicStagingStyle(jobAttemptLog.stagingStyle)}`);
+      lines.push(
+        `Detector Cache Hit Rate: ${jobContext.detectorCacheStats.requests > 0 ? `${Math.round((jobContext.detectorCacheStats.hits / jobContext.detectorCacheStats.requests) * 100)}%` : "0%"} (${jobContext.detectorCacheStats.hits}/${jobContext.detectorCacheStats.requests})`
+      );
+      lines.push("");
 
-    const renderStage = (stageLabel: "1B" | "2") => {
-      lines.push(`Stage ${stageLabel}:`);
-      const attempts = [...jobAttemptLog.stageLogs[stageLabel]].sort((a, b) => a.attempt - b.attempt);
-      if (!attempts.length) {
-        lines.push("  (no attempts)");
-        lines.push("");
-        return;
-      }
-      for (const attemptEntry of attempts) {
-        lines.push(`  Attempt ${attemptEntry.attempt}:`);
-        lines.push(`    URL: ${attemptEntry.signedUrl || "N/A"}`);
-        const result = String(attemptEntry.validation.final?.result || "UNKNOWN").toUpperCase();
-        lines.push(`    Result: ${result}`);
-        const reason = attemptEntry.validation.final?.reason || attemptEntry.validation.gemini?.violationType;
-        if (reason) {
-          const confidence = attemptEntry.validation.gemini?.confidence;
-          lines.push(
-            `    Reason: ${reason}${typeof confidence === "number" ? ` (confidence ${confidence})` : ""}`
-          );
+      const renderStage = (stageLabel: "1B" | "2") => {
+        lines.push(`Stage ${stageLabel}:`);
+        const attempts = [...jobAttemptLog.stageLogs[stageLabel]].sort((a, b) => a.attempt - b.attempt);
+        if (!attempts.length) {
+          lines.push("  (no attempts)");
+          lines.push("");
+          return;
         }
-        lines.push("");
+        for (const attemptEntry of attempts) {
+          lines.push(`  Attempt ${attemptEntry.attempt}:`);
+          lines.push(`    URL: ${attemptEntry.signedUrl || "N/A"}`);
+          const result = String(attemptEntry.validation.final?.result || "UNKNOWN").toUpperCase();
+          lines.push(`    Result: ${result}`);
+          const reason = attemptEntry.validation.final?.reason || attemptEntry.validation.gemini?.violationType;
+          if (reason) {
+            const confidence = attemptEntry.validation.gemini?.confidence;
+            lines.push(
+              `    Reason: ${reason}${typeof confidence === "number" ? ` (confidence ${confidence})` : ""}`
+            );
+          }
+          lines.push("");
+        }
+      };
+
+      renderStage("1B");
+      renderStage("2");
+      lines.push(`Final Status: ${finalStatus}`);
+      lines.push("==============================");
+
+      for (const line of lines) {
+        nLog(line);
       }
     };
-
-    renderStage("1B");
-    renderStage("2");
-    lines.push(`Final Status: ${finalStatus}`);
-    lines.push("==============================");
-
-    for (const line of lines) {
-      nLog(line);
-    }
+    void Promise.race([flushDebugUploads(), new Promise((r) => setTimeout(r, 20000))]).then(writeSummary);
   };
 
   const inferForensicRetryReason = (attemptNumber: number, reasonText: string): "initial" | "structural_violation" | "opening_removed" | "cosmetic" | "unknown" => {
@@ -6113,6 +6335,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (!VALIDATION_FOCUS_MODE) {
         nLog(`[WORKER] Remote original downloaded to: ${origPath}\n`);
       }
+      logImageContentHash({
+        point: "post_original_download",
+        filePath: origPath,
+        ctx: { jobId: payload.jobId, imageId: payload.imageId },
+      });
     } catch (e) {
       if (!VALIDATION_FOCUS_MODE) {
         nLog(`[WORKER] ERROR: Failed to download remote original: ${(e as any)?.message || e}\n`);
@@ -6147,15 +6374,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const enhanceOnlyRequested = !stage2Requested && !stage1BRequestedByUser;
   let stage2AttemptId: string | undefined;
   const stage2SupersededActions = new Set<string>();
-  const STAGE2_FORCE_REFRESH_ROOM_TYPES = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const STAGE2_FORCE_REFRESH_ROOM_TYPES = new Set(["kitchen_living_dining", "kitchen_dining", "kitchen_living", "living_dining"]);
 
   const canonicalizeStage2RoomType = (rawRoomType: unknown) => {
     const normalizedRoomType = String(rawRoomType || "")
       .toLowerCase()
       .replace(/-/g, "_")
       .trim();
-    return normalizedRoomType === "multiple_living_areas"
-      ? "multiple_living"
+    return (normalizedRoomType === "multiple_living_areas" || normalizedRoomType === "multiple_living")
+      ? "kitchen_living_dining"
       : normalizedRoomType;
   };
 
@@ -6239,6 +6466,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (!plannerEnabled) return null;
     if (!ctx.basePath) return null;
     if (ctx.isExteriorScene) return null;
+    // The room brief (STAGE2_ROOM_BRIEF=1) writes the layout itself for full
+    // staging — no separate layout-planner call (cost).
+    if (roomBriefEnabled() && ctx.promptMode === "full") return null;
+
+    // Routing fix: anchorLockedStaging.ts and layoutPlanner.ts used to both
+    // always run, with layoutPlanner.ts's independently-computed plan
+    // unconditionally appended after whatever anchorLockedStaging already
+    // produced — two separate plans concatenated into one prompt, capable
+    // of real contradiction (see shouldUseAnchorLockedLayoutPlanning's own
+    // doc comment for the confirmed sofa_group case). Decided once, here,
+    // before layoutPlanner.ts is ever invoked: when anchorLockedStaging is
+    // going to handle this room, skip calling the layout planner entirely
+    // rather than computing a plan that would either be discarded or
+    // (the actual prior bug) wrongly appended anyway.
+    if (shouldUseAnchorLockedLayoutPlanning(canonicalizeStage2RoomType(payload.options.roomType), ctx.promptMode)) {
+      nLog("[STAGE2_LAYOUT_PLANNER_SKIPPED]", {
+        jobId: payload.jobId,
+        path: ctx.path,
+        promptMode: ctx.promptMode,
+        roomType: canonicalizeStage2RoomType(payload.options.roomType),
+        reason: "anchor_locked_staging_will_handle_this_room",
+      });
+      return null;
+    }
 
     const manualRetryPlannerMode = isManualRetryPayload ? "manual_retry_replan" : "standard";
     const layoutPlanCacheKey = `${ctx.path}|${ctx.promptMode}|${ctx.sourceStage}|${ctx.basePath}|${manualRetryPlannerMode}|${retryInstructionHash}`;
@@ -6925,7 +7176,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const stage2OnlySelectedValidationMode = stage2OnlyIsRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
         ? "FULL_STAGE_ONLY"
         : stage2OnlyValidationMode;
-      console.log("STAGE2_VALIDATION_ROUTE", {
+      nLog("STAGE2_VALIDATION_ROUTE", {
         jobId: payload.jobId,
         isRefreshMode: stage2OnlyIsRefreshMode,
         routedTo: stage2OnlyIsRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
@@ -6998,13 +7249,75 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sourceStage: stage2OnlyRouting.sourceStage,
         isExteriorScene: payload.options.sceneType === "exterior",
       });
-      const stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
+      const stage2OnlyStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
+      // Manual retries use the same merged staging as new uploads (Oct 2026:
+      // retries still published Gemini's raw staging through the old path).
+      const stage2OnlyRetrySceneInterior = payload.options.sceneType !== "exterior";
+      const useMaskedRetry = stage2OnlyRetrySceneInterior && maskedStage2Enabled() && (
+        stage2OnlyPromptMode === "full" || ["1", "on", "true", "yes"].includes(String(process.env.STAGE2_MASKED_REFRESH || "").trim().toLowerCase())
+      );
+      let maskedRetryUsed = false;
+      let stage2Result: any;
+      if (useMaskedRetry) {
+        const retryRoomType = String(payload.options.roomType || "living_room");
+        const maskedRetry = await withMemoryPhase("stage2_generation_masked", { stage2BaseStage: stage2OnlyBaseStage, promptMode: stage2OnlyPromptMode, retry: true }, () => runMaskedStage2Job({
+          inputPath: basePath,
+          roomType: retryRoomType,
+          jobId: payload.jobId,
+          doors: async () => doorsFromStructuralBaseline(stage2OnlyStructuralBaseline || await resolveStructuralBaselineForValidation("stage2_masked_door_check")),
+          maxRestages: MASKED_STAGE2_MAX_RESTAGES,
+          stage: (attempt, hints) =>
+            runStage2GenerationAttempt(basePath, {
+              roomType: retryRoomType,
+              sceneType: "interior",
+              structuralBaseline: stage2OnlyStructuralBaseline,
+              stagingStyle: payload.options.stagingStyle || "standard_listing",
+              sourceStage: stage2OnlyRouting.sourceStage,
+              promptMode: stage2OnlyPromptMode,
+              stage2Mode: explicitStage2ModeStage2Only,
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              outputPath: siblingOutPath(basePath, `-2-masked-staged${attempt}`, ".webp"),
+              attempt,
+              layoutPlan: stage2OnlyLayoutPlan,
+              retryType: (payload as any).retryType,
+              retryInstructions: (payload as any).retryInstructions,
+              retryCorrectionHints: hints.length ? hints : null,
+              curtainRailLikely: jobContext.curtainRailLikely,
+              modelReason: attempt === 1 ? "stage2_masked_retry_generation" : `stage2_masked_retry_restage_${attempt - 1}`,
+            }),
+          outputPathFor: (attempt) => siblingOutPath(basePath, attempt === 1 ? "-2" : `-2-retry${attempt - 1}`, ".webp"),
+          workDir: siblingOutPath(basePath, "-2-masked-work", ""),
+          log: (msg) => console.log(`[STAGE2_MASKED] ${msg}`),
+          warn: (msg) => console.warn(`[STAGE2_MASKED] ${msg}`),
+        }));
+        console.log(`[STAGE2_MASKED_SUMMARY] job=${payload.jobId} path=manual_retry RESULT=${maskedRetry.ok ? "published" : `FAILED (${maskedRetry.reasons.join(", ")})`} attempts=${maskedRetry.attempts}`);
+        console.log("[STAGE2_MASKED_RESULT]", JSON.stringify({ jobId: payload.jobId, imageId: payload.imageId, path: "manual_retry", ok: maskedRetry.ok, attempts: maskedRetry.attempts, reports: maskedRetry.reports }));
+        try { await updateJob(payload.jobId, { stage2Masked: { ok: maskedRetry.ok, attempts: maskedRetry.attempts, reports: maskedRetry.reports } }); } catch {}
+        if (!maskedRetry.ok) {
+          await consumeManualRetryAttemptIfNeeded("stage2_only", true);
+          await failManualStage2Retry(
+            "stage2_masked_failed",
+            `stage2_retry_failed: ${maskedRetry.reasons.join(", ")}`,
+            { stage2Ms: Date.now() - t2 }
+          );
+          return;
+        }
+        maskedRetryUsed = true;
+        stage2Result = {
+          outputPath: maskedRetry.outputPath,
+          attempts: maskedRetry.attempts,
+          maxAttempts: MASKED_STAGE2_MAX_RESTAGES + 1,
+          validationRisk: false,
+        };
+      } else stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
         stagingStyle: payload.options.stagingStyle || "standard_listing",
         roomType: payload.options.roomType,
         sceneType: payload.options.sceneType as any,
         angleHint: undefined,
         profile: undefined,
         stagingRegion: undefined,
+        structuralBaseline: stage2OnlyStructuralBaseline,
         sourceStage: stage2OnlyRouting.sourceStage,
         promptMode: stage2OnlyPromptMode,
         stage2Mode: explicitStage2ModeStage2Only,
@@ -7106,7 +7419,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         return;
       }
 
-      await runStage2ValidationPipeline({
+      // Merged staging has its own checks (room shape, doors, blend); the old
+      // validator stack is for Gemini's raw staging only.
+      if (!maskedRetryUsed) await runStage2ValidationPipeline({
         jobId: payload.jobId,
         source: "stage2_only_retry",
         runSpecialists: async () => {
@@ -7645,6 +7960,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       await clearStage2RetryPending("stage2_only_complete_clear_pending");
       if (!(await canCompleteStage2(stage2ValidationPassed, "stage2_only_complete"))) {
+        // Same forensic-visibility gap as the main-flow completion guard
+        // (see comment there): without this, a manually-retried job
+        // blocked here writes status "failed" with no surviving log
+        // channel carrying that attempt's signed URL.
+        emitJobAttemptSummary("BLOCKED");
+        flushEnhanceForensicSnapshot({
+          uploadUrl: (payload as any).remoteOriginalUrl || null,
+          finalStatus: "blocked",
+          warningsCount: 0,
+          hardFail: true,
+          completionGuard: "block",
+          finalOutputUrl: pub2Url || null,
+        });
         await safeWriteJobStatus(
           payload.jobId,
           { status: "failed", errorMessage: "stage2_retry_failed: completion_guard_blocked_or_validation_failed" },
@@ -7663,6 +7991,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
       logCompletionGuard(payload.jobId, s2onlyGuard);
       if (!s2onlyGuard.ok) {
+        emitJobAttemptSummary("BLOCKED");
+        flushEnhanceForensicSnapshot({
+          uploadUrl: (payload as any).remoteOriginalUrl || null,
+          finalStatus: "blocked",
+          warningsCount: 0,
+          hardFail: true,
+          completionGuard: "block",
+          finalOutputUrl: pub2Url || null,
+        });
         await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: `completion_guard_block: ${s2onlyGuard.reason}` }, "completion_guard_block");
         return;
       }
@@ -7736,7 +8073,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const isTerminalComplete = completedStatus === "complete" || completedStatus === "completed";
         const hasUsableFinalOutput = typeof pub2Url === "string" && pub2Url.length > 0;
         const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
-        const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
+        // Staging delivered: same rule as the main pipeline (free when it is a
+        // manual retry, which is how stage-2-only jobs are created today).
+        const quotedCreditsS2 = Number((payload.options as any)?.quotedCredits);
+        const actualCharge = deliveredImageCharge({
+          billable: billableFinalSuccess && !isFreeManualRetry && isEnhancementJob,
+          sceneType: String(sceneLabel || "interior"),
+          stagedDelivered: billingStage2Success,
+          quotedCredits: Number.isFinite(quotedCreditsS2) ? quotedCreditsS2 : null,
+        });
 
         nLog("[BILLING_CHARGE_TELEMETRY]", {
           jobId: payload.jobId,
@@ -7783,6 +8128,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             completionType: "full_success",
             finalDeliveredStage: "2",
             requestedBeyond1A: true,
+            stage1BUserSelected: false,
           });
         } catch (chargeErr) {
           nLog("[BILLING] Failed to finalize charge (stage2-only retry):", (chargeErr as any)?.message || chargeErr);
@@ -7889,7 +8235,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // UNIFIED VALIDATION CONFIGURATION (env-driven)
   nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, localBlocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, geminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED"}, geminiMode=${geminiValidatorMode}, sharpSemantic=${sharpFinalValidatorMode || "disabled"}, geminiSemantic=${geminiSemanticValidatorMode || "disabled"}`);
-  console.log("LOCAL_VALIDATOR_TIER:", LOCAL_VALIDATOR_TIER);
   nLog(`[worker] Local validator tier: ${LOCAL_VALIDATOR_TIER}`);
 
   // VALIDATOR FOCUS MODE: Print session header
@@ -7984,17 +8329,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // ═══════════════════════════════════════════════════════════════════════════
       const clientPred = clientScenePrediction;
       const skyReplacementAllowed = finalSkyModeResult.mode === "strong";
-      if (!VALIDATOR_LOGS_FOCUS) {
-        console.log(`[SCENE_SKY_DECISION] imageId=${payload.imageId} ` +
-          `scene=${effectiveScene} skyMode=${finalSkyModeResult.mode} confidence=${fmt(primary?.confidence)} ` +
-          `coveredExteriorSuspect=${baseSkyModeResult.coveredExteriorSuspect} ` +
-          `skyReplacementAllowed=${skyReplacementAllowed} ` +
-          `reason=${(finalSkyModeResult as any).forcedReason || (skyReplacementAllowed ? 'confident_open_sky' : 'features_below_threshold')} ` +
-          `envThresholds={skyTop40Min:${finalSkyModeResult.thresholds.skyTop40Min},blueOverallMin:${finalSkyModeResult.thresholds.blueOverallMin}} ` +
-          `features={skyTop10:${fmt(finalSkyModeResult.features.skyTop10)},skyTop40:${fmt(finalSkyModeResult.features.skyTop40)},blueOverall:${fmt(finalSkyModeResult.features.blueOverall)}} ` +
-          `clientPrediction=${clientPred?.scene ?? 'null'}/${fmt(clientPred?.confidence)}/${clientPred?.reason ?? 'n/a'} ` +
-          `manualOverride=${hasManualSceneOverride} requiresConfirm=${requiresSceneConfirm}`);
-      }
+      nLog(`[SCENE_SKY_DECISION] imageId=${payload.imageId} ` +
+        `scene=${effectiveScene} skyMode=${finalSkyModeResult.mode} confidence=${fmt(primary?.confidence)} ` +
+        `coveredExteriorSuspect=${baseSkyModeResult.coveredExteriorSuspect} ` +
+        `skyReplacementAllowed=${skyReplacementAllowed} ` +
+        `reason=${(finalSkyModeResult as any).forcedReason || (skyReplacementAllowed ? 'confident_open_sky' : 'features_below_threshold')} ` +
+        `envThresholds={skyTop40Min:${finalSkyModeResult.thresholds.skyTop40Min},blueOverallMin:${finalSkyModeResult.thresholds.blueOverallMin}} ` +
+        `features={skyTop10:${fmt(finalSkyModeResult.features.skyTop10)},skyTop40:${fmt(finalSkyModeResult.features.skyTop40)},blueOverall:${fmt(finalSkyModeResult.features.blueOverall)}} ` +
+        `clientPrediction=${clientPred?.scene ?? 'null'}/${fmt(clientPred?.confidence)}/${clientPred?.reason ?? 'n/a'} ` +
+        `manualOverride=${hasManualSceneOverride} requiresConfirm=${requiresSceneConfirm}`);
     }
     // Room type (ONNX + heuristic fallback; fallback again to legacy heuristic)
     let room = await detectRoomType(buf).catch(async () => null as any);
@@ -8282,6 +8625,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] Stage1A probable exterior fallback: resolvedScene=${sceneLabel} -> stage1AScene=exterior`);
   }
 
+  // "Twilight / Dusk Photo" checkbox (Stage 1A Exterior Enhancement). Scene-
+  // disjoint from "Enhance Exterior Outlook" (enhanceExteriorSky) by
+  // construction: that flag only ever fires for interior scenes, this one
+  // only for exterior — both derive from the same single scene resolution
+  // here, so there is no window where they could conflict. Must stay that
+  // way; do not add UI-level mutual exclusion (a batch can legitimately mix
+  // interior and exterior photos with different global toggles applying).
+  const stage1ADuskExteriorRequested = strictBool((payload.options as any)?.enhanceExteriorDusk);
+  const stage1ADuskExteriorEnabled = stage1ADuskExteriorRequested && stage1ASceneLabel === "exterior";
+  nLog(`[WORKER] Dusk exterior checkbox: requested=${stage1ADuskExteriorRequested} enabled=${stage1ADuskExteriorEnabled} stage1AScene=${stage1ASceneLabel}`);
+
   let hasRoofStructure = false;
   if (stage1ASceneLabel === "exterior") {
     try {
@@ -8295,20 +8649,56 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const userSceneOverride = manualSceneOverride && (payload.options.sceneType === "interior" || payload.options.sceneType === "exterior")
     ? { sceneOverride: payload.options.sceneType as "interior" | "exterior" }
     : undefined;
+  // Production incident (job_5671358c, 2026-09-16): this used to read the
+  // raw, pre-correction `scenePrimary?.label` instead of the final resolved
+  // `sceneLabel` (which already incorporates the user's manual scene
+  // confirmation/override and is what the rest of the pipeline — Stage 1A's
+  // own prompt selection, staging gates, etc. — trusts). For an interior
+  // photo whose raw auto-detector guess was a confident-but-wrong
+  // "exterior" (e.g. a large, bright window/sliding-door view dominating
+  // the frame), that mismatch let determineLightingDecision's interior
+  // no-op guard get skipped, sending applyExteriorRelighting's maximum
+  // strength/profile at a genuinely interior room and clipping its walls to
+  // white. Must stay in sync with `sceneLabel`, not the raw detector field.
   const sceneDetectionForLighting = {
-    sceneType: scenePrimary?.label === "exterior" ? "exterior" : "interior",
+    sceneType: sceneLabel === "exterior" ? "exterior" : "interior",
     confidence: typeof scenePrimary?.confidence === "number" ? scenePrimary.confidence : 0,
     needsConfirm: Boolean(scenePrimary?.needsConfirm || requiresSceneConfirm),
   } as const;
+  // Widened (Stage 1A Exterior Enhancement): previously only ambiguous/
+  // low-confidence/user-overridden/pergola-containing photos ever reached
+  // analyzeExteriorEnvironment/applyExteriorRelighting — an ordinary,
+  // confidently-classified exterior listing photo (the common case) skipped
+  // this whole block, so the relighting engine never ran on it at all. This
+  // is now unconditional for any exterior-classified photo. Verified safe:
+  // determineLightingDecision independently re-checks scene.sceneType ===
+  // "interior" and no-ops regardless of why it was called, so this cannot
+  // cause relighting to run on an interior photo.
+  //
+  // Excluded when dusk mode is active: this whole engine exists to decide
+  // whether/how to brighten an existing daytime sky (analyzeExteriorEnvironment,
+  // determineLightingDecision, applyExteriorRelighting), which is the wrong
+  // tool for a full generative twilight repaint — dusk jobs are routed
+  // through their own dedicated prompt (stage1A.ts) instead, and skipping
+  // this also saves the extra Gemini classifier call.
   const shouldAnalyzeExteriorEnvironment = Boolean(
-    sceneDetectionForLighting.needsConfirm ||
-    sceneDetectionForLighting.confidence < SCENE_CONF_THRESHOLD ||
-    userSceneOverride?.sceneOverride === "exterior" ||
-    hasRoofStructure
+    !stage1ADuskExteriorEnabled && (
+      sceneDetectionForLighting.needsConfirm ||
+      sceneDetectionForLighting.confidence < SCENE_CONF_THRESHOLD ||
+      userSceneOverride?.sceneOverride === "exterior" ||
+      hasRoofStructure ||
+      sceneDetectionForLighting.sceneType === "exterior"
+    )
   );
 
+  if (stage1ADuskExteriorEnabled) {
+    nLog(`[WORKER] Exterior environment analysis skipped — dusk mode active`);
+  }
+
   if (shouldAnalyzeExteriorEnvironment) {
+    const exteriorEnvAnalysisStartedAt = Date.now();
     exteriorEnvironment = await analyzeExteriorEnvironment(toBase64(canonicalPath).data);
+    nLog(`[EXTERIOR_ENV_TIMING] durationMs=${Date.now() - exteriorEnvAnalysisStartedAt}`);
     exteriorLightingDecision = determineLightingDecision({
       scene: sceneDetectionForLighting,
       userOverride: userSceneOverride,
@@ -8394,50 +8784,37 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[WORKER] Sky Safeguard: pergola detector error (fail-open):`, (e as any)?.message || e);
     }
   }
-  logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
-  if (await stopIfCancelled("pre_stage1a")) return;
-  await safeWriteJobStatus(
-    payload.jobId,
-    {
-      status: "processing",
-      currentStage: "STAGE_1A",
-      stage: "1A",
-      progress: 30,
-    },
-    "stage1a_start"
-  );
-  path1A = await withMemoryPhase(
-    "stage1a_generation",
-    {
-      sceneType: stage1ASceneLabel,
-      replaceSky: safeReplaceSky,
-      skyMode: skyModeForStage1A,
-    },
-    () => runStage1A(canonicalPath, {
-      replaceSky: safeReplaceSky,
-      declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
-      sceneType: stage1ASceneLabel,
-      interiorProfile: ((): any => {
-        const p = (payload.options as any)?.interiorProfile;
-        if (p === 'nz_high_end' || p === 'nz_standard') return p;
-        return undefined;
-      })(),
-      skyMode: skyModeForStage1A,
-      jobId: payload.jobId,
-      imageId: payload.imageId,
-      roomType: payload.options.roomType,
-      baseArtifacts: jobContext.baseArtifacts,
-      baseArtifactsCache: jobContext.baseArtifactsCache,
-      jobSampling: jobContext.jobSampling,
-    })
-  );
 
-  if (exteriorLightingDecision?.shouldRelight) {
-    path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
+  // Dusk mode wins over every safeguard above: a full generative twilight
+  // repaint doesn't use the daytime mask-based sky-replacement mechanism
+  // those safeguards protect, and leaving safeReplaceSky=true here would
+  // double-instruct the model (both the dusk prompt and a separate sky-mask
+  // replacement pass). Placed last so it overrides unconditionally.
+  if (stage1ADuskExteriorEnabled) {
+    safeReplaceSky = false;
+    skyModeForStage1A = "safe";
+    nLog(`[WORKER] Dusk mode active — forcing safeReplaceSky=false, skyMode=safe`);
   }
 
+  // "Enhance Exterior Outlook" checkbox (reintroduced 2026-08-30 — ported
+  // from opening-validator-and-stage-2-prompt-amendments, deliberately
+  // excluding that lineage's later Grok-Stage1A-generator experiment).
+  // Brightens the exterior visible through windows/doors on INTERIOR
+  // shots only — see stage1A.ts's own gating on effectiveSceneType.
+  // Off unless STAGE1A_EXTERIOR_OUTLOOK=on (Oct 2026: with it on, Gemini
+  // invented windows and doorways in rooms without a visible view).
+  const exteriorOutlookAllowed = ["1", "true", "on", "yes"].includes(String(process.env.STAGE1A_EXTERIOR_OUTLOOK || "").trim().toLowerCase());
+  const stage1ASunnyExteriorEnabled = exteriorOutlookAllowed && strictBool((payload.options as any)?.enhanceExteriorSky);
+  logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
+  if (await stopIfCancelled("pre_stage1a")) return;
+  // Window/door survey: reads the original photo, not the Stage 1A result, so
+  // start it alongside Stage 1A rather than after it (it used to start only
+  // once Stage 1A finished — 40-55 s later than it could).
   const baselineApiKeyPresent = Boolean(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY);
-  const canRunParallelBaseline = stage2Requested && baselineApiKeyPresent;
+  // The window/door survey only serves staging, and exteriors are never
+  // staged: skip it (production Oct 2026: a 72 s Gemini call, and the job
+  // waited for it after deciding not to stage).
+  const canRunParallelBaseline = stage2Requested && baselineApiKeyPresent && stage1ASceneLabel !== "exterior" && sceneLabel !== "exterior";
   const shouldTriggerBaselineDuringStage1A = canRunParallelBaseline && !structuralBaseline && !structuralBaselinePromise;
   const baselineTriggerReason = !stage2Requested
     ? "stage2_not_required"
@@ -8463,11 +8840,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const extractedBaseline = await withMemoryPhase(
           "stage1a_structural_baseline",
           { attempt: 1, startedDuringStage1A: true },
-          () => extractStructuralBaseline(canonicalPath, {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt: 1,
-          })
+          async () => {
+            try {
+              return await extractStructuralBaseline(canonicalPath, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: 1,
+              });
+            } catch (firstAttemptErr: any) {
+              // One retry only, not a loop — this whole block already requires
+              // stage2Requested (see canRunParallelBaseline above), and runs in
+              // parallel with Stage 1A so the extra latency is largely hidden.
+              // A null baseline here silently degrades the combined-mode prompt
+              // assembly to generic text with no protected-feature list at all,
+              // so a transient failure is worth one retry before falling back.
+              nLog(`[STRUCTURAL_BASELINE_RETRY] jobId=${payload.jobId} reason=${firstAttemptErr?.message || firstAttemptErr}`);
+              return await extractStructuralBaseline(canonicalPath, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: 2,
+              });
+            }
+          }
         );
         structuralBaseline = extractedBaseline;
         jobContext.structuralBaseline = extractedBaseline;
@@ -8502,7 +8896,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           completedBeforeStage1AFinished,
           persistenceMs,
         });
-        nLog(`[STRUCTURAL_BASELINE_EXTRACTED] jobId=${payload.jobId} openings=${extractedBaseline.openings.length}`);
+        const anchorFixtureSummary = (extractedBaseline.anchorFixtures || [])
+          .map((f) => `${f.type}:${f.wallIndex}`)
+          .join(",");
+        nLog(`[STRUCTURAL_BASELINE_EXTRACTED] jobId=${payload.jobId} openings=${extractedBaseline.openings.length} anchorFixtures=${(extractedBaseline.anchorFixtures || []).length} anchorFixtureSummary=[${anchorFixtureSummary}]`);
         return extractedBaseline;
       } catch (baselineErr: any) {
         nLog(`[STRUCTURAL_BASELINE_ERROR] jobId=${payload.jobId} reason=${baselineErr?.message || baselineErr}`);
@@ -8511,6 +8908,111 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     })();
     nLog(`[STRUCTURAL_BASELINE_STARTED] jobId=${payload.jobId} source=canonical startedDuringStage1A=true`);
   }
+  // Exterior clutter check early start: exteriors always get this check (it
+  // decides the automatic exterior tidy-up), and it used to run only after
+  // Stage 1A, adding ~30 s after the enhanced photo was ready (production
+  // Oct 2026: 31 s, then a timeout). Run it on the original now, alongside
+  // Stage 1A — enhancing changes light and colour, not what's in the yard.
+  let exteriorClutterPrefetch: Promise<CachedFurnitureDetectionResult | null> | null = null;
+  if (stage1ASceneLabel === "exterior" && !frozenRoutingSnapshot) {
+    nLog("[EXTERIOR_CLUTTER_PREFETCH_START]", { jobId: payload.jobId });
+    const prefetchStartedAt = Date.now();
+    exteriorClutterPrefetch = runFurnitureDetectionOnce({
+      payload,
+      imagePath: canonicalPath,
+      detectorCache: jobContext.furnitureDetectionCache,
+      detectorCacheStats: jobContext.detectorCacheStats,
+      sceneType: "exterior",
+      startedEvent: "DETECTOR_STARTED",
+      startedFields: { confidence: null, finalSkipStage1B: null, early: true },
+    })
+      .then((r) => {
+        nLog("[EXTERIOR_CLUTTER_PREFETCH_DONE]", { jobId: payload.jobId, ms: Date.now() - prefetchStartedAt, status: (r as any)?.status ?? null });
+        return r;
+      })
+      .catch((err: any) => {
+        nLog("[EXTERIOR_CLUTTER_PREFETCH_FAILED]", { jobId: payload.jobId, error: err?.message || String(err) });
+        return null;
+      });
+  }
+  // Layout planner early start (empty rooms only): the upload pre-check
+  // already found the room empty, so Stage 2 will furnish it from the Stage
+  // 1A photo and run the room brief anyway. Start the brief on the original
+  // now so it runs alongside Stage 1A (which changes light and colour, not
+  // the room's shape). Furnished rooms go through 1B and refresh mode, where
+  // no planner runs, so nothing starts early for them.
+  try {
+    const earlyRoomType = String(payload.options.roomType || "").trim();
+    const earlyPrecheck = (payload.options as any)?.furniturePrecheck as { localEmpty?: boolean; analysis?: any } | undefined;
+    // Same "empty" decision the routing makes later: the local check, or the
+    // pre-check's furniture detector finding no furniture (the local check
+    // often says false on empty rooms that the detector clears).
+    const earlyRoomEmpty = earlyPrecheck?.localEmpty === true
+      || (!!earlyPrecheck?.analysis && isFurnitureDetectionSuccess(earlyPrecheck.analysis) && earlyPrecheck.analysis.hasFurniture === false);
+    const earlyStage2Mode = String((payload.options as any)?.stage2Mode || "").trim().toUpperCase();
+    if (
+      payload.options.virtualStage
+      && roomBriefEnabled()
+      && stage1ASceneLabel === "interior"
+      && earlyRoomEmpty
+      && earlyRoomType
+      && !["auto", "unknown"].includes(earlyRoomType.toLowerCase())
+      && earlyStage2Mode !== "REFRESH"
+    ) {
+      const earlyStyle = (payload as any)?.options?.stagingStyle;
+      startRoomBriefPrefetch({
+        jobId: payload.jobId,
+        imagePath: canonicalPath,
+        roomType: earlyRoomType,
+        styleDescription: roomBriefStyleFor(earlyRoomType, typeof earlyStyle === "string" ? earlyStyle.trim() : undefined),
+      });
+    }
+  } catch (err: any) {
+    console.warn("[ROOM_BRIEF_PREFETCH_SKIPPED]", { jobId: payload.jobId, error: err?.message || String(err) });
+  }
+  await safeWriteJobStatus(
+    payload.jobId,
+    {
+      status: "processing",
+      currentStage: "STAGE_1A",
+      stage: "1A",
+      progress: 30,
+    },
+    "stage1a_start"
+  );
+  path1A = await withMemoryPhase(
+    "stage1a_generation",
+    {
+      sceneType: stage1ASceneLabel,
+      replaceSky: safeReplaceSky,
+      skyMode: skyModeForStage1A,
+    },
+    () => runStage1A(canonicalPath, {
+      replaceSky: safeReplaceSky,
+      enhanceExteriorSky: stage1ASunnyExteriorEnabled,
+      duskMode: stage1ADuskExteriorEnabled,
+      declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
+      sceneType: stage1ASceneLabel,
+      interiorProfile: ((): any => {
+        const p = (payload.options as any)?.interiorProfile;
+        if (p === 'nz_high_end' || p === 'nz_standard') return p;
+        return undefined;
+      })(),
+      skyMode: skyModeForStage1A,
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      roomType: payload.options.roomType,
+      baseArtifacts: jobContext.baseArtifacts,
+      baseArtifactsCache: jobContext.baseArtifactsCache,
+      jobSampling: jobContext.jobSampling,
+    })
+  );
+
+  if (exteriorLightingDecision?.shouldRelight) {
+    path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
+  }
+
+  // (The window/door survey now starts before Stage 1A — see above.)
 
   try {
     const mask = jobContext.structuralMask;
@@ -8773,8 +9275,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ✅ PER-IMAGE ROUTING: Override for multi-room types (must have virtualStage enabled)
   const roomType = payload.options.roomType;
   const normalizedRoomType = String(roomType || "").toLowerCase().replace(/-/g, "_").trim();
-  const canonicalRoomType = normalizedRoomType === "multiple_living_areas" ? "multiple_living" : normalizedRoomType;
-  const forceLightRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const canonicalRoomType = (normalizedRoomType === "multiple_living_areas" || normalizedRoomType === "multiple_living") ? "kitchen_living_dining" : normalizedRoomType;
+  const forceLightRoomTypes = new Set(["kitchen_living_dining", "kitchen_dining", "kitchen_living", "living_dining"]);
 
   const snapshotImpliesResolvedFurnishedGate = (snapshot: any): boolean => {
     if (!snapshot || typeof snapshot !== "object") return false;
@@ -8876,10 +9378,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         await reassertFurnishedGateResolvedFromSnapshot(routingSnapshot, "job_meta_routing_snapshot");
       } else {
         const stage1ABuffer = await fs.promises.readFile(path1A);
-        const localEmpty = await isRoomEmpty(stage1ABuffer);
+        // Furniture pre-check (run on the website preview before submit, and
+        // used to quote/reserve the credits): reuse its answer so the room is
+        // routed exactly as quoted. A failed pre-check detector result is not
+        // reused — the detector runs here as before.
+        const furniturePrecheck = (payload.options as any)?.furniturePrecheck as
+          | { localEmpty?: boolean; analysis?: any }
+          | undefined;
+        const usePrecheck = !shouldResolveExteriorDeclutter
+          && !!furniturePrecheck
+          && typeof furniturePrecheck.localEmpty === "boolean";
+        const localEmpty = usePrecheck ? furniturePrecheck!.localEmpty === true : await isRoomEmpty(stage1ABuffer);
+        if (usePrecheck && !localEmpty && isFurnitureDetectionSuccess(furniturePrecheck!.analysis)) {
+          jobContext.furnitureDetectionCache.set(
+            getFurnitureDetectionCacheKey({ imagePath: path1A, sceneType: "interior" }),
+            furniturePrecheck!.analysis
+          );
+        }
+        if (usePrecheck) {
+          nLog("[FURNITURE_PRECHECK_REUSED]", {
+            jobId: payload.jobId,
+            localEmpty,
+            detectorReused: !localEmpty && isFurnitureDetectionSuccess(furniturePrecheck!.analysis),
+            quotedCredits: (payload.options as any)?.quotedCredits ?? null,
+          });
+        }
 
         if (shouldResolveExteriorDeclutter) {
-          const exteriorDetection = await runFurnitureDetectionOnce({
+          const exteriorDetection = (exteriorClutterPrefetch ? await exteriorClutterPrefetch : null) || await runFurnitureDetectionOnce({
             payload,
             imagePath: path1A,
             detectorCache: jobContext.furnitureDetectionCache,
@@ -9243,6 +9769,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             roomState: detectorFallback ? null : roomState,
             hasClutter: detectorFallback ? null : hasClutter,
             directRefreshEligible: detectorFallback ? null : gateDecision?.directRefreshEligible === true,
+            hasPrimaryAnchor: detectorFallback ? null : gateDecision?.hasPrimaryAnchor === true,
             excessFurnitureCount,
             skipStage1B,
             stage1BSkippedByDesign: skipStage1B,
@@ -9715,10 +10242,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       nLog(`[STAGE1B_ATTEMPT] attempt=${attempt} max=${maxAttempts}`);
-      const geminiConfig = getStage1BGeminiConfig(attempt);
-      nLog(`[STAGE1B_DECAY_CONFIG] temp=${geminiConfig.temperature} topP=${geminiConfig.topP.toFixed(2)} topK=${geminiConfig.topK}`);
-
-      const candidate = await withMemoryPhase(
+      // Sampling is set inside runStage1B (low temperature, lower again on a
+      // retry). The worker used to override it with temperature 33, which
+      // Gemini rejects (valid range 0-2): every light declutter failed and
+      // published a blurred copy of the 1A image (Oct 2026, 33 Golf Rd).
+      let candidate: string;
+      try {
+      candidate = await withMemoryPhase(
         "stage1b_generation_attempt",
         { attempt: attempt + 1, declutterMode },
         () => runStage1B(path1A, {
@@ -9733,12 +10263,36 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           baseArtifacts: jobContext.baseArtifacts,
           curtainRailLikely: jobContext.curtainRailLikely,
           jobDeclutterIntensity: jobContext.jobDeclutterIntensity,
-          jobSampling: {
-            ...(jobContext.jobSampling || {}),
-            ...geminiConfig,
-          },
+          jobSampling: jobContext.jobSampling,
         })
       );
+      } catch (err: any) {
+        // Gemini could not declutter (after its own retries and fallback
+        // model). Deliver the enhanced image and say so — never a copy of
+        // the 1A image presented as decluttered.
+        nLog(`[STAGE1B_GENERATION_FAILED] jobId=${payload.jobId} attempt=${attempt} error=${String(err?.message || err).slice(0, 300)}`);
+        const latestJob = await getJob(payload.jobId);
+        if (isTerminalStatus(latestJob?.status)) return;
+        await completePartialJobWithSummary({
+          jobId: payload.jobId,
+          triggerStage: "1B",
+          finalStage: "1A",
+          finalPath: path1A,
+          pub1AUrl,
+          pub1BUrl,
+          sceneMeta,
+          userMessage: "We enhanced your image but could not declutter it.",
+          reason: "stage1b_generation_failed",
+          stageOutputs: { "1A": path1A },
+          billingContext: {
+            payload,
+            sceneType: sceneLabel || "interior",
+            stage1BUserSelected: originalUserDeclutter,
+            geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+          },
+        });
+        return;
+      }
       await consumeManualRetryAttemptIfNeeded("stage1b", true);
 
       nLog(`[VALIDATOR_INPUT] stage=1B attempt=${attempt} using=${candidate}`);
@@ -10361,6 +10915,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
 
+  // Populated below (if 1B ran and there was an anchor to re-check) and
+  // consumed at the Stage 2 mode decision further down — see that block's
+  // comment for why this replaces the old stale-pre-1B-only decision.
+  let post1BAnchorResult: PostStage1BAnchorResult | null = null;
+
   if (payload.options.virtualStage && payload.options.declutter && path1B && sceneLabel === "interior") {
     nLog("[STAGE1B_FURNITURE_HEURISTIC]", {
       jobId: payload.jobId,
@@ -10380,13 +10939,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         : frozenRoutingSnapshot?.roomState === "EMPTY"
           ? "EMPTY"
           : (frozenRoutingSnapshot?.hasClutter === true ? "CLUTTERED" : null);
-    await runPostStage1BAnchorValidator({
+    post1BAnchorResult = await runPostStage1BAnchorValidator({
       payload,
       imagePath: path1B,
       detectorCache: jobContext.furnitureDetectionCache,
       detectorCacheStats: jobContext.detectorCacheStats,
       intent: hasVirtualStage && stage2Requested ? "stage" : "non_stage",
       stage1BRan: true,
+      hadAnchorPreStage1B: frozenRoutingSnapshot?.hasPrimaryAnchor === true,
+      roomType: canonicalRoomType,
       initialState,
     });
   }
@@ -10658,18 +11219,73 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         reason: "resolved_refresh_gate",
         anchorDetectionUsed: false,
       });
-    } else if (frozenRoutingSnapshot?.geminiHasFurniture === false) {
+    } else if (frozenRoutingSnapshot?.hasPrimaryAnchor === false) {
+      // No room-type-correct PRIMARY anchor pre-1B — a chair/coffee table/
+      // side table/freestanding wardrobe/cabinet/etc. (or just clutter)
+      // does not make Refresh mode applicable, regardless of whether
+      // Stage 1B (which still ran, to attempt to strip the room back) fully
+      // succeeded at removing it. Stage 1B can only remove things, never
+      // invent a primary anchor from nothing, so unlike the real-anchor
+      // case below there's nothing to re-check post-1B — this is
+      // unconditional.
       (payload.options as any).stage2Mode = "FROM_EMPTY";
       nLog("[ANCHOR_DETECTION_BYPASS]", {
-        reason: "no_furniture_post_1a",
+        reason: "no_primary_anchor_for_room_type",
+        anchorDetectionUsed: false,
+      });
+    } else if (frozenRoutingSnapshot?.hasPrimaryAnchor === true) {
+      // A real primary anchor was detected BEFORE Stage 1B ran — but 1B
+      // only removes furniture, it can also (via generation error, or a
+      // legitimately ambiguous "which item is dominant" call) strip the
+      // very anchor that justified Refresh mode in the first place.
+      // Refresh mode's own "keep the anchor exactly where it is"
+      // instruction has nothing to apply to if that happened, which is a
+      // real, confirmed source of instability (curtain/opening drift) on
+      // rooms that reach Stage 2 effectively empty despite being routed as
+      // furnished. post1BAnchorResult (see runPostStage1BAnchorValidator)
+      // re-checks the ACTUAL post-1B image when one was produced, this
+      // time specifically for the primary anchor's own survival; only a
+      // positive "absent" confirmation flips the route — a null (1B didn't
+      // run/wasn't applicable) or "inconclusive" (detector failed) result
+      // preserves today's existing behavior exactly, so this can only make
+      // routing safer, never flakier.
+      if (post1BAnchorResult === "absent") {
+        (payload.options as any).stage2Mode = "FROM_EMPTY";
+        nLog("[ANCHOR_DETECTION_BYPASS]", {
+          reason: "anchor_lost_during_stage1b",
+          anchorDetectionUsed: true,
+        });
+      } else {
+        (payload.options as any).stage2Mode = "REFRESH";
+        nLog("[ANCHOR_DETECTION_BYPASS]", {
+          reason: "reuse_post_1a_detector",
+          anchorDetectionUsed: false,
+          post1BAnchorResult,
+        });
+      }
+    } else if (frozenRoutingSnapshot?.geminiHasFurniture === false) {
+      // hasPrimaryAnchor unavailable (e.g. detector fallback) — fall back
+      // to the broader pre-existing signal, unchanged from before.
+      (payload.options as any).stage2Mode = "FROM_EMPTY";
+      nLog("[ANCHOR_DETECTION_BYPASS]", {
+        reason: "no_furniture_post_1a_fallback",
         anchorDetectionUsed: false,
       });
     } else if (frozenRoutingSnapshot?.geminiHasFurniture === true) {
-      (payload.options as any).stage2Mode = "REFRESH";
-      nLog("[ANCHOR_DETECTION_BYPASS]", {
-        reason: "reuse_post_1a_detector",
-        anchorDetectionUsed: false,
-      });
+      if (post1BAnchorResult === "absent") {
+        (payload.options as any).stage2Mode = "FROM_EMPTY";
+        nLog("[ANCHOR_DETECTION_BYPASS]", {
+          reason: "anchor_lost_during_stage1b_fallback",
+          anchorDetectionUsed: true,
+        });
+      } else {
+        (payload.options as any).stage2Mode = "REFRESH";
+        nLog("[ANCHOR_DETECTION_BYPASS]", {
+          reason: "reuse_post_1a_detector_fallback",
+          anchorDetectionUsed: false,
+          post1BAnchorResult,
+        });
+      }
     }
   }
   
@@ -10689,13 +11305,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2SourceStage = stage2Routing.sourceStage;
 
   // TODO(post-demo): restore hard-fail invariant enforcement after validation stabilization
-  if (stage1BRequired && stage2SourceStage === "1A") {
+  //
+  // C1 fix: this used to fire on stage1BRequired alone (the AI furniture
+  // gate's opinion), which is deliberately non-authoritative — see
+  // pipeline/routingInvariants.ts's doc comment for the full history
+  // (job_1a4c8532 and the 6 exterior-scene false positives that motivated
+  // this). The corrected check requires the user's own request to have
+  // asked for Stage 1B too, and exempts exterior scenes outright.
+  const stage1BSourceStageInvariant = evaluateStage1BSourceStageInvariant({
+    isExteriorScene,
+    stage1BRequired,
+    stage1BRequested,
+    stage2SourceStage,
+  });
+  if (stage1BSourceStageInvariant.violated) {
     logger.error("ROUTING_INVARIANT_VIOLATION", {
       jobId: payload.jobId,
       mode: "SOFT_FAIL_PREDEMO",
-      code: "ROUTING_INVARIANT_STAGE1B_SOURCE_STAGE_CONFLICT",
+      code: stage1BSourceStageInvariant.code,
+      isExteriorScene,
       roomState: frozenRoutingSnapshot?.roomState ?? null,
       stage1BRequired,
+      stage1BRequested,
       skipStage1B,
       stage2SourceStage,
       stage2Mode: frozenRoutingSnapshot?.stage2Mode ?? null,
@@ -10704,9 +11335,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     console.error("[ROUTING_INVARIANT_VIOLATION]", {
       jobId: payload.jobId,
       mode: "SOFT_FAIL_PREDEMO",
-      code: "ROUTING_INVARIANT_STAGE1B_SOURCE_STAGE_CONFLICT",
+      code: stage1BSourceStageInvariant.code,
+      isExteriorScene,
       roomState: frozenRoutingSnapshot?.roomState ?? null,
       stage1BRequired,
+      stage1BRequested,
       skipStage1B,
       stage2SourceStage,
       stage2Mode: frozenRoutingSnapshot?.stage2Mode ?? null,
@@ -10731,7 +11364,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const isRefreshValidationBehavior = isRefreshValidationFlow && !(
     isRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
   );
-  console.log("STAGE2_VALIDATION_ROUTE", {
+  nLog("STAGE2_VALIDATION_ROUTE", {
     jobId: payload.jobId,
     isRefreshMode,
     routedTo: isRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
@@ -10813,6 +11446,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let path2: string = stage2InputResolved;
   let stage2LayoutPlan: Stage2LayoutPlan | null = null;
   let stage2TimedOut = false; // FIX 4: Track timeout status
+  // Masked Stage 2 (STAGE2_MASKED_HARMONISE): when used, the post-generation
+  // validation/retry controller below is skipped — the masked pipeline does
+  // its own checks and its single re-stage.
+  let maskedStage2Used = false;
   
   try {
     if (payload.options.virtualStage && !stage2Blocked) {
@@ -10843,9 +11480,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       
       // Surface incoming stagingStyle before calling Stage 2
       const stagingStyleRaw: any = (payload as any)?.options?.stagingStyle;
-      if (!VALIDATOR_LOGS_FOCUS) {
-        console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
-      }
+      nLog("[stage2] incoming stagingStyle =", stagingStyleRaw);
       stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
 
       // FIX 4: Add Stage 2 timeout with Promise.race
@@ -10880,7 +11515,155 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
       }
       if (await stopIfCancelled("pre_stage2")) return;
-      const stage2Promise = payload.options.virtualStage && !stage2Blocked
+      const stage2MainRoomType = (
+        !payload.options.roomType ||
+        ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
+      )
+        ? String(detectedRoom || "living_room")
+        : payload.options.roomType;
+      // ═══ MASKED STAGE 2 (STAGE2_MASKED_HARMONISE) ═══
+      // Interior rooms only (exteriors never reach Stage 2). Gemini stages the
+      // room; the furniture it added is traced and pasted onto the Stage 2 input
+      // (so the room's structure cannot change); Gemini blends shadows/lighting;
+      // the blend is checked patch by patch; a final door check runs. One
+      // re-stage for any failure; if that also fails, the job falls back to the
+      // last good output (the Stage 2 input) via the existing
+      // composite_validation_exhausted ending.
+      const useMaskedStage2 = Boolean(
+        payload.options.virtualStage && !stage2Blocked && sceneLabel === "interior" && maskedStage2Enabled() &&
+          // Refresh mode (room still has furniture; Gemini restyles it) stays on
+          // the old path unless STAGE2_MASKED_REFRESH=1: paste-back only carries
+          // new pieces, so restyled existing furniture can't come across.
+          (stage2PromptMode === "full" || ["1", "on", "true", "yes"].includes(String(process.env.STAGE2_MASKED_REFRESH || "").trim().toLowerCase()))
+      );
+      // The window/door survey doesn't decide whether staging runs. Merged
+      // staging with the room planner only needs it for the final door check
+      // (and the backup prompt if the planner fails), so start staging now and
+      // pick the survey up at the door check (production Oct 2026: staging
+      // waited 61-79 s for it after Stage 1A on every staged room).
+      const stagingWithoutSurveyWait = useMaskedStage2 && roomBriefEnabled() && stage2PromptMode === "full";
+      const stage2MainStructuralBaseline = stagingWithoutSurveyWait
+        ? (structuralBaseline || null)
+        : await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
+      if (stagingWithoutSurveyWait) {
+        nLog("[STAGE2_STARTED_WITHOUT_SURVEY_WAIT]", { jobId: payload.jobId, surveyReady: !!structuralBaseline });
+      }
+      if (useMaskedStage2) maskedStage2Used = true;
+      // Same generation inputs as the old path (runStage2): the optional
+      // layout-planner context is built the same way, from the same env var.
+      let maskedLayoutContext: LayoutContextResult | null = null;
+      const runMaskedStage2 = async () => {
+        if (stage2PromptMode === "full" && process.env.USE_GEMINI_LAYOUT_PLANNER === "1" && !roomBriefEnabled()) {
+          try {
+            maskedLayoutContext = await buildLayoutContext(stage2InputResolved);
+          } catch (layoutErr: any) {
+            nLog("[STAGE2_MASKED] layout planner failed - continuing without layout context", { error: layoutErr?.message || String(layoutErr) });
+          }
+        }
+        const debugUpload = maskedStage2DebugUploadEnabled();
+        const debugLinks: Record<string, string> = {};
+        const result = await runMaskedStage2Job({
+          inputPath: stage2InputResolved,
+          roomType: String(stage2MainRoomType),
+          jobId: payload.jobId,
+          doors: stagingWithoutSurveyWait
+            ? async () => doorsFromStructuralBaseline(await resolveStructuralBaselineForValidation("stage2_masked_door_check"))
+            : doorsFromStructuralBaseline(stage2MainStructuralBaseline),
+          maxRestages: MASKED_STAGE2_MAX_RESTAGES,
+          stage: (attempt, hints) =>
+            runStage2GenerationAttempt(stage2InputResolved, {
+              roomType: String(stage2MainRoomType),
+              sceneType: "interior",
+              profile,
+              structuralBaseline: stage2MainStructuralBaseline,
+              stagingStyle: stagingStyleNorm,
+              sourceStage: stage2SourceStage,
+              promptMode: stage2PromptMode,
+              stage2Mode: explicitStage2ModeMain,
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              outputPath: siblingOutPath(stage2InputResolved, `-2-masked-staged${attempt}`, ".webp"),
+              attempt,
+              layoutPlan: stage2LayoutPlan,
+              layoutContext: maskedLayoutContext,
+              retryType: (payload as any).retryType,
+              retryInstructions: (payload as any).retryInstructions,
+              retryCorrectionHints: hints.length ? hints : null,
+              curtainRailLikely: jobContext.curtainRailLikely,
+              modelReason: attempt === 1 ? "stage2_masked_initial_generation" : `stage2_masked_restage_${attempt - 1}`,
+            }),
+          outputPathFor: (attempt) => siblingOutPath(stage2InputResolved, attempt === 1 ? "-2" : `-2-retry${attempt - 1}`, ".webp"),
+          workDir: siblingOutPath(stage2InputResolved, "-2-masked-work", ""),
+          onAttemptFiles: debugUpload
+            ? async (attempt, dir, files) => {
+                await Promise.all(files.map(async (name) => {
+                  try {
+                    const res = await createDebugSignedUrl(path.join(dir, name), payload.jobId, {
+                      force: true,
+                      keyName: `masked/attempt${attempt}/${name}`,
+                    });
+                    if (res.signedUrl) debugLinks[`attempt${attempt}/${name}`] = res.signedUrl;
+                  } catch (uploadErr: any) {
+                    console.warn("[STAGE2_MASKED_DEBUG_UPLOAD_FAILED]", { jobId: payload.jobId, file: name, error: uploadErr?.message || String(uploadErr) });
+                  }
+                }));
+                // Print this attempt's links straight away, so they can be
+                // found in the logs even if the job stops before the end.
+                for (const name of files) {
+                  const url = debugLinks[`attempt${attempt}/${name}`];
+                  if (url) console.log(`[STAGE2_MASKED_DEBUG_URL] job_id=${payload.jobId} attempt=${attempt} file=${name} url=${url}`);
+                }
+              }
+            : undefined,
+          log: (msg) => console.log(`[STAGE2_MASKED] ${msg}`),
+          warn: (msg) => console.warn(`[STAGE2_MASKED] ${msg}`),
+        });
+        const summary = {
+          ok: result.ok,
+          attempts: result.attempts,
+          ...(result.ok ? {} : { reasons: result.reasons }),
+          reports: result.reports,
+          ...(debugUpload ? { debugLinks } : {}),
+        };
+        // console.log, not nLog: these must show even when quiet log modes mute nLog.
+        // One short, readable line per attempt; the image links were printed one
+        // per line ([STAGE2_MASKED_DEBUG_URL]) and the full report (without the
+        // links) follows for detailed review.
+        for (const r of result.reports as any[]) {
+          const parts = [
+            `job=${payload.jobId}`,
+            `attempt=${r.attempt}`,
+            `outcome="${r.outcome || (r.error ? "error" : "?")}"`,
+            r.maskPct ? `furniture=${r.maskPct.furniture}%` : null,
+            r.closeUpRetrace ? `closeUpAdded=${r.closeUpRetrace.addedPctOfImage ?? 0}%` : null,
+            r.framingCheck ? `roomReshaped=${r.framingCheck.framingChanged ? "YES" : "no"}(median ${r.framingCheck.medianDiff})` : null,
+            r.checkedBlend ? `final=${r.checkedBlend.usedAppBuiltInstead ? "app-built" : "checked-blend"}(repairs ${r.checkedBlend.repairPct}%)` : null,
+            r.doorAccess?.result ? `doors="${r.doorAccess.result}"` : null,
+            r.error ? `error="${String(r.error).slice(0, 160)}"` : null,
+          ].filter(Boolean);
+          console.log(`[STAGE2_MASKED_SUMMARY] ${parts.join(" | ")}`);
+        }
+        console.log(`[STAGE2_MASKED_SUMMARY] job=${payload.jobId} RESULT=${result.ok ? "published" : `FAILED -> fallback (${result.reasons.join(", ")})`} attempts=${result.attempts}`);
+        const { debugLinks: _links, ...summaryNoLinks } = summary as any;
+        console.log("[STAGE2_MASKED_RESULT]", JSON.stringify({ jobId: payload.jobId, imageId: payload.imageId, ...summaryNoLinks }));
+        try {
+          await updateJob(payload.jobId, { stage2Masked: summary });
+        } catch {}
+        if (result.ok) {
+          return {
+            outputPath: result.outputPath,
+            attempts: result.attempts,
+            maxAttempts: MASKED_STAGE2_MAX_RESTAGES + 1,
+            validationRisk: false,
+            fallbackUsed: false,
+            localReasons: [] as string[],
+          };
+        }
+        return { maskedFailed: true as const, reasons: result.reasons, attempts: result.attempts };
+      };
+      const stage2Promise = payload.options.virtualStage && !stage2Blocked && useMaskedStage2
+        ? withMemoryPhase("stage2_generation_masked", { stage2BaseStage, promptMode: stage2PromptMode }, runMaskedStage2)
+        : payload.options.virtualStage && !stage2Blocked
         ? withMemoryPhase(
             "stage2_generation_main",
             { stage2BaseStage, promptMode: stage2PromptMode },
@@ -10894,6 +11677,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             sceneType: sceneLabel as any,
             profile,
             angleHint,
+            structuralBaseline: stage2MainStructuralBaseline,
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
             stagingStyle: stagingStyleNorm,
             sourceStage: stage2SourceStage,
@@ -10942,8 +11726,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       
       // FIX 4: Wrap Stage 2 execution with timeout
       let stage2TimeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      // The masked pipeline (staging + tracing + blend, and possibly one full
+      // re-stage) takes longer than a single staging call.
+      const effectiveStage2TimeoutMs = useMaskedStage2
+        ? Number(process.env.STAGE2_MASKED_TIMEOUT_MS || 900000)
+        : STAGE2_TIMEOUT_MS;
       const timeoutPromise = new Promise((_, reject) => {
-        stage2TimeoutHandle = setTimeout(() => reject(new Error('STAGE2_TIMEOUT')), STAGE2_TIMEOUT_MS);
+        stage2TimeoutHandle = setTimeout(() => reject(new Error('STAGE2_TIMEOUT')), effectiveStage2TimeoutMs);
       });
       
       let stage2Outcome: any;
@@ -10952,11 +11741,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } catch (timeoutError: any) {
         if (timeoutError?.message === 'STAGE2_TIMEOUT') {
           stage2TimedOut = true;
-          logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2", kind: "timeout", elapsedMs: STAGE2_TIMEOUT_MS });
-          nLog(`[worker] ⏱️ Stage 2 timeout after ${STAGE2_TIMEOUT_MS}ms, falling back to Stage ${stage2BaseStage}`);
+          logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2", kind: "timeout", elapsedMs: effectiveStage2TimeoutMs });
+          nLog(`[worker] ⏱️ Stage 2 timeout after ${effectiveStage2TimeoutMs}ms, falling back to Stage ${stage2BaseStage}`);
           stage2Blocked = true;
           stage2FallbackStage = stage2BaseStage;
-          stage2BlockedReason = `Stage 2 processing exceeded ${STAGE2_TIMEOUT_MS / 1000}s timeout. Using best available result.`;
+          stage2BlockedReason = `Stage 2 processing exceeded ${effectiveStage2TimeoutMs / 1000}s timeout. Using best available result.`;
           stage2Outcome = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A;
         } else if (isStage2RetryableGenerationError(timeoutError)) {
           nLog("[STAGE2_GENERATION_RETRYABLE]", {
@@ -10980,6 +11769,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (stage2TimeoutHandle) clearTimeout(stage2TimeoutHandle);
       }
       
+      // Masked Stage 2 failed even after its re-stage: fall back to the last
+      // good output (the Stage 2 input) through the existing
+      // composite_validation_exhausted ending after the (skipped) validation.
+      if (stage2Outcome && typeof stage2Outcome === "object" && (stage2Outcome as any).maskedFailed) {
+        console.log("[STAGE2_MASKED_FALLBACK]", JSON.stringify({
+          jobId: payload.jobId,
+          reasons: (stage2Outcome as any).reasons,
+          attempts: (stage2Outcome as any).attempts,
+          fallbackStage: stage2BaseStage,
+        }));
+        stage2Blocked = true;
+        stage2FallbackStage = stage2BaseStage;
+        stage2BlockedReason = "composite_validation_exhausted";
+        stage2Outcome = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A;
+      }
+
       // FIX 6: Track Stage 2 end
       timestamps.stage2End = Date.now();
       if (payload.options.virtualStage && !stage2Blocked && !(await ensureStage2AttemptOwner("stage2_end"))) return;
@@ -11167,6 +11972,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sourceStage: fallbackRouting.sourceStage,
         isExteriorScene: sceneLabel === "exterior",
       });
+      const stage2BackstopStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
       let stage2Outcome: any;
       try {
         stage2Outcome = await runStage2(stage2InputResolved, stage2BaseStage, {
@@ -11179,6 +11985,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           sceneType: sceneLabel as any,
           profile,
           angleHint,
+          structuralBaseline: stage2BackstopStructuralBaseline,
           stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
           stagingStyle: stagingStyleFallback,
           sourceStage: fallbackRouting.sourceStage,
@@ -11325,7 +12132,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     Number(process.env.STAGE2_RETRY_GRACE_MS || 180000)
   );
   const logPostCompliancePhaseEnd = (phase: string, durationMs: number, extra: Record<string, unknown> = {}) => {
-    console.log(JSON.stringify({
+    vDetailLog(JSON.stringify({
       event: "POST_COMPLIANCE_PHASE_END",
       jobId: payload.jobId,
       validator: "post_compliance",
@@ -11412,10 +12219,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     );
   };
 
-  if (payload.options.virtualStage) {
+  // Masked Stage 2 runs its own checks (structure, checked blend, door access)
+  // and its own single re-stage, so the validation/retry controller is skipped.
+  if (payload.options.virtualStage && !maskedStage2Used) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
     let pendingStage2RetryStrategy: string | null = null;
     let pendingStage2RetryReason: string | null = null;
+    // Human-readable, specific descriptions of what a validator actually
+    // found wrong on the failed attempt (e.g. "the curtain-concealed window
+    // above the bed was replaced with wall art") — captured at the retry
+    // decision point below and injected near the top of the very next
+    // attempt's prompt, so a retry gets told what specifically went wrong
+    // instead of just re-rolling the same generation blind.
+    let pendingStage2RetryCorrectionHints: string[] | null = null;
     let stage2ReinforcedRetryUsed = false;
     const stage2DecisionImageUrl = (payload as any).imageUrl ?? (payload as any).baseImageUrl ?? null;
 
@@ -11566,6 +12382,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2_validation_loop", kind: "timeout", elapsedMs: stage2ElapsedMs });
           stage2Blocked = true;
           stage2BlockedReason = "stage2_runtime_exceeded";
+          // Same forensic-visibility gap as the completion guards above:
+          // this can fire after one or more real Stage 2 attempts already
+          // ran and got signed (attempt > 1 is exactly the case this grace
+          // window exists for) — without this, that data never reaches any
+          // log channel that survives PRODUCTION_LOG_MODE=true.
+          emitJobAttemptSummary("BLOCKED");
+          flushEnhanceForensicSnapshot({
+            uploadUrl: (payload as any).remoteOriginalUrl || null,
+            finalStatus: "blocked",
+            warningsCount: 0,
+            hardFail: true,
+            completionGuard: "runtime_exceeded",
+            finalOutputUrl: null,
+          });
           await safeWriteJobStatus(
             payload.jobId,
             {
@@ -11624,11 +12454,12 @@ All openings must remain identical in position and size to the original image.`;
           }
         }
         if (useReinforcedRetry) {
-          console.log("[STAGE2] Retry-1 using reinforced structural prompt");
+          nLog("[STAGE2] Retry-1 using reinforced structural prompt");
         } else {
-          console.log("[STAGE2] Retry using corrective structural prompt");
+          nLog("[STAGE2] Retry using corrective structural prompt");
         }
         if (await stopIfCancelled("stage2_pre_retry_generation")) return;
+        const retryStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
         const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
         // IMPORTANT:
         // Retry-1 remains near-identical to initial Stage-2 generation except targeted
@@ -11660,12 +12491,14 @@ All openings must remain identical in position and size to the original image.`;
             attempt,
             retryType: "validator_forced_retry",
             retryInstructions: undefined,
+            retryCorrectionHints: pendingStage2RetryCorrectionHints || undefined,
             structuralRetryContext: {
                 compositeFail: useReinforcedRetry,
                 failureType: retryFailureType,
                 attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
               },
             layoutPlan: stage2LayoutPlan,
+            structuralBaseline: retryStructuralBaseline,
             structuralConstraintBlock,
             modelReason: `stage2 unified retry ${attempt - 1}`,
           })
@@ -11708,6 +12541,7 @@ All openings must remain identical in position and size to the original image.`;
         pendingStage2StructuralFailureType = null;
         pendingStage2RetryStrategy = null;
         pendingStage2RetryReason = null;
+        pendingStage2RetryCorrectionHints = null;
         recordStage2AttemptOutput(attempt - 1, retryStage2Path);
         stage2CandidatePath = retryStage2Path;
         path2 = retryStage2Path;
@@ -11933,6 +12767,41 @@ All openings must remain identical in position and size to the original image.`;
         primaryStructuredIssue?: StructuredIssue;
         structuredIssues?: StructuredIssue[];
         severity?: "low" | "medium" | "high";
+        // Human-readable description of what this specialist found wrong,
+        // for retry-feedback prompt injection — see
+        // pendingStage2RetryCorrectionHints. Only set when !pass.
+        retryCorrectionHint?: string;
+      };
+
+      // Validator "reason" strings are internal/compound (pipe-delimited
+      // fragments, e.g. "pass | window_artwork_replacement: W_curtain_1
+      // (Closed curtain fully covering wall-mounted window above bed):
+      // artwork confirmed occupying the window's own expected footprint:
+      // ..."), not written as clean prose — but they already carry the one
+      // thing a retry needs: which specific item, and what happened to it.
+      // Deliberately no parsing/reformatting here (fragile against format
+      // drift across validators); wrapped in a plain framing sentence and
+      // handed to Gemini as-is, which reads real meaning out of it fine.
+      const buildRetryCorrectionHint = (
+        validator: "opening" | "fixture" | "envelope" | "floor",
+        reason: string | undefined
+      ): string | undefined => {
+        const trimmed = String(reason || "").trim();
+        if (!trimmed || trimmed === "specialist_unavailable") return undefined;
+        const label =
+          validator === "opening" ? "a window, door, or other opening"
+          : validator === "fixture" ? "a fixed fixture"
+          : validator === "envelope" ? "the room's structural envelope"
+          : "the flooring";
+        // job_eb89ba07: a corrective hint scoped only to the previous
+        // attempt's specific failure (kitchen zone vanished) fixed exactly
+        // that, but the retry then dropped a DIFFERENT zone (the far
+        // wall's sliding door/windows/AC) that had been fine before — the
+        // hint gave no reminder that everything else must also keep
+        // surviving. The trailing sentence below is deliberately generic
+        // (not itemized) so it applies regardless of which validator
+        // triggered this hint or what else is in the room.
+        return `The previous attempt on this image failed validation involving ${label}: ${trimmed}. Do not repeat this in this attempt — keep the original photo's real features exactly as shown, unaltered and unobstructed. This must not come at the cost of any other feature: every other structural element, opening, and fixture that was correctly preserved in the previous attempt must also remain exactly as shown in this attempt.`;
       };
 
       const HIGH_CONFIDENCE_THRESHOLD = 0.9;
@@ -11995,6 +12864,7 @@ All openings must remain identical in position and size to the original image.`;
             ? params.structuredIssues
             : undefined,
           severity,
+          retryCorrectionHint: pass ? undefined : buildRetryCorrectionHint(params.validator, params.reason),
         };
       };
 
@@ -12325,7 +13195,46 @@ All openings must remain identical in position and size to the original image.`;
         });
       };
 
-      try {
+      // Extracted to a callable block (not just inline try body) so it can
+      // be re-invoked against the SAME already-generated image when it
+      // throws, before ever falling back to a full regenerate/fallback
+      // decision — see the retry loop right after this block's closing
+      // brace for why. Returns "fail_closed" (instead of directly
+      // `break`-ing the outer Stage 2 attempt loop, which a nested
+      // function can no longer reach) for the one internal case that must
+      // hard-stop immediately with no retry at all — a genuine specialist
+      // execution quorum failure, as opposed to this whole block throwing,
+      // which the caller retries.
+      const runSpecialistValidationBlock = async (): Promise<"success" | "fail_closed"> => {
+        // Reset every accumulator this block writes to back to its initial
+        // state on entry. Needed because this function can now run twice
+        // for the same attempt (see the revalidate loop below) — without
+        // this, a call that threw partway through (e.g. after processing
+        // openings but before fixtures) would leave its partial results in
+        // these outer-scope arrays/objects, and a retry would then push a
+        // second, duplicate round on top rather than starting clean.
+        envelopePass = true;
+        openingPass = true;
+        fixturePass = true;
+        floorPass = true;
+        specialistAdvisorySignals.length = 0;
+        collectedStructuralSignals.length = 0;
+        specialistAdvisoryObservations.length = 0;
+        specialistStructuredIssues.length = 0;
+        openingAdvisoryObservations = [];
+        openingSignatureSignalDetected = false;
+        openingStructuralSignal = undefined;
+        openingStructuralSignalDetected = false;
+        specialistSignals.openings = { pass: true, reason: "none" };
+        specialistSignals.fixtures = { pass: true, reason: "none" };
+        specialistSignals.floor = { pass: true, reason: "none" };
+        specialistSignals.envelope = { pass: true, reason: "none" };
+        specialistResults.opening = { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" };
+        specialistResults.fixture = { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" };
+        specialistResults.envelope = { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" };
+        specialistResults.floor = { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" };
+        specialistIssueSignals.length = 0;
+
         const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
         const { runOpeningValidator } = await import("./validators/openingValidator.js");
         const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
@@ -12391,46 +13300,133 @@ All openings must remain identical in position and size to the original image.`;
           0,
           Number(process.env.STAGE2_SPECIALIST_OPENING_TIMEOUT_MS || timeoutMs * 2)
         );
-        const specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
+
+        // Additive, switchable toggle (same discipline as STAGE2_PROMPT_VARIANT,
+        // stage2.ts:815-859): only "off" changes anything. Unset / any other
+        // value falls through to the existing chain, completely unaffected.
+        // Testing-environment only — see worker/src/validators/openingEnvelopeValidator.ts
+        // and worker/src/validators/fixtureFlooringValidator.ts for the split
+        // validators the "off" path now runs (superseding singleCallStructuralValidator.ts,
+        // which is retained unmodified for reference/comparison but is no
+        // longer invoked from here).
+        const stage2SpecialistValidatorsMode = String(process.env.STAGE2_SPECIALIST_VALIDATORS || "on").trim().toLowerCase();
+        nLog("[STAGE2_SPECIALIST_VALIDATORS_MODE]", {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
-          source: "main_stage2",
-          maxRetries,
-          timeoutMs,
-          timeoutMsBySpecialist: {
-            opening: openingTimeoutMs,
-            fixture: timeoutMs,
-            floor: timeoutMs,
-            envelope: timeoutMs,
-          },
-          tasks: {
-            opening: () => runSpecialistWithTiming("opening", async () => {
-              const resolvedOpeningBaseline = await openingBaselinePromise;
-              return runOpeningValidator(validationBasePath, path2, {
+          requested: process.env.STAGE2_SPECIALIST_VALIDATORS || "on",
+          mode: stage2SpecialistValidatorsMode,
+        });
+
+        let specialistOrchestration: { results: Record<string, any>; summary: any };
+        if (stage2SpecialistValidatorsMode === "off") {
+          const { runOpeningEnvelopeValidator } = await import("./validators/openingEnvelopeValidator.js");
+          const { runFixtureFlooringValidator } = await import("./validators/fixtureFlooringValidator.js");
+          const splitValidatorBaseline = await openingBaselinePromise;
+          if (!splitValidatorBaseline) {
+            // Fail closed, same posture as the existing chain's own fail-closed
+            // check (namesOfMissingSpecialists / completedCount===0 gate) —
+            // don't silently pass a job we couldn't actually validate.
+            specialistOrchestration = {
+              results: {},
+              summary: {
+                expectedSpecialistCount: 4,
+                completedCount: 0,
+                failedCount: 4,
+                retryFailedCount: 0,
+                namesOfMissingSpecialists: ["opening", "fixture", "floor", "envelope"],
+                allSpecialistsSettled: true,
+                allSpecialistsCompleted: false,
+                lifecycles: [],
+              },
+            };
+          } else {
+            const [openingEnvelopeResult, fixtureFlooringResult] = await Promise.all([
+              runOpeningEnvelopeValidator(validationBasePath, path2, splitValidatorBaseline, {
                 jobId: payload.jobId,
                 imageId: payload.imageId,
                 attempt,
-                baseline: resolvedOpeningBaseline || undefined,
-              });
-            }),
-            fixture: () => runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBasePath, path2, {
+              }),
+              runFixtureFlooringValidator(validationBasePath, path2, splitValidatorBaseline, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              }),
+            ]);
+            nLog("[STAGE2_SPLIT_VALIDATOR_RESULT]", {
               jobId: payload.jobId,
               imageId: payload.imageId,
               attempt,
-            })),
-            floor: () => runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBasePath, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-            })),
-            envelope: () => runSpecialistWithTiming("envelope", async () => runEnvelopeValidator(validationBasePath, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-            })),
-          },
-        });
+              openingStatus: openingEnvelopeResult.opening.status,
+              envelopeStatus: openingEnvelopeResult.envelope.status,
+              fixtureStatus: fixtureFlooringResult.fixture.status,
+              floorStatus: fixtureFlooringResult.floor.status,
+              openingMaterialAlteredItemIds: openingEnvelopeResult.materialAlteredItems.map((i) => i.id),
+              openingLowMaterialityItemIds: openingEnvelopeResult.lowMaterialityItems.map((i) => i.id),
+              fixtureMaterialAlteredItemIds: fixtureFlooringResult.materialAlteredItems.map((i) => i.id),
+              fixtureLowMaterialityItemIds: fixtureFlooringResult.lowMaterialityItems.map((i) => i.id),
+            });
+            specialistOrchestration = {
+              results: {
+                opening: openingEnvelopeResult.opening,
+                envelope: openingEnvelopeResult.envelope,
+                fixture: fixtureFlooringResult.fixture,
+                floor: fixtureFlooringResult.floor,
+              },
+              summary: {
+                expectedSpecialistCount: 4,
+                completedCount: 4,
+                failedCount: 0,
+                retryFailedCount: 0,
+                namesOfMissingSpecialists: [],
+                allSpecialistsSettled: true,
+                allSpecialistsCompleted: true,
+                lifecycles: [],
+              },
+            };
+          }
+        } else {
+          specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            source: "main_stage2",
+            maxRetries,
+            timeoutMs,
+            timeoutMsBySpecialist: {
+              opening: openingTimeoutMs,
+              fixture: timeoutMs,
+              floor: timeoutMs,
+              envelope: timeoutMs,
+            },
+            tasks: {
+              opening: () => runSpecialistWithTiming("opening", async () => {
+                const resolvedOpeningBaseline = await openingBaselinePromise;
+                return runOpeningValidator(validationBasePath, path2, {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt,
+                  baseline: resolvedOpeningBaseline || undefined,
+                });
+              }),
+              fixture: () => runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBasePath, path2, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              })),
+              floor: () => runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBasePath, path2, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              })),
+              envelope: () => runSpecialistWithTiming("envelope", async () => runEnvelopeValidator(validationBasePath, path2, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              })),
+            },
+          });
+        }
         specialistCompletionSummary = specialistOrchestration.summary;
 
         const opRes = specialistOrchestration.results.opening || {
@@ -13037,7 +14033,7 @@ All openings must remain identical in position and size to the original image.`;
               reason: failClosedReason,
             });
             logValidateFinal(attempt, "reject", attempt - 1);
-            break;
+            return "fail_closed";
           }
         }
 
@@ -13184,7 +14180,7 @@ All openings must remain identical in position and size to the original image.`;
 
           specialistAdvisoryObservationsBatch.push(observation);
 
-          console.log("[SPECIALIST_SIGNAL]", {
+          nLog("[SPECIALIST_SIGNAL]", {
             category: validatorDomain,
             location,
             question,
@@ -13263,14 +14259,131 @@ All openings must remain identical in position and size to the original image.`;
             })),
           });
         }
-      } catch (err: any) {
-        const gateErrorMessage = err?.message || String(err);
-        nLog("[STAGE2_VALIDATION_SIGNAL_ERROR] domain validators unavailable (non-blocking)", {
+        return "success";
+      };
+
+      // An error here means the validators never actually examined this
+      // image — it is NOT evidence the image itself is bad, so the first
+      // response is to re-run validation on the SAME already-generated
+      // image (no new generation call), same as re-submitting a request
+      // that hit a transient infra error. Only if that also fails to
+      // produce a real result do we treat this as a failed Stage 2 attempt
+      // and fall into the existing regenerate-or-fallback decision below —
+      // exactly like any other validator hard fail. Real incident this
+      // guards against: a job's second attempt hit a validator execution
+      // error, and — before this fix — published immediately with
+      // openingPass/fixturePass/floorPass/envelopePass still at their
+      // true-by-default initial values (a fabricated wall the validators
+      // never actually got to examine), while its own first attempt
+      // (validated normally, no error) had been correctly rejected.
+      // Tier 3 (the last attempt) forces Gemini regardless of
+      // STAGE2_VALIDATOR_MODEL — real production incident: three Grok
+      // failures in one job (a 500, an empty response, a timeout) burned
+      // both attempts without ever producing a real verdict on a visually
+      // correct image, which then had to fall back for lack of any
+      // validation result at all. A same-provider retry doesn't help when
+      // the provider itself is having a bad stretch; switching models for
+      // the final try gives a real chance at an actual verdict instead of
+      // exhausting straight through to fallback. Scoped via
+      // runWithForcedValidatorModel (AsyncLocalStorage), not an env/module
+      // mutation, so it can never leak into another job's concurrent
+      // validation calls.
+      const MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS = 3;
+      let specialistValidationSucceeded = false;
+      let specialistValidationFailClosed = false;
+      let specialistValidationLastError: any = null;
+      for (let revalidateAttempt = 1; revalidateAttempt <= MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS; revalidateAttempt++) {
+        const isFinalAttempt = revalidateAttempt === MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS;
+        try {
+          const outcome = isFinalAttempt
+            ? await (async () => {
+                const { runWithForcedValidatorModel } = await import("./validators/occlusionVsRemovalCheck.js");
+                return runWithForcedValidatorModel("gemini", () => runSpecialistValidationBlock());
+              })()
+            : await runSpecialistValidationBlock();
+          if (outcome === "fail_closed") {
+            // Genuine quorum failure, not a thrown error — this hard-stops
+            // immediately with no retry at all, same as the original
+            // unconditional break this replaces (see runSpecialistValidationBlock's
+            // own comment on why it can't just `break` directly anymore).
+            specialistValidationFailClosed = true;
+            break;
+          }
+          specialistValidationSucceeded = true;
+          break;
+        } catch (err: any) {
+          specialistValidationLastError = err;
+          const gateErrorMessage = err?.message || String(err);
+          nLog("[STAGE2_VALIDATION_SIGNAL_ERROR] domain validators failed to run", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            revalidateAttempt,
+            maxRevalidateAttempts: MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS,
+            forcedGeminiThisAttempt: isFinalAttempt,
+            reason: gateErrorMessage,
+            action: !isFinalAttempt
+              ? (revalidateAttempt === MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS - 1
+                  ? "revalidating_same_image_forcing_gemini_next"
+                  : "revalidating_same_image")
+              : "revalidation_exhausted_treating_as_failed_attempt",
+          });
+        }
+      }
+
+      if (specialistValidationFailClosed) {
+        break;
+      }
+
+      if (!specialistValidationSucceeded) {
+        // IMPORTANT: this used to be logged as "non-blocking" and execution
+        // fell through with openingPass/fixturePass/floorPass/envelopePass
+        // still at their true-by-default initial values — i.e. any error
+        // here silently produced an implicit PASS on every check for this
+        // attempt, with the failure itself suppressed under
+        // PRODUCTION_LOG_MODE=true. An attempt whose validators never
+        // produced a real result (even after re-validating the same image
+        // above) is not a passed attempt — treat it as a failed one, same
+        // as any other validator hard fail, so it retries with a fresh
+        // generation (or exhausts to fallback) instead of silently
+        // publishing unvalidated.
+        const gateErrorMessage = specialistValidationLastError?.message || String(specialistValidationLastError);
+        logValidatorResult({
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
-          reason: gateErrorMessage,
+          validator: "specialistOrchestration",
+          result: "FAIL",
+          reason: normalizeValidatorReason(`specialist_validation_error:${gateErrorMessage}`),
         });
+        if (attempt < MAX_STAGE2_RETRIES) {
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: "specialist_validation_error",
+          });
+          continue;
+        } else {
+          const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1B;
+          const fallbackStage = fallback1B ? "1B" : "1A";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = `stage2_specialist_validation_exhausted after ${MAX_STAGE2_RETRIES} attempts: ${gateErrorMessage}`;
+          fallbackUsed = fallbackStage === "1B" ? "stage2_specialist_error_fallback_1b" : "stage2_specialist_error_fallback_1a";
+          path2 = fallback1B || path1A;
+          stage2CandidatePath = path2;
+          logEvent("FATAL_RETRY_EXHAUSTION", {
+            jobId: payload.jobId,
+            stage: "2",
+            attempt,
+            reason: "specialist_validation_error",
+            error: gateErrorMessage,
+          });
+          logValidateFinal(attempt, "reject", attempt - 1);
+          break;
+        }
       }
 
       if (!isRefreshValidationBehavior) {
@@ -13395,7 +14508,7 @@ All openings must remain identical in position and size to the original image.`;
         issueType === ISSUE_TYPES.OPENING_SEALED;
 
       const logOpeningEnvelopeRelation = (issueType: ValidationIssueType, openingHardFail?: boolean) => {
-        console.log("[OPENING_ENVELOPE_RELATION]", {
+        vDetailLog("[OPENING_ENVELOPE_RELATION]", {
           jobId: payload.jobId,
           issueType,
           openingHardFail,
@@ -13502,108 +14615,20 @@ All openings must remain identical in position and size to the original image.`;
         return true;
       };
 
-      const OPENING_OCCLUSION_GUARD_KEYWORDS = [
-        "curtain",
-        "curtains",
-        "blind",
-        "blinds",
-        "drape",
-        "drapes",
-        "window covering",
-        "window coverings",
-        "window_covering",
-        "window_coverings",
-        "soft furnishing",
-        "soft furnishings",
-        "bed",
-        "headboard",
-        "sofa",
-        "couch",
-        "chair",
-        "plant",
-        "leaf",
-        "lamp",
-        "shelf",
-        "shelving",
-        "decor",
-        "furniture",
-        "foreground",
-        "staging",
-      ];
-
-      const normalizeOcclusionGuardText = (value: string): string =>
-        String(value || "")
-          .trim()
-          .toLowerCase()
-          .replace(/[|:,;]+/g, " ")
-          .replace(/\s+/g, " ");
-
-      const hasOpeningOcclusionKeyword = (value: string): boolean => {
-        const normalized = normalizeOcclusionGuardText(value);
-        if (!normalized) return false;
-        return OPENING_OCCLUSION_GUARD_KEYWORDS.some((keyword) => normalized.includes(keyword));
-      };
-
-      const isOpeningEscalationCandidate = (signal: SpecialistIssueSignal): boolean => {
-        const issueType = signal.issueType as ValidationIssueType | undefined;
-        if (
-          issueType === ISSUE_TYPES.OPENING_REMOVED ||
-          issueType === ISSUE_TYPES.OPENING_RESIZED_MAJOR ||
-          issueType === ISSUE_TYPES.OPENING_RESIZED_MINOR
-        ) {
-          return true;
-        }
-
-        const detail = [signal.reason || "", signal.subtype || "", ...(signal.advisorySignals || [])]
-          .map((part) => normalizeOcclusionGuardText(part))
-          .join(" ");
-        return detail.includes("opening_removed") || detail.includes("opening_resized") || detail.includes("opening_resize");
-      };
+      // Extracted to validators/openingOcclusionGuard.ts (2026-08-30) so
+      // this decision logic is directly unit-testable with literal fixture
+      // data, per this repo's established testing philosophy — see that
+      // file's header for the full rationale and the two confirmed
+      // production incidents (job_9afb6878, job_c4a18bc3) this closes.
+      const isOpeningEscalationCandidate = (signal: SpecialistIssueSignal): boolean =>
+        isOpeningEscalationCandidateShared(signal);
 
       const shouldApplyOpeningOcclusionGuard = (
         signal: SpecialistIssueSignal,
         allSignals: SpecialistIssueSignal[],
         allAdvisories: string[]
-      ): { apply: boolean; occlusionHints: string[] } => {
-        if (!isOpeningEscalationCandidate(signal)) {
-          return { apply: false, occlusionHints: [] };
-        }
-
-        const occlusionHints = new Set<string>();
-
-        const collectIfOcclusionHint = (source: string, value: string) => {
-          const normalized = normalizeOcclusionGuardText(value);
-          if (!normalized) return;
-          if (hasOpeningOcclusionKeyword(normalized)) {
-            occlusionHints.add(`${source}:${normalized.slice(0, 120)}`);
-          }
-        };
-
-        collectIfOcclusionHint("opening.reason", signal.reason || "");
-        collectIfOcclusionHint("opening.subtype", signal.subtype || "");
-        (signal.advisorySignals || []).forEach((entry) => collectIfOcclusionHint("opening.advisory", String(entry || "")));
-
-        allAdvisories.forEach((entry) => collectIfOcclusionHint("specialist.advisory", String(entry || "")));
-
-        allSignals
-          .filter((entry) => entry.validator === "fixtures" || entry.validator === "openings")
-          .forEach((entry) => {
-            collectIfOcclusionHint(`${entry.validator}.reason`, entry.reason || "");
-            collectIfOcclusionHint(`${entry.validator}.subtype`, entry.subtype || "");
-            (entry.advisorySignals || []).forEach((advisory) =>
-              collectIfOcclusionHint(`${entry.validator}.advisory`, String(advisory || ""))
-            );
-          });
-
-        if (jobContext.curtainRailLikely === true) {
-          occlusionHints.add("scene:curtain_rail_likely");
-        }
-
-        return {
-          apply: occlusionHints.size > 0,
-          occlusionHints: Array.from(occlusionHints),
-        };
-      };
+      ): { apply: boolean; occlusionHints: string[] } =>
+        shouldApplyOpeningOcclusionGuardShared(signal, allSignals, allAdvisories, jobContext.curtainRailLikely === true);
 
       const isEnvelopeIssue = (issueType?: string): boolean =>
         issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS ||
@@ -13669,8 +14694,24 @@ All openings must remain identical in position and size to the original image.`;
           specialistAdvisorySignals
         );
 
-        // SINGLE-AUTHORITY: Only downgrade if explicit occlusion evidence is STRONG (multiple hints)
-        if (categoricalBlockClass === "OCCLUSION" && openingOcclusionGuard.apply && openingOcclusionGuard.occlusionHints.length >= 2) {
+        // SINGLE-AUTHORITY: Only downgrade if explicit occlusion evidence is STRONG (multiple hints).
+        // "UNKNOWN" is included alongside "OCCLUSION" here for one narrow,
+        // confirmed reason: OPENING_INFILLED/OPENING_REMOVED/OPENING_SEALED
+        // classify as "UNKNOWN" (not "OCCLUSION") whenever there is no
+        // corroborating envelope signal — see classifyStructuralSignal —
+        // which is exactly the un-corroborated, decor-driven false-positive
+        // case this guard exists to catch (job_9afb6878, job_c4a18bc3).
+        // openingOcclusionGuard.apply already restricts this to signals
+        // isOpeningEscalationCandidate recognizes (the opening issue types
+        // only), so this cannot reach unrelated issue types like
+        // FIXTURE_CHANGED/FLOOR_CHANGED that also default to "UNKNOWN". A
+        // signal that DOES have corroborating envelope evidence classifies
+        // as "REMOVAL", not "UNKNOWN", and is deliberately left out of this
+        // condition — that case is a real, corroborated structural change.
+        if (
+          openingOcclusionGuard.apply &&
+          isEligibleForOpeningOcclusionDowngrade(categoricalBlockClass, openingOcclusionGuard.occlusionHints.length)
+        ) {
           const originalIssueType = categoricalBlock.issueType || ISSUE_TYPES.UNIFIED_FAILURE;
           categoricalBlock.issueType = ISSUE_TYPES.OPENING_OCCLUSION;
           specialistAdvisorySignals.push("openings:opening_occlusion_guard_applied");
@@ -13732,6 +14773,32 @@ All openings must remain identical in position and size to the original image.`;
           setStage2AttemptValidation(path2, "gemini", [decisionReason]);
 
           if (attempt < MAX_STAGE2_RETRIES) {
+            // Confirmed gap (job_9afb6878): buildStructuralRetryInjection
+            // already has a dedicated "do not touch this opening" correction
+            // block for exactly these issueTypes, but nothing on this retry
+            // path ever set pendingStage2StructuralFailureType to reach it —
+            // the value stayed whatever an earlier, unrelated check last set
+            // (usually null), so the retry got only the generic corrective
+            // prompt with no opening-specific guidance carried forward.
+            // REINFORCED is also required (not just the failure type) since
+            // buildStructuralRetryInjection is only invoked when
+            // compositeFail is true, which is derived from
+            // pendingStage2RetryStrategy === "REINFORCED" — see worker.ts's
+            // useReinforcedRetry. stage2ReinforcedRetryUsed makes this a
+            // one-shot escalation per job, same as the (previously unused)
+            // mechanism was already designed for.
+            const openingRetryFailureType: Partial<Record<ValidationIssueType, StructuralFailureType>> = {
+              [ISSUE_TYPES.OPENING_INFILLED]: "opening_infilled",
+              [ISSUE_TYPES.OPENING_SEALED]: "opening_infilled",
+              [ISSUE_TYPES.OPENING_REMOVED]: "opening_removed",
+              [ISSUE_TYPES.OPENING_RELOCATED]: "opening_relocated",
+            };
+            const mappedOpeningFailureType = openingRetryFailureType[blockedIssueType];
+            if (mappedOpeningFailureType) {
+              pendingStage2StructuralFailureType = mappedOpeningFailureType;
+              pendingStage2RetryStrategy = "REINFORCED";
+            }
+
             logRefreshValidationTrace({
               specialistHardFail: true,
               geminiDecision: "FAIL",
@@ -13784,25 +14851,111 @@ All openings must remain identical in position and size to the original image.`;
       });
 
       const unifiedBlockStartedAt = Date.now();
-      unifiedValidation = await runUnifiedValidation({
-        originalPath: validationBasePath,
-        enhancedPath: path2,
-        stage: "2",
-        sceneType: sceneLabel as any,
-        roomType: payload.options.roomType,
-        mode: "enforce",
-        jobId: payload.jobId,
-        imageId: payload.imageId,
-        stagingStyle: payload.options.stagingStyle,
-        stage1APath: validationBasePath,
-        sourceStage: stage2SourceStage,
-        validationMode: stage2SelectedValidationMode,
-        geminiPolicy: stage2GeminiPolicy,
-        specialistAdvisorySignals,
-        specialistAdvisoryObservations,
-        specialistStructuredIssues,
-        structuralSignals: collectedStructuralSignals.length > 0 ? collectedStructuralSignals : undefined,
-      });
+      // Recomputed locally (identical to the derivation at the top of
+      // specialist orchestration above) because that declaration lives
+      // inside the try{} block wrapping specialist execution and doesn't
+      // survive past its closing brace — this call site is well outside it.
+      const stage2SpecialistValidatorsModeAtUnified = String(process.env.STAGE2_SPECIALIST_VALIDATORS || "on").trim().toLowerCase();
+      if (stage2SpecialistValidatorsModeAtUnified === "off") {
+        // Product decision: when the split Grok/Gemini specialist validators
+        // (openingEnvelopeValidator + fixtureFlooringValidator) are active,
+        // they are the SOLE deciding factor for Stage 2 acceptance —
+        // runUnifiedValidation (a separate Gemini semantic call plus legacy
+        // heuristics such as window_size_change) is skipped entirely. This
+        // was confirmed necessary from a real production case (job_b29d5e7d,
+        // "Bedroom 14"): the split validators passed an attempt cleanly
+        // (opening/envelope/fixture/floor all "pass"), but runUnifiedValidation
+        // then independently hard-failed it on a stale ceiling-fixture claim
+        // and the legacy window_size_change heuristic, blocking a valid image.
+        // openingPass/fixturePass/floorPass/envelopePass (set above from
+        // opRes/fixRes/floorRes/envRes.hardFail) are the specialists' own
+        // unfiltered verdicts — not reinterpreted through the
+        // ALLOWED_HARDFAIL_ISSUES whitelist above, which was tuned for the
+        // older, noisier 4-specialist chain and would silently wave through
+        // specialist hard-fails it doesn't recognize (e.g. non-HVAC fixture
+        // changes) once Unified is no longer there to catch them.
+        const specialistsAllPass = openingPass && fixturePass && floorPass && envelopePass;
+        if (specialistsAllPass) {
+          unifiedValidation = {
+            passed: true,
+            hardFail: false,
+            blockSource: null,
+            score: 1,
+            reasons: [],
+            warnings: [],
+            raw: {},
+            issueType: ISSUE_TYPES.NONE,
+            issueTier: "none",
+          } as any;
+        } else {
+          // specialistResults.X.reason isn't part of the normalized shape —
+          // build a reason string from issueType + whatever structured-issue
+          // evidence the specialist attached, both of which do survive past
+          // the try{} block (specialistResults is mutated there, not
+          // redeclared, so the outer binding stays populated).
+          const describeFailure = (validator: string, result: any): string => {
+            const evidence = Array.isArray(result?.primaryStructuredIssue?.evidence) && result.primaryStructuredIssue.evidence.length > 0
+              ? result.primaryStructuredIssue.evidence.join("; ")
+              : undefined;
+            return `${validator}:${result?.issueType || "hard_fail"}${evidence ? `:${evidence}` : ""}`;
+          };
+          const failureReasons = [
+            !openingPass ? describeFailure("opening", specialistResults.opening) : null,
+            !envelopePass ? describeFailure("envelope", specialistResults.envelope) : null,
+            !fixturePass ? describeFailure("fixture", specialistResults.fixture) : null,
+            !floorPass ? describeFailure("floor", specialistResults.floor) : null,
+          ].filter((r): r is string => r !== null);
+          const failingIssueType: ValidationIssueType =
+            (!openingPass && specialistResults.opening.issueType) ||
+            (!envelopePass && specialistResults.envelope.issueType) ||
+            (!fixturePass && specialistResults.fixture.issueType) ||
+            (!floorPass && specialistResults.floor.issueType) ||
+            ISSUE_TYPES.UNIFIED_FAILURE;
+          unifiedValidation = {
+            passed: false,
+            hardFail: true,
+            blockSource: "local",
+            score: 0,
+            reasons: failureReasons.length > 0 ? failureReasons : ["specialist_hard_fail"],
+            warnings: [],
+            raw: {},
+            issueType: failingIssueType,
+            issueTier: classifyIssueTier(failingIssueType),
+          } as any;
+        }
+        nLog("[UNIFIED_VALIDATOR_BYPASSED]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          reason: "stage2_specialist_validators_off",
+          specialistsAllPass,
+          openingPass,
+          envelopePass,
+          fixturePass,
+          floorPass,
+          decision: unifiedValidation.passed ? "PASS" : "FAIL",
+        });
+      } else {
+        unifiedValidation = await runUnifiedValidation({
+          originalPath: validationBasePath,
+          enhancedPath: path2,
+          stage: "2",
+          sceneType: sceneLabel as any,
+          roomType: payload.options.roomType,
+          mode: "enforce",
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          stagingStyle: payload.options.stagingStyle,
+          stage1APath: validationBasePath,
+          sourceStage: stage2SourceStage,
+          validationMode: stage2SelectedValidationMode,
+          geminiPolicy: stage2GeminiPolicy,
+          specialistAdvisorySignals,
+          specialistAdvisoryObservations,
+          specialistStructuredIssues,
+          structuralSignals: collectedStructuralSignals.length > 0 ? collectedStructuralSignals : undefined,
+        });
+      }
       emitValidatorBlockEnd(payload.jobId, "unified", Date.now() - unifiedBlockStartedAt);
 
       nLog("[UNIFIED_RESULT]", {
@@ -13818,6 +14971,15 @@ All openings must remain identical in position and size to the original image.`;
       const unifiedPass = unifiedValidation.passed === true && unifiedValidation.hardFail !== true;
 
       if (!unifiedPass) {
+        const specialistRetryCorrectionHints = [
+          specialistResults.opening.retryCorrectionHint,
+          specialistResults.envelope.retryCorrectionHint,
+          specialistResults.fixture.retryCorrectionHint,
+          specialistResults.floor.retryCorrectionHint,
+        ].filter((h): h is string => typeof h === "string" && h.length > 0);
+        if (specialistRetryCorrectionHints.length > 0) {
+          pendingStage2RetryCorrectionHints = specialistRetryCorrectionHints;
+        }
         const unifiedReason = unifiedValidation.reasons[0] || "unified_failure";
         const unifiedIssueType = unifiedValidation.issueType || ISSUE_TYPES.UNIFIED_FAILURE;
         const unifiedIssueTier = unifiedValidation.issueTier || classifyIssueTier(unifiedIssueType);
@@ -14116,57 +15278,32 @@ All openings must remain identical in position and size to the original image.`;
         }
       }
 
-      // Final pre-publish identity gate: Gemini structural review runs last.
-      let seePass = true;
-      let finalFailValidator: "structural_review" | "unknown" = "unknown";
-      let finalFailReason = "";
-
-      try {
-        const structuralReview = ENABLE_FINAL_STRUCTURAL_REVIEW
-          ? await runGeminiStructuralReviewPro(validationBasePath, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-            })
-          : { result: "PASS" as const, confidence: 100, explanation: "final_structural_review_disabled" };
-
-        if (ENABLE_FINAL_STRUCTURAL_REVIEW) {
-          if (structuralReview.result === "FAIL") {
-            finalFailValidator = "structural_review";
-            seePass = false;
-            finalFailReason = structuralReview.explanation || "structural_review_failed";
-            logValidatorResult({
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-              validator: "structuralIdentityReview",
-              result: "FAIL",
-              reason: normalizeValidatorReason(finalFailReason),
-            });
-          } else {
-            logValidatorResult({
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-              validator: "structuralIdentityReview",
-              result: "PASS",
-              reason: "none",
-            });
-          }
-        }
-      } catch (finalGateErr: any) {
-        finalFailValidator = finalFailValidator === "unknown" ? "structural_review" : finalFailValidator;
-        seePass = false;
-        finalFailReason = finalGateErr?.message || String(finalGateErr);
-        logValidatorResult({
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-          validator: "structuralIdentityReview",
-          result: "FAIL",
-          reason: normalizeValidatorReason(finalFailReason),
-        });
-      }
+      // Final pre-publish identity gate — PERMANENTLY REMOVED (2026-08-28),
+      // not just flag-gated. See ENABLE_FINAL_STRUCTURAL_REVIEW's own
+      // comment near its declaration for the full reasoning: this was a
+      // single, holistic Gemini PASS/FAIL judgment fully redundant with the
+      // split/specialist validators that already ran above (same checklist,
+      // checked more granularly and more reliably there), that failed
+      // CLOSED on parse errors, and was confirmed in production to reject a
+      // clean image while every other check — including a fresh re-run of
+      // this exact gate — passed it. seePass/finalFailValidator/
+      // finalFailReason are kept as a permanent pass-through purely so the
+      // downstream mergeAttemptValidation/retry-hint code below (which
+      // several other real fixes this session depend on) doesn't need
+      // reshaping. ENABLE_FINAL_STRUCTURAL_REVIEW no longer has any bearing
+      // here — it now governs only the separate Stage 1B pre-flight use of
+      // the same underlying function.
+      const seePass = true;
+      const finalFailValidator: "structural_review" | "unknown" = "unknown";
+      const finalFailReason = "";
+      logValidatorResult({
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        attempt,
+        validator: "structuralIdentityReview",
+        result: "PASS",
+        reason: "removed",
+      });
 
       if (!seePass) {
         const normalizedFinalReason = String(finalFailReason || "final_identity_review_failed")
@@ -14181,6 +15318,11 @@ All openings must remain identical in position and size to the original image.`;
         pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
         pendingStage2RetryStrategy = "NORMAL";
         pendingStage2RetryReason = retryReason;
+        if (finalFailReason) {
+          pendingStage2RetryCorrectionHints = [
+            `The previous attempt on this image failed final structural review: ${finalFailReason}. Do not repeat this in this attempt — keep the original photo's real structure exactly as shown, unaltered. This must not come at the cost of any other feature: every other structural element, opening, and fixture that was correctly preserved in the previous attempt must also remain exactly as shown in this attempt.`,
+          ];
+        }
 
         mergeAttemptValidation("2", attempt, {
           final: {
@@ -15001,6 +16143,24 @@ All openings must remain identical in position and size to the original image.`;
   logPostCompliancePhaseEnd("completion_guard", Date.now() - postComplianceCompletionGuardStartedAt, { ok: mainGuard.ok });
   logCompletionGuard(payload.jobId, mainGuard);
   if (!mainGuard.ok) {
+    // This guard can reject a job whose Stage 2 attempts otherwise passed
+    // validation — a real, distinct failure mode from the
+    // stage2_validation_exhausted path above, which already emits both
+    // forensic channels via completePartialJobWithSummary. Without this,
+    // a job blocked here writes status "failed" but never surfaces its
+    // attempts' signed URLs through any log channel that survives
+    // PRODUCTION_LOG_MODE=true — the only record left is the raw DB
+    // status write, with no image to actually go look at.
+    emitJobAttemptSummary("BLOCKED");
+    flushEnhanceForensicSnapshot({
+      uploadUrl: (payload as any).remoteOriginalUrl || null,
+      stage1AUrl: pub1AUrl || null,
+      finalStatus: "blocked",
+      warningsCount: 0,
+      hardFail: true,
+      completionGuard: "block",
+      finalOutputUrl: committedResultUrl || pubFinalUrl || null,
+    });
     await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: `completion_guard_block: ${mainGuard.reason}` }, "completion_guard_block");
     return;
   }
@@ -15051,7 +16211,7 @@ All openings must remain identical in position and size to the original image.`;
       throw new Error("Retry produced invalid stage mapping (stage collapse)");
     }
 
-    console.log("[RETRY_STAGE_URLS_FINAL]", {
+    nLog("[RETRY_STAGE_URLS_FINAL]", {
       stage1A: finalizedStageUrls.stage1A,
       stage2: finalizedStageUrls.stage2,
       same: finalizedStageUrls.stage1A === finalizedStageUrls.stage2,
@@ -15228,7 +16388,17 @@ All openings must remain identical in position and size to the original image.`;
     billingStage1BSuccess &&
     (originalUserDeclutter || (frozenRoutingSnapshot?.geminiHasFurniture === true));
 
-  const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
+  // Staged image = 2 credits (BILLING_DECLUTTER_STAGE_EXTRA_CREDIT on) when
+  // the staged image was delivered, with or without declutter; anything else
+  // that was delivered costs 1. The quote shown before submit is the most
+  // that is charged (an older client's quote of 1 stays 1).
+  const quotedCredits = Number((payload.options as any)?.quotedCredits);
+  const actualCharge = deliveredImageCharge({
+    billable: billableFinalSuccess && !isFreeManualRetry && isEnhancementJob,
+    sceneType: String(sceneLabel || "interior"),
+    stagedDelivered: billingStage2Success,
+    quotedCredits: Number.isFinite(quotedCredits) ? quotedCredits : null,
+  });
 
   nLog("[BILLING_CHARGE_TELEMETRY]", {
     jobId: payload.jobId,
@@ -15241,6 +16411,7 @@ All openings must remain identical in position and size to the original image.`;
     stage1BUserSelected: originalUserDeclutter,
     geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
     billingEffectiveStage1B,
+    quotedCredits: Number.isFinite(quotedCredits) ? quotedCredits : null,
     billableFinalSuccess,
     completedStatus: finalizedStatus,
     isEnhancementJob,
@@ -15637,6 +16808,7 @@ logEvent("SYSTEM_START", {
   build: BUILD_VERSION,
   queue: JOB_QUEUE_NAME,
   validatorLogsFocus: VALIDATOR_LOGS_FOCUS ? "1" : "0",
+  productionLogMode: PRODUCTION_LOG_MODE ? "true" : "false",
   signAllStageOutputs: SIGN_ALL_STAGE_OUTPUTS_ENABLED ? "1" : "0",
   signedUrlTtlSeconds: STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS,
 });
@@ -15774,6 +16946,7 @@ const worker = new Worker(
     const jobId = (payload as any).jobId;
     const userId = String((payload as any)?.userId || "").trim();
     let fairSlotAcquired = false;
+    let jobProcessingLockToken: string | null = null;
 
     logger.info("JOB_START", jobLogContext(job, {
       event: "JOB_START",
@@ -15795,6 +16968,40 @@ const worker = new Worker(
         status: existingStatus,
       });
       return;
+    }
+
+    // C3 fix (RealEnhance audit): BullMQ's own built-in stalled-job
+    // reassignment can hand this exact jobId to a second worker while the
+    // first is still genuinely alive (a missed lock renewal under load —
+    // this codebase has independently observed event-loop congestion via
+    // [MEMORY_PHASE_PEAK_WARNING]). The terminal-status guard above does
+    // nothing for a job whose status is still "processing", so without
+    // this, two workers could run the same job's real pipeline (API
+    // calls, S3 writes) concurrently. See utils/jobProcessingLock.ts.
+    //
+    // Fails OPEN (proceeds with processing) on any infrastructure error —
+    // e.g. no REDIS_URL configured, or a test/mock Redis client that
+    // doesn't implement NX/eval — so a problem with the lock mechanism
+    // itself can only ever fall back to today's existing behavior, never
+    // block a job that should legitimately run.
+    if (jobId) {
+      try {
+        const lockToken = `${jobId}:${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+        const acquired = await acquireJobProcessingLock(getRedis() as any, jobId, lockToken);
+        if (!acquired) {
+          nLog("[WORKER] Skipping duplicate-in-progress job execution", {
+            jobId,
+            reason: "job_processing_lock_held",
+          });
+          return;
+        }
+        jobProcessingLockToken = lockToken;
+      } catch (lockErr) {
+        nLog("[WORKER] job processing lock check failed (proceeding anyway — fail-open)", {
+          jobId,
+          error: (lockErr as any)?.message || String(lockErr),
+        });
+      }
     }
 
     try {
@@ -16416,7 +17623,7 @@ const worker = new Worker(
             ? existingEditOutputs
             : [...existingEditOutputs, pub.url];
 
-          console.log("STAGE WRITE CHECK", {
+          nLog("STAGE WRITE CHECK", {
             before: (reJob as any)?.stageUrls || null,
             after: {
               ...(((reJob as any)?.stageUrls || {}) as Record<string, string | null | undefined>),
@@ -16618,6 +17825,30 @@ const worker = new Worker(
       try {
         if (jobId) cleanupTempFiles(jobId);
       } catch { /* ignore */ }
+
+      // C2: evict this job's wall-visibility cache entry now that the job
+      // has finished (success or failure) — see clearWallVisibilityCacheForJob's
+      // doc comment for why this is needed in addition to the module's own
+      // size-capped eviction.
+      try {
+        if (jobId) clearWallVisibilityCacheForJob(jobId);
+      } catch { /* ignore */ }
+
+      // C3: release the advisory processing lock now that this job has
+      // finished (success or failure), so a genuinely queued re-run of the
+      // same jobId isn't blocked waiting on this lock's TTL. Best-effort —
+      // a failure to release is not fatal; the lock's own TTL is the
+      // backstop (see utils/jobProcessingLock.ts).
+      if (jobProcessingLockToken) {
+        try {
+          await releaseJobProcessingLock(getRedis() as any, jobId, jobProcessingLockToken);
+        } catch (lockReleaseErr) {
+          nLog("[WORKER] job processing lock release failed (non-blocking)", {
+            jobId,
+            error: (lockReleaseErr as any)?.message || String(lockReleaseErr),
+          });
+        }
+      }
     }
   },
   {
@@ -16632,6 +17863,13 @@ void (async () => {
   try {
     await ensureEnhancedImagesCompletionTypeContract();
     nLog("[worker-startup] completion type contract confirmed");
+    // Fast lane for the website's furniture pre-check (runs alongside the
+    // main job worker, so pre-checks never wait behind photos being staged).
+    try {
+      startFurniturePrecheckWorker(REDIS_URL);
+    } catch (precheckErr) {
+      console.error("[worker-startup] furniture pre-check worker failed to start", precheckErr);
+    }
     await worker.run();
   } catch (err) {
     console.error("[worker-startup] completion type contract check failed", err);

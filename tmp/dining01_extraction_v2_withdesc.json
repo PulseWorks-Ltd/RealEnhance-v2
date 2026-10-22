@@ -1,0 +1,260 @@
+{
+  "baseline": {
+    "openings": [
+      {
+        "id": "W1",
+        "type": "window",
+        "bbox": [
+          0.477,
+          0.322,
+          0.793,
+          0.716
+        ],
+        "area_pct": 12.44,
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "verticalBand": "mid_zone",
+        "wallCoverageBand": "20-40",
+        "orientation": "portrait",
+        "paneStructure": "multi_pane_grid",
+        "doorLeafState": "unknown",
+        "confidence": 0.98,
+        "description": "White-framed window on the front wall with a central vertical mullion and a horizontal transom bar. It is partially obscured by light-colored curtains.",
+        "wallPosition": "near_wall",
+        "relativeHorizontalPosition": "center",
+        "shape": "window",
+        "touchesFloor": false,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "D1",
+        "type": "door",
+        "bbox": [
+          0.811,
+          0.134,
+          0.999,
+          0.999
+        ],
+        "area_pct": 16.26,
+        "wallIndex": 1,
+        "horizontalBand": "right_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "20-40",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "open",
+        "confidence": 0.95,
+        "description": "Standard interior doorway with a white-painted wooden frame on the right wall. The door leaf is open, leading into an adjacent space.",
+        "wallPosition": "right_wall",
+        "relativeHorizontalPosition": "right_third",
+        "shape": "door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "A1",
+        "type": "walkthrough",
+        "bbox": [
+          0.154,
+          0.203,
+          0.702,
+          0.998
+        ],
+        "area_pct": 43.59,
+        "wallIndex": 3,
+        "horizontalBand": "center_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "40-60",
+        "orientation": "portrait",
+        "paneStructure": "sliding_panel",
+        "doorLeafState": "open",
+        "confidence": 0.95,
+        "description": "Large walkthrough opening on the left wall with a prominent timber frame and two sliding doors, each with a large frosted glass panel. The doors are partially open.",
+        "wallPosition": "left_wall",
+        "relativeHorizontalPosition": "center",
+        "shape": "walkthrough",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      }
+    ],
+    "anchorFixtures": [
+      {
+        "id": "L1",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.509,
+          0.301,
+          0.551,
+          0.344
+        ],
+        "confidence": 0.9,
+        "description": "A simple, white, glass-shaded semi-flush mount ceiling light fixture."
+      },
+      {
+        "id": "O1",
+        "type": "other",
+        "wallIndex": 1,
+        "horizontalBand": "right_third",
+        "bbox": [
+          0.774,
+          0.448,
+          0.825,
+          0.825
+        ],
+        "confidence": 0.85,
+        "description": "A decorative, white-painted wooden structure attached to the right wall, resembling the side pilaster and shelf of a fireplace mantel."
+      }
+    ],
+    "graphMeta": {
+      "graphStable": false,
+      "graphConfidence": 0.5,
+      "extractionAgreement": 0.5,
+      "passCount": 1,
+      "openingCountVariance": 0,
+      "imageHash": "bbeca91fb418b4cb5530e8f1e3f01daea98e948bfe5b81dbfe866ff6b8f447c9",
+      "graphHash": "ee87c460a9891fc8c7c95f8ced607cd02714ebbe8f280684fcaab76b9ee60192",
+      "cacheStatus": "unstable",
+      "candidateGraphHashes": [
+        "ee87c460a9891fc8c7c95f8ced607cd02714ebbe8f280684fcaab76b9ee60192"
+      ],
+      "openingCountRange": {
+        "min": 3,
+        "max": 3
+      },
+      "confirmedAt": "2026-08-13T22:10:09.353Z",
+      "baselineMethod": "graph_consensus",
+      "geminiCalls": 1,
+      "verification": {
+        "attempted": false,
+        "accepted": true,
+        "modelAccepted": true,
+        "additionalOpeningCount": 0,
+        "missingOpeningCount": 0,
+        "materiallyDifferentCount": 0,
+        "notPresentCount": 0,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [],
+        "openingStatuses": [],
+        "additionalOpenings": [],
+        "missingOpenings": []
+      }
+    }
+  },
+  "walls": [
+    {
+      "id": "wall_3",
+      "wallLabel": "Left wall with sliding door",
+      "extent": {
+        "polygon": [
+          [
+            0,
+            0.112
+          ],
+          [
+            0.463,
+            0.178
+          ],
+          [
+            0.452,
+            0.939
+          ],
+          [
+            0,
+            0.917
+          ]
+        ]
+      },
+      "openingIds": [
+        "D1"
+      ],
+      "usableWidthFraction": 0,
+      "usableSegments": [],
+      "confidence": 1
+    },
+    {
+      "id": "wall_0",
+      "wallLabel": "Center wall with window",
+      "extent": {
+        "polygon": [
+          [
+            0.463,
+            0.178
+          ],
+          [
+            0.778,
+            0.224
+          ],
+          [
+            0.768,
+            0.949
+          ],
+          [
+            0.452,
+            0.939
+          ]
+        ]
+      },
+      "openingIds": [
+        "W1",
+        "L2",
+        "L1"
+      ],
+      "usableWidthFraction": 0.1,
+      "usableSegments": [
+        {
+          "range": [
+            0,
+            0.07
+          ],
+          "widthFraction": 0.07,
+          "description": "Left of window"
+        },
+        {
+          "range": [
+            0.97,
+            1
+          ],
+          "widthFraction": 0.03,
+          "description": "Right of window"
+        }
+      ],
+      "confidence": 1
+    },
+    {
+      "id": "wall_1",
+      "wallLabel": "Right wall with door and fireplace",
+      "extent": {
+        "polygon": [
+          [
+            0.778,
+            0.224
+          ],
+          [
+            1,
+            0.161
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            0.768,
+            0.949
+          ]
+        ]
+      },
+      "openingIds": [
+        "D2",
+        "F1"
+      ],
+      "usableWidthFraction": 0,
+      "usableSegments": [],
+      "confidence": 1
+    }
+  ]
+}

@@ -53,7 +53,7 @@ export function UploadSection({ onFilesSelected, processingMode, onProcessingMod
                     </p>
                     <p className="text-xs text-brand-400 mt-1">JPG, PNG, WEBP, HEIC up to 25MB</p>
                   </div>
-                  <div className="text-center text-xs text-muted-foreground mt-1">1 credit per image</div>
+                  <div className="text-center text-xs text-muted-foreground mt-1">1 credit per image · 2 per staged room</div>
                 </>
               ) : (
                 // Preview state with change button
@@ -75,7 +75,7 @@ export function UploadSection({ onFilesSelected, processingMode, onProcessingMod
                   >
                     Change Image
                   </Button>
-                  <div className="text-center text-xs text-muted-foreground mt-2">1 credit per image</div>
+                  <div className="text-center text-xs text-muted-foreground mt-2">1 credit per image · 2 per staged room</div>
                 </div>
               )}
             </CardContent>
@@ -96,7 +96,7 @@ export function UploadSection({ onFilesSelected, processingMode, onProcessingMod
                 </p>
                 <p className="text-xs text-brand-400 mt-1">JPG, PNG, WEBP, HEIC up to 25MB</p>
               </div>
-              <div className="text-center text-xs text-muted-foreground mt-1">1 credit per image</div>
+              <div className="text-center text-xs text-muted-foreground mt-1">1 credit per image · 2 per staged room</div>
             </CardContent>
           </Card>
 

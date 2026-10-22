@@ -1,0 +1,153 @@
+{
+  "roomSummary": "Open-plan living and dining room with dark carpeting leading to a rear kitchen, featuring a prominent TV bracket on the right wall.",
+  "camera": "Stands in the front-left foreground of the living area, looking diagonally toward the rear kitchen and right wall.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "tv_bracket",
+      "description": "Black TV wall bracket mounted on the right white wall",
+      "box": [
+        0.43,
+        0.81,
+        0.52,
+        0.96
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "kitchen_bench",
+      "description": "White kitchen peninsula counter facing the main room",
+      "box": [
+        0.54,
+        0.53,
+        0.65,
+        0.66
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "window",
+      "description": "Large window with beige curtains along the left wall",
+      "box": [
+        0.42,
+        0.25,
+        0.62,
+        0.47
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "heat_pump",
+      "description": "Wall-mounted heat pump unit high on the wall above the kitchen boundary",
+      "box": [
+        0.42,
+        0.46,
+        0.46,
+        0.52
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "curtain",
+      "description": "Full-height curtain hanging on the far-left foreground edge",
+      "box": [
+        0.26,
+        0,
+        0.97,
+        0.08
+      ]
+    },
+    {
+      "id": "L6",
+      "type": "door",
+      "description": "Interior door beside the kitchen on the right",
+      "box": [
+        0.45,
+        0.69,
+        0.63,
+        0.73
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Right wall",
+      "description": "White wall in foreground and midground featuring the mounted TV bracket",
+      "usableForLargeFurniture": true,
+      "partlyVisible": false
+    },
+    {
+      "name": "Left wall",
+      "description": "Long wall with a wide window, curtains, and heat pump unit towards the rear",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    },
+    {
+      "name": "Rear kitchen wall",
+      "description": "Back wall containing kitchen cabinetry and window",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    }
+  ],
+  "zones": [
+    {
+      "name": "Living Zone",
+      "description": "Foreground and midground area centered around the TV bracket on the right wall."
+    },
+    {
+      "name": "Dining Zone",
+      "description": "Midground floor space positioned directly in front of the kitchen peninsula."
+    },
+    {
+      "name": "Kitchen Zone",
+      "description": "Tiled floor space behind the peninsula bench at the rear."
+    }
+  ],
+  "kitchenVisible": true,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "layout": [
+    {
+      "item": "TV",
+      "placement": "Mounted directly onto the black TV bracket on the right wall, completely covering it."
+    },
+    {
+      "item": "TV Console",
+      "placement": "Placed flat against the right wall, centered directly below the TV."
+    },
+    {
+      "item": "Area Rug",
+      "placement": "Centered on the dark carpet in the foreground living area, facing the right wall."
+    },
+    {
+      "item": "Sofa",
+      "placement": "Placed on the living area rug facing toward the right wall and TV, leaving clear passage to the left window."
+    },
+    {
+      "item": "Coffee Table",
+      "placement": "Centered on the rug directly in front of the sofa."
+    },
+    {
+      "item": "Dining Table with 4 Chairs",
+      "placement": "Freestanding in the midground space in front of the kitchen peninsula, oriented parallel to the bench."
+    }
+  ],
+  "relationships": [
+    "The dining table sits in the midground near the kitchen bench, well separated from the living area.",
+    "The sofa faces the right wall directly aligned with the TV console and mounted TV.",
+    "A clear walkway is maintained between the living seating and the left window toward the kitchen."
+  ],
+  "avoid": [
+    "Placing the dining table between the sofa and the TV wall.",
+    "Blocking the doorway next to the kitchen with dining chairs.",
+    "Pushing large furniture directly against the left window and curtains."
+  ],
+  "keepUntouched": [
+    "The kitchen cabinetry, bench, and window at the rear.",
+    "The heat pump unit high on the wall.",
+    "The doorway to the right of the kitchen.",
+    "The window and curtains on the left wall."
+  ]
+}

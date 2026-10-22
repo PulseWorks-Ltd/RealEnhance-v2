@@ -68,7 +68,7 @@ Never exceed two staged zones.
 // 🔧 ZONE-SPECIFIC CONFIGS (inject into base block)
 // Refresh-mode configs may include conservative downgrade behavior when separation is weak.
 const ZONE_CONFIGS_REFRESH: Record<string, string> = {
-  multiple_living: `
+  kitchen_living_dining: `
 ZONE EXPECTATIONS (MULTIPLE LIVING AREAS):
 Examples: lounge + dining, dining + study nook, lounge + reading area.
 
@@ -127,7 +127,7 @@ If one zone is not clearly visible or definable:
 
 // Full-mode configs must not include soft downgrade instructions.
 const ZONE_CONFIGS_FULL: Record<string, string> = {
-  multiple_living: `
+  kitchen_living_dining: `
 ZONE EXPECTATIONS (MULTIPLE LIVING AREAS):
 Examples: lounge + dining, dining + study nook, lounge + reading area.
 
@@ -275,7 +275,7 @@ Do NOT eliminate a selected zone.
 `;
 
 const MULTI_ROOM_TYPES = new Set([
-  "multiple_living",
+  "kitchen_living_dining",
   "kitchen_dining",
   "kitchen_living",
   "living_dining",
@@ -578,11 +578,19 @@ function buildMultiZoneConstraintBlock(roomType: string, mode: "full" | "refresh
 
 
 
-export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior" | "exterior"): string {
-  if (sceneType === "exterior") return buildStage1AExteriorPromptNZStyle();
+export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior" | "exterior", duskMode: boolean = false): string {
+  if (sceneType === "exterior") return duskMode ? buildStage1ADuskExteriorPromptNZStyle() : buildStage1AExteriorPromptNZStyle();
   return buildStage1AInteriorPromptNZStyle(roomType);
 }
 
+// NOTE: This interior variant is unreachable for live Stage 1A interior calls.
+// stage1A.ts imports a same-named buildStage1AInteriorPromptNZStandard from
+// ../ai/prompts.nzInterior (which shadows this export) and only falls back to
+// buildStage1APromptNZStyle -> this function when applyInteriorProfile is
+// false, which requires declutter === true, which is hardcoded false for
+// every Stage 1A production call. The live interior prompt text lives in
+// prompts.nzInterior.ts. Kept here only because buildStage1APromptNZStyle
+// still routes exteriors through this module.
 export function buildStage1AInteriorPromptNZStandard(roomType: string): string {
   return `REALENHANCE — STAGE 1A INTERIOR ENHANCEMENT (NZ HIGH-END)
 
@@ -759,28 +767,11 @@ function buildStage1AInteriorPromptNZStyle(roomType: string): string {
   return buildStage1AInteriorPromptNZHighEnd(roomType);
 }
 
-function buildStage1AExteriorPromptNZStyle(): string {
-  return `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ HERO SHOT)
-
-You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT
-of exterior real estate imagery.
-
-You are NOT a renovator, cleaner, landscaper, or generator.
-
-TASK:
-Treat the input image as a READ-ONLY GEOMETRIC MAP.
-Produce a 'Clear Day' professional real estate exterior.
-
-Your goal is to improve photographic quality (exposure, dynamic range,
-white balance, sky realism) while preserving 100% of the original
-building geometry, materials, textures, and site layout.
-
-This is PARAMETER ADJUSTMENT, not scene generation.
-
-Model: Gemini 2.5 Flash Image  
-Default Sampling: temp=0.60, topP=0.90, topK=50
-
-────────────────────────────────
+// ---- Shared exterior prompt sections (identical wording used by both the
+// daylight and dusk/twilight modes below) -- these protect structural
+// fidelity regardless of lighting condition, so they are extracted once
+// rather than duplicated between the two prompt builders. ----
+const STAGE1A_EXTERIOR_GEOMETRIC_SITE_LOCK_BLOCK = `────────────────────────────────
 STRICT GEOMETRIC & SITE LOCK (NON-NEGOTIABLE)
 ────────────────────────────────
 
@@ -827,55 +818,34 @@ PRESERVE ALL PIXELS REPRESENTING PHYSICAL STRUCTURES AND LANDSCAPING.
     Preserve black window and door framing while allowing adjacent reflected and transmitted light to remain naturally visible and open.
 
 This is an enhancement task — NOT cleaning, renovation, or landscaping.
-
-────────────────────────────────
-PROHIBITED ACTIONS (ZERO TOLERANCE)
-────────────────────────────────
-
-• NO decluttering or object removal
-• NO surface cleaning or “tidying”
-• Walls must remain walls. You are strictly forbidden from introducing any opening-like structure, including bright masked regions that resemble windows.
-• NO geometry warping or perspective correction
-• NO inpainting or regeneration of building/site content
-• NO material substitution or texture resynthesis
-
-If something looks worn, stained, or weathered, it MUST remain so.
-Fix the light — NOT the property.
-
-────────────────────────────────
-PRIMARY OBJECTIVE
+`;
+// Gemini 3 Pro Image (Stage 1A exterior since 58754cfa) takes "hero shot" /
+// "marketing photograph" framing literally: when only part of a house is in
+// frame it redraws a similar, complete house from a new angle. This block
+// makes the partial composition explicit and fixed for both daylight and dusk.
+// Keep it free of daylight-only phrases (scripts/assert-dusk-prompt-contract.ts).
+const STAGE1A_EXTERIOR_FRAMING_LOCK_BLOCK = `────────────────────────────────
+FRAMING & VIEWPOINT LOCK (HIGHEST PRIORITY)
 ────────────────────────────────
 
-Produce a bright, welcoming exterior photograph with
-natural New Zealand lighting characteristics.
+You are editing THIS photograph, not creating a new photograph of the property.
 
-The enhanced result should resemble a professionally captured premium New Zealand real estate marketing photograph with open, inviting tonal balance and strong architectural readability while remaining fully realistic and geographically plausible.
+Many listing photos deliberately show only PART of a building — one side, a
+corner, a rear wall, a deck, a single wing, or a close-up of an entry. That
+partial view is the photographer's intended composition and is correct.
 
-The result must look:
-• Realistic and geographically plausible
-• Bright but not washed out
-• Neutral daylight balanced
-• Sharp and detailed WITHOUT texture loss
-
-────────────────────────────────
-SKY ENHANCEMENT (CONDITIONAL & GUARDED)
-────────────────────────────────
-
-If the existing sky is flat grey or overcast:
-• You MAY replace it with a 'New Zealand Summer Blue' sky
-  that is saturated but natural.
-• RELIGHTING AUTHORIZATION: If replacing an overcast sky, you MUST introduce realistic warm directional sunlight, subtle specular highlights, and matching soft shadows to integrate the house with the new weather. Do not leave the property with flat, overcast lighting.
-
-CRITICAL SKY RULES:
-• The sky mask MUST fully preserve antennas, chimneys,
-  gutters, roof edges, trees, and fine branches.
-• NO edge erosion, clipping, or haloing.
-• If masking confidence is low, KEEP THE ORIGINAL SKY.
-• LIGHT WRAP: The sky and exterior lighting must integrate naturally with the house. The house may carry a warm, sunny glow, but whites must stay neutral white, not nuclear bright.
-
-Sky enhancement must NEVER damage rooflines or structures.
-
-────────────────────────────────
+• Keep the exact camera position, viewing angle, lens, perspective, framing,
+  crop, and horizon line of the input.
+• Do NOT complete the building, reveal parts of it that are outside the
+  frame, zoom out, rotate or move the camera, or re-photograph the property
+  from a "better" or more complete angle.
+• Anything outside the input frame does not exist for this task. Every
+  building, roof, fence, tree, and object cut off by the frame edge stays cut
+  off at exactly the same place.
+• The output must overlay the input: every roofline, wall edge, window,
+  door, fence, path, and plant sits in the same position, at the same size.
+`;
+const STAGE1A_EXTERIOR_WET_SURFACE_BLOCK = `────────────────────────────────
 WET SURFACE HANDLING (CONDITIONAL)
 ────────────────────────────────
 
@@ -885,16 +855,116 @@ If driveways, decks, or paths appear wet or highly reflective:
 • Do NOT flatten surfaces or make them look matte or painted.
 
 Goal: Reduce distraction — NOT alter reality.
-
+`;
+const STAGE1A_EXTERIOR_FINAL_CONSTRAINT_BLOCK = `────────────────────────────────
+FINAL CONSTRAINT
 ────────────────────────────────
+
+Do NOT interpret “Enhancement” as “Improvement of the property”.
+It is an improvement of the PHOTO ONLY.
+`;
+const STAGE1A_EXTERIOR_OUTPUT_BLOCK = `────────────────────────────────
+OUTPUT
+────────────────────────────────
+
+Return ONLY the enhanced image.
+`;
+
+// PROHIBITED ACTIONS bullet 3 differs by mode: daylight forbids any
+// opening-like bright region outright; dusk mode carves out an explicit
+// exception authorizing illumination of openings that already exist in the
+// input (see ARTIFICIAL LIGHT SYNTHESIS in the dusk builder below), while
+// still forbidding any *new* opening-like structure. Every other bullet is
+// shared verbatim.
+function buildExteriorProhibitedActionsBlock(mode: "daylight" | "dusk"): string {
+  const bullet3 = mode === "dusk"
+    ? `• Walls must remain walls. You are strictly forbidden from introducing any new opening, window, door, skylight, or opening-like structure anywhere it does not already exist in the input. Illuminating the interior of a window, glazed door, or opening that already exists in the input is explicitly authorized under ARTIFICIAL LIGHT SYNTHESIS below — but creating a glowing or window-like region where no opening exists in the input is a hard failure. The same rule applies to exterior light fixtures (wall lights, downlights, bollards, path lights, porch lanterns, and similar): turning on a fixture that already exists in the input is authorized, but introducing any new light source, glow, or illuminated fixture anywhere one is not genuinely visible in the input is a hard failure.`
+    : `• Walls must remain walls. You are strictly forbidden from introducing any opening-like structure, including bright masked regions that resemble windows.`;
+  return `────────────────────────────────
+PROHIBITED ACTIONS (ZERO TOLERANCE)
+────────────────────────────────
+
+• NO decluttering or object removal
+• NO surface cleaning or “tidying”
+` + bullet3 + `\n• NO geometry warping or perspective correction
+• NO inpainting or regeneration of building/site content
+• NO material substitution or texture resynthesis
+
+If something looks worn, stained, or weathered, it MUST remain so.
+Fix the light — NOT the property.
+`;
+}
+
+// LANDSCAPE VIBRANCY bullet 1 differs by mode: daylight increases lawn/hedge
+// saturation for a healthy daytime look; dusk mode preserves footprint and
+// species but renders vegetation under twilight ambient light instead. The
+// SHADED LANDSCAPING and HARDSCAPE PRESERVATION bullets are shared verbatim.
+function buildExteriorLandscapeVibrancyBlock(mode: "daylight" | "dusk"): string {
+  const bullet1 = mode === "dusk"
+    ? `• TWILIGHT GREENERY: Preserve the exact shape, species, and footprint of all vegetation. Render it under twilight ambient light — deeper, cooler greens away from light sources, with warm highlight falloff only where path or landscape lighting actually reaches it. Do not apply a daytime-style saturation increase across the whole lawn or hedge.`
+    : `• LUSH GREENERY: Increase saturation and warmth in lawns and hedges modestly so they look healthy and well-maintained, without losing individual blade or leaf detail.`;
+  return `────────────────────────────────
 LANDSCAPE VIBRANCY
 ────────────────────────────────
 
-• LUSH GREENERY: Increase saturation and warmth in lawns and hedges modestly so they look healthy and well-maintained, without losing individual blade or leaf detail.
-• SHADED LANDSCAPING: Preserve the exact original landscaping layout and ground-material boundaries within shaded regions. Improve tonal separation and visibility of EXISTING vegetation only, without introducing, extending, or inventing new grass, plants, or ground coverage.
+` + bullet1 + `\n• SHADED LANDSCAPING: Preserve the exact original landscaping layout and ground-material boundaries within shaded regions. Improve tonal separation and visibility of EXISTING vegetation only, without introducing, extending, or inventing new grass, plants, or ground coverage.
 • HARDSCAPE PRESERVATION: Driveways, paths, and concrete must NEVER be covered by grass or landscaping. Enhance colour of existing grass only; do not expand its footprint to "fix" worn or dirt patches.
+`;
+}
 
+// ---- Daylight-only sections (used by buildStage1AExteriorPromptNZStyle,
+// unchanged in content from before this refactor). ----
+const STAGE1A_EXTERIOR_DAYLIGHT_HEADER_BLOCK = `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ DAYLIGHT)
+
+You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT
+of exterior real estate imagery.
+
+You are NOT a renovator, cleaner, landscaper, or generator.
+
+TASK:
+The input photograph IS the output photograph — same viewpoint, same framing.
+Correct its light so it reads as a 'Clear Day' professional real estate photo.
+
+Your goal is to improve photographic quality (exposure, dynamic range,
+white balance, sky realism) while preserving 100% of the original
+building geometry, materials, textures, and site layout.
+
+This is PARAMETER ADJUSTMENT, not scene generation.
+`;
+const STAGE1A_EXTERIOR_DAYLIGHT_PRIMARY_OBJECTIVE_BLOCK = `────────────────────────────────
+PRIMARY OBJECTIVE
 ────────────────────────────────
+
+Make this photograph bright and welcoming, with
+natural New Zealand lighting characteristics.
+
+The enhanced result should have the lighting quality of professionally captured premium New Zealand real estate photography — open, inviting tonal balance and clear readability of whatever is already in the frame — while remaining fully realistic and geographically plausible.
+
+The result must look:
+• Realistic and geographically plausible
+• Bright but not washed out
+• Neutral daylight balanced
+• Sharp and detailed WITHOUT texture loss
+`;
+const STAGE1A_EXTERIOR_DAYLIGHT_SKY_BLOCK = `────────────────────────────────
+SKY ENHANCEMENT (CONDITIONAL & GUARDED)
+────────────────────────────────
+
+If the existing sky is flat grey or overcast:
+• You MAY replace it with a 'New Zealand Summer Blue' sky
+  that is saturated but natural.
+• RELIGHTING AUTHORIZATION: If replacing an overcast sky, you MUST introduce realistic warm directional sunlight, subtle specular highlights, and matching soft shadows to integrate the visible building with the new weather. Do not leave the property with flat, overcast lighting.
+
+CRITICAL SKY RULES:
+• The sky mask MUST fully preserve antennas, chimneys,
+  gutters, roof edges, trees, and fine branches.
+• NO edge erosion, clipping, or haloing.
+• If masking confidence is low, KEEP THE ORIGINAL SKY.
+• LIGHT WRAP: The sky and exterior lighting must integrate naturally with the visible building. It may carry a warm, sunny glow, but whites must stay neutral white, not nuclear bright.
+
+Sky enhancement must NEVER damage rooflines or structures.
+`;
+const STAGE1A_EXTERIOR_DAYLIGHT_ALLOWED_ADJUSTMENTS_BLOCK = `────────────────────────────────
 ALLOWED ADJUSTMENTS (GLOBAL ONLY)
 ────────────────────────────────
 
@@ -910,19 +980,190 @@ NO object removal, generation, restructuring, or semantic scene alteration.
 Localized tonal balancing within naturally shaded regions is permitted ONLY for photometric recovery purposes and must never alter geometry, materials, object presence, or scene layout.
 
 Sky masking remains the only permitted explicit segmentation operation.
+`;
 
-────────────────────────────────
-FINAL CONSTRAINT
+function buildStage1AExteriorPromptNZStyle(): string {
+  return (
+    STAGE1A_EXTERIOR_DAYLIGHT_HEADER_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_FRAMING_LOCK_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_GEOMETRIC_SITE_LOCK_BLOCK + "\n" +
+    buildExteriorProhibitedActionsBlock("daylight") + "\n" +
+    STAGE1A_EXTERIOR_DAYLIGHT_PRIMARY_OBJECTIVE_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_DAYLIGHT_SKY_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_WET_SURFACE_BLOCK + "\n" +
+    buildExteriorLandscapeVibrancyBlock("daylight") + "\n" +
+    STAGE1A_EXTERIOR_DAYLIGHT_ALLOWED_ADJUSTMENTS_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_FINAL_CONSTRAINT_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_OUTPUT_BLOCK
+  ).trim();
+}
+
+// ---- Dusk/twilight-only sections (Stage 1A Exterior Enhancement: dusk
+// checkbox). See buildStage1ADuskExteriorPromptNZStyle below for assembly. ----
+const STAGE1A_EXTERIOR_DUSK_HEADER_BLOCK = `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ DUSK/TWILIGHT)
+
+You are RealEnhance, an AI engine authorized to perform a GLOBAL TIME-OF-DAY
+AND LIGHTING TRANSFORMATION of exterior real estate imagery.
+
+You are NOT a renovator, cleaner, landscaper, or generator.
+
+TASK:
+The input photograph IS the output photograph — same viewpoint, same framing.
+Relight it as a premium New Zealand real estate DUSK / TWILIGHT photograph,
+as if the same camera, in the same position, fired again roughly 15-25 minutes
+after sunset, during civil twilight, with the property's own lights switched on.
+
+Geometry, materials, textures, and site layout are FROZEN. Only the time of
+day and lighting condition may change.
+
+The user explicitly and deliberately selected a dusk/twilight transformation
+for this photo. A dramatic twilight lighting result is the CORRECT and
+EXPECTED outcome — do not default back toward a daytime look.
+`;
+const STAGE1A_EXTERIOR_DUSK_PRIMARY_OBJECTIVE_BLOCK = `────────────────────────────────
+PRIMARY OBJECTIVE
 ────────────────────────────────
 
-Do NOT interpret “Enhancement” as “Improvement of the property”.
-It is an improvement of the PHOTO ONLY.
+Give this exact photograph the lighting of a premium New Zealand real estate
+twilight photograph — the kind of paid dusk shoot real estate agents
+commission separately from their daytime listing photos.
 
-────────────────────────────────
-OUTPUT
+The result must look:
+• Realistic and geographically plausible
+• Photographed during civil twilight, roughly 15-25 minutes after sunset
+• FULL DRAMATIC TWILIGHT — not golden hour, not a daytime shot with a warm filter
+• The sun fully below the horizon: NO visible sun disc, NO low raking
+  sun-shaft across the facade, NO long hard sun-cast shadows
+• Sharp and detailed WITHOUT texture loss
+`;
+const STAGE1A_EXTERIOR_DUSK_SKY_BLOCK = `────────────────────────────────
+SKY ENHANCEMENT (TWILIGHT REPAINT)
 ────────────────────────────────
 
-Return ONLY the enhanced image.`.trim();
+Replace the sky with a dusk/twilight gradient:
+• Deep indigo/navy at the top of the frame
+• Grading through blue-violet through the middle of the sky
+• A warmer amber/magenta band low on the horizon
+
+Any existing cloud structure must keep its original shape and position, now
+lit from below/behind by residual horizon glow.
+
+CRITICAL SKY RULES (unchanged from daylight mode):
+• The sky mask MUST fully preserve antennas, chimneys,
+  gutters, roof edges, trees, and fine branches.
+• NO edge erosion, clipping, or haloing.
+• If masking confidence is low, KEEP THE ORIGINAL SKY SHAPE and only
+  recolor it — do not erode structure to extend the sky.
+
+Sky enhancement must NEVER damage rooflines or structures.
+`;
+const STAGE1A_EXTERIOR_DUSK_ARTIFICIAL_LIGHT_BLOCK = `────────────────────────────────
+ARTIFICIAL LIGHT SYNTHESIS (CONDITIONAL & BOUNDED)
+────────────────────────────────
+
+This is the one section where the transformation goes beyond global color
+grading. Every rule here is bounded to geometry that already exists in the
+input — see the PROHIBITED ACTIONS carve-out above.
+
+WINDOW & DOOR GLOW
+• Every window and glazed door that already exists in the input reads as
+  lit from within: warm tungsten (~2700-3000K), soft, and slightly uneven
+  pane-to-pane so it reads as a real interior light rather than a flat decal.
+• Frames, mullions, transoms, and glazing bars stay dark and in their exact
+  original position, shape, and size.
+• Do NOT invent room interiors, furniture, or figures behind the glass.
+• A window that appears occluded by a closed blind or curtain in the input
+  may receive a soft, even warm wash behind it only — nothing more specific.
+
+EXTERIOR / PATH / LANDSCAPE LIGHTING
+• Only a light fixture that is genuinely visible in the input (a wall light,
+  under-eave downlight, bollard, step light, path light, porch lantern, or
+  similar) may be shown switched on, with a small, realistic falloff pool of
+  light on the surface directly beneath that same fixture.
+• Do NOT invent a new light fixture anywhere it is not visible in the input.
+• Do NOT add light, glow, or falloff at any exterior location — along a
+  path, in the garden, on the lawn, or anywhere else — unless a real fixture
+  for it is visible in the input at that exact spot. An unlit path, garden,
+  or lawn with no visible fixture must remain unlit and dark at dusk,
+  exactly as in the input.
+
+FACADE LIGHT SPILL
+• Warm color temperature and soft falloff on cladding immediately around lit
+  windows, doors, and under lit eaves.
+• Cooler ambient twilight tone elsewhere on the facade. This warm/cool
+  separation is what makes the shot read as a premium twilight photograph
+  rather than a flat orange color grade.
+
+AMBIENT EXPOSURE FLOOR
+• The whole frame must not go dark. The building must remain fully
+  readable: cladding texture, roofline, materials, and site layout must all
+  stay legible, per SHADOW DEPTH & MATERIAL RECOVERY above.
+• Windows and fixtures must not clip to pure white; the sky must not clip
+  to pure black.
+`;
+const STAGE1A_EXTERIOR_DUSK_ALLOWED_ADJUSTMENTS_BLOCK = `────────────────────────────────
+ALLOWED ADJUSTMENTS (GLOBAL + BOUNDED ILLUMINATION)
+────────────────────────────────
+
+• Global exposure correction for a twilight scene
+• A deliberate warm/cool split color grade
+• Sky repaint (see SKY ENHANCEMENT above)
+• Synthesis of illumination through existing window/door openings and
+  through exterior light fixtures that are genuinely visible in the input —
+  never through an invented or merely plausible fixture (see ARTIFICIAL
+  LIGHT SYNTHESIS above)
+• Highlight rolloff on light sources
+
+NO object removal, generation, restructuring, or semantic scene alteration.
+
+Permitted segmentation is limited to: the sky, and window/door/fixture
+regions that are genuinely visible in the input, for illumination purposes
+only.
+`;
+const STAGE1A_EXTERIOR_DUSK_REALISM_CHECK_BLOCK = `────────────────────────────────
+REALISM CHECK (BEFORE OUTPUT)
+────────────────────────────────
+
+Before returning the result, confirm:
+• The sky gradient is smooth, with no banding.
+• Window glow does not bleed past its frame onto the cladding.
+• No glow appears behind a solid wall where no opening exists.
+• No light, glow, or fixture appears at any exterior location — a path,
+  garden, lawn, wall, or eave — unless that exact fixture is genuinely
+  visible in the input. Every lit exterior point must trace back to a real
+  fixture already in the photo.
+• There is no second light source implying a remaining sun.
+• Reflections in glass and any wet surfaces are consistent with the new sky.
+• The result is defensible as a genuine dusk photograph of THIS property,
+  differing from the input only in time of day and lighting state.
+`;
+
+// Dusk/twilight exterior transformation (Stage 1A Exterior Enhancement).
+// Shares the structural-preservation guardrail sections with the daylight
+// builder above (geometric lock, wet surface handling, final constraint,
+// output) but replaces every daylight-specific section (header, primary
+// objective, sky enhancement, allowed adjustments) with twilight-specific
+// direction, and adds a new ARTIFICIAL LIGHT SYNTHESIS section with no
+// daylight counterpart. Exported so worker/src/pipeline/stage1A.ts can call
+// it directly, bypassing the isNZStyleEnabled() gate that the daylight path
+// runs through -- a user-ticked dusk checkbox must not be silently voided
+// by an unrelated NZ-style flag being off.
+export function buildStage1ADuskExteriorPromptNZStyle(): string {
+  return (
+    STAGE1A_EXTERIOR_DUSK_HEADER_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_FRAMING_LOCK_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_GEOMETRIC_SITE_LOCK_BLOCK + "\n" +
+    buildExteriorProhibitedActionsBlock("dusk") + "\n" +
+    STAGE1A_EXTERIOR_DUSK_PRIMARY_OBJECTIVE_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_DUSK_SKY_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_DUSK_ARTIFICIAL_LIGHT_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_WET_SURFACE_BLOCK + "\n" +
+    buildExteriorLandscapeVibrancyBlock("dusk") + "\n" +
+    STAGE1A_EXTERIOR_DUSK_ALLOWED_ADJUSTMENTS_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_FINAL_CONSTRAINT_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_DUSK_REALISM_CHECK_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_OUTPUT_BLOCK
+  ).trim();
 }
 
   // Stage 1B: Aggressive furniture & clutter removal (NZ style)
@@ -959,6 +1200,30 @@ and must strictly match surrounding visible structure.
 If uncertain, preserve original geometry exactly.
 `;
 
+// Fixed exterior items that Stage 1B exterior declutter (light and full) must never
+// remove. A furniture/clutter detector can flag these (e.g. a satellite dish), which
+// routes the image to Stage 1B — this list is what stops the generator deleting them.
+const EXTERIOR_FIXED_ITEMS_PRESERVATION_BLOCK = `FIXED EXTERIOR ITEMS — NEVER REMOVE (ALLOWED-TO-REMAIN LIST)
+
+The following are permanently attached parts of the property or its services. They are NOT clutter,
+even when small, dark, cluttered-looking, or visually distracting. They must stay exactly as they
+appear in the input — same position, size, shape and colour:
+• Satellite dishes, TV antennas, aerials, and their mounting brackets and cables
+• Solar panels, solar hot water panels, and roof-mounted equipment
+• Heat pumps, air-conditioning units and condensers, hot water cylinders, flues, vents, and chimneys
+• Meter boxes, electrical boxes, switchboards, gas meters, and service pipes or conduit
+• Power lines, power poles, and overhead cables
+• Gutters, downpipes, fascias, and eave fixtures
+• Security cameras, sensors, intercoms, doorbells, and alarm boxes
+• Exterior lights, wall lights, and flood lights
+• Letterboxes, address numbers, and fixed signage
+• Fixed taps, hose reels or hose taps mounted to a wall, outdoor power sockets
+• Fixed clotheslines, rainwater tanks, and attached gas bottle enclosures
+• Fences, gates, retaining walls, and any other structure attached to the ground or the building
+
+If you are unsure whether an item is fixed or portable → it is fixed. KEEP IT.
+Only remove clearly loose, portable clutter that is not on this list.`;
+
   export function buildStage1BPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
       return `You are performing Stage 1B: FULL FURNITURE REMOVAL for EXTERNAL real estate imagery.
@@ -986,6 +1251,8 @@ Only remove clearly separate portable man-made objects.
 Do NOT reinterpret, repair, smooth, beautify, repaint, or retexture any material or surface.
 If removal would require guessing what a surface should look like, KEEP the object.
 If an area is ambiguous, attached, blended into the surface, or could be structural/material wear, KEEP it.
+
+${EXTERIOR_FIXED_ITEMS_PRESERVATION_BLOCK}
 
 CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
 
@@ -1045,7 +1312,7 @@ ${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
 Preserve surface textures and shadows exactly as they are. Do not beautify materials.`.trim();
     }
 
-      return `STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
+      return `STAGE 1B — STRUCTURED-RETAIN DECLUTTER (INTERIOR)
 
     ────────────────────────────────
     RULE PRIORITY ORDER (HIGHEST → LOWEST)
@@ -1325,26 +1592,42 @@ Anchor removal for aesthetic improvement is prohibited.
 If multiple anchor pieces are visible, retain the primary room-type anchor first
 (Bed/Sofa/Dining Table/Desk where applicable).
 Secondary items, regardless of size or visual mass, must be removed if a room-type primary anchor is present.
-If no room-type primary anchor is visible, retain the most visually dominant anchor
-based on size, floor contact area, and visual weight.
 
-Structured-retain declutter removes clutter — not anchor furniture.
+NO ROOM-TYPE ANCHOR VISIBLE — MANDATORY FULL REMOVAL
 
-ANCHOR SELECTION PRIORITY — STRICT HIERARCHY
+If no room-type primary anchor (Bed/Sofa/Dining Table/Desk, as applicable to this
+room type) is visible in the input image, there is NO anchor to retain. Do NOT
+substitute any other item — a wardrobe, dresser, chest of drawers, cabinet,
+chair, coffee table, side table, or any other freestanding furniture piece —
+as a stand-in anchor no matter how large, dominant, or central it is. Remove
+ALL such items along with every other piece of movable furniture and clutter,
+and produce a fully empty room. Size, floor contact area, and visual weight
+are never grounds for retaining a non-primary item.
 
-Anchor selection must follow this strict order:
+Structured-retain declutter removes clutter — not the room-type primary anchor.
+It never retains a substitute anchor in the primary anchor's place.
+
+ANCHOR SELECTION PRIORITY — STRICT HIERARCHY (candidate anchors only)
+
+This hierarchy applies ONLY when choosing among multiple candidates for the
+room's own type-correct anchor (e.g., deciding which of several visible
+beds/sofas/desks is the primary one, or how to treat a partially visible
+instance of that same room-type-correct piece). It must NEVER be used to
+justify retaining a non-primary item as a substitute anchor when no
+room-type-correct piece is present — that case is covered by the mandatory
+full-removal rule above, with no exception.
 
 1. Determine dominance primarily by physical scale, floor contact area, visual mass, and functional importance within the room.
 
-2. If a clearly dominant large-scale anchor exists, it must be retained — even if partially cropped or positioned at the image edge.
+2. If a clearly dominant large-scale instance of the room-type-correct anchor exists among the candidates, it must be retained — even if partially cropped or positioned at the image edge.
 
-3. A smaller fully visible item must NOT outrank a larger partially visible dominant anchor.
+3. A smaller fully visible candidate must NOT outrank a larger partially visible dominant candidate.
 
 4. Visibility clarity alone does NOT override dominance.
 
 5. Central positioning is a last-resort tie-breaker only when scale and dominance are genuinely equal.
 
-Dominance takes precedence over visibility.
+Dominance takes precedence over visibility — among room-type-correct candidates only.
 
 ARCHITECTURAL BOUNDARY PROTECTION — STRUCTURAL SAFETY RULE
 
@@ -1401,9 +1684,14 @@ Office:
 Kitchen:
 → Built-ins remain as already specified. Remove all loose movable items.
 
-If uncertain which item is dominant:
-→ Keep the item most central to the room’s primary function.
+If uncertain which VISIBLE INSTANCE of the room type's own correct anchor
+(per the room type rules directly above — Bed/Sofa/Dining Table/Desk, as
+applicable) is the primary one:
+→ Keep the instance most central to the room's primary function.
 → Remove all other movable items.
+This does not apply when no instance of the room-type-correct anchor is
+visible at all — in that case, per the mandatory full-removal rule above,
+there is nothing to keep; remove every movable item and leave the room empty.
 
 PRIMARY ANCHOR FOCUS
 
@@ -1428,7 +1716,7 @@ If constraints conflict, prioritize preserving the original image geometry exact
 Never reinterpret, simplify, or regenerate the room layout to resolve ambiguity.
 
 OUTPUT:
-Return only the empty room image.`.trim();
+Return the room with all rules above applied: the primary anchor furniture piece retained exactly as specified (if one was appropriate to keep per the rules above), and every other movable furniture item, clutter, and decor piece removed. Only return a fully empty room if no appropriate anchor was visible to begin with — do not remove an anchor that the rules above required you to keep.`.trim();
   }
 
   // Stage 1B Light Mode: Remove clutter/mess only, keep all main furniture
@@ -1491,6 +1779,8 @@ Return only the empty room image.`.trim();
 
     The building must remain functionally complete after decluttering.
 
+    ${EXTERIOR_FIXED_ITEMS_PRESERVATION_BLOCK}
+
     DECLUTTER OBJECT CLASS RULES — LIGHT MODE (EXTERIOR)
 
     Remove loose, portable, personal-use items that are not furniture and not built-in.
@@ -1521,6 +1811,7 @@ Return only the empty room image.`.trim();
     - fixed benches and built-in seating
     - permanently installed BBQ/outdoor kitchen components
     - fixed planters or integrated landscaping elements
+    - anything on the FIXED EXTERIOR ITEMS list above (satellite dishes, antennas, meter boxes, heat pumps, solar panels, etc.)
 
     EXTERIOR WALL ITEM DECLUTTER — LIGHT MODE
 
@@ -1802,13 +2093,13 @@ export function buildStage2PromptNZStyle(
     .toLowerCase()
     .replace(/-/g, "_")
     .trim();
-  const canonicalRoomType = normalizedRoomType === "multiple_living_areas"
-    ? "multiple_living"
+  const canonicalRoomType = (normalizedRoomType === "multiple_living_areas" || normalizedRoomType === "multiple_living")
+    ? "kitchen_living_dining"
     : normalizedRoomType;
 
   const sourceStage = opts?.sourceStage || "1A";
   const explicitMode = opts?.mode;
-  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const refreshOnlyRoomTypes = new Set(["kitchen_living_dining", "kitchen_dining", "kitchen_living", "living_dining"]);
   const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
   const resolvedMode: "full" | "refresh" = explicitMode
     ? explicitMode
@@ -1930,11 +2221,14 @@ export function buildDiningCeilingFixtureSuppressionInstruction(roomType?: strin
     return null;
   }
 
-  const canonicalRoomType = normalizedRoomType === "multiple_living_areas"
-    ? "multiple_living"
+  const canonicalRoomType = (normalizedRoomType === "multiple_living_areas" || normalizedRoomType === "multiple_living")
+    ? "kitchen_living_dining"
     : normalizedRoomType;
 
-  if (!canonicalRoomType.includes("dining") && canonicalRoomType !== "multiple_living") {
+  // "kitchen_living_dining" already contains "dining" as a substring, so it
+  // naturally satisfies this check without needing its own explicit
+  // exception the way the old "multiple_living" value used to.
+  if (!canonicalRoomType.includes("dining")) {
     return null;
   }
 

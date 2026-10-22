@@ -5,17 +5,6 @@ import { computeBrightnessDiff, computeBrightnessDiffFromBuffers } from "./brigh
 import { computeEdgeMapFromGray } from "./edgeUtils";
 import { VALIDATION_THRESHOLDS } from "./config";
 import { StructuralValidationResult } from "./types";
-import { ensureSameSizeAsBase } from "./resizeUtils";
-import { segmentImageClasses, SegmentationResult } from "./semanticSegmenter";
-import {
-  compareWalls,
-  compareWindows,
-  compareDoors,
-  compareFloorMaterial,
-  compareGrassConcrete,
-  compareDrivewayPresence,
-  compareVehicles,
-} from "./classComparisons";
 
 export type Stage1AValidationResult = {
   ok: boolean;
@@ -54,6 +43,13 @@ async function cannyEdge(imagePath: string): Promise<Uint8Array> {
   return edgeFromGrayBuffer(buf, width, height);
 }
 
+// NOTE (H3, RealEnhance audit): this function is fully implemented and
+// working (real edge/IoU + brightness comparison, genuine ok:false paths)
+// but has zero callers anywhere in the codebase — pipeline/stage1A.ts calls
+// validateStage1AStructural (below) instead, and validators/index.ts
+// defines its own unrelated same-named local function. Left in place
+// (not quarantined with the stub cluster in validators/_unimplemented/)
+// because, unlike those, this one actually works — it's simply unwired.
 export async function validateStage1A(
   canonicalBasePath: string,
   stage1APath: string,
@@ -115,48 +111,41 @@ export async function validateStage1A(
   return { ok: true, structuralIoU, brightnessDiff };
 }
 
-export async function computeStructuralChangeRatio(basePath: string, candidatePath: string, mask: StructuralMask): Promise<number> {
-  // TODO: Implement real mask diff logic using mask object
-  return 0.01; // always pass for now
-}
+// H3 (RealEnhance audit): computeStructuralChangeRatio / computeWindowIoU /
+// computeLandcoverChangeRatio were unimplemented stubs (hardcoded return
+// values, "always pass for now") with zero callers anywhere in the
+// codebase. Quarantined to validators/_unimplemented/orphanedStage1AStubs.ts
+// for historical reference — not deleted outright, but removed from the
+// live validators/ surface so they can't be mistaken for working code and
+// wired in as-is.
 
-export async function computeWindowIoU(basePath: string, candidatePath: string, mask: StructuralMask): Promise<number> {
-  // TODO: Implement real window IoU logic using mask object
-  return 0.99; // always pass for now
-}
-
-export async function computeLandcoverChangeRatio(basePath: string, candidatePath: string, mask: StructuralMask): Promise<number> {
-  // TODO: Implement real landcover diff logic using mask object
-  return 0.0; // always pass for now
-}
-
+/**
+ * H3 (RealEnhance audit): this function's per-class structural comparison
+ * (walls/windows/doors/floor/grass/driveway/vehicles) was never actually
+ * implemented. It depended entirely on semanticSegmenter.ts's
+ * segmentImageClasses (a stub that always returns zero masks) and
+ * classComparisons.ts (every comparator hardcoded `return {pass:true}`),
+ * so none of its `if (!xRes.pass) return {ok:false,...}` branches could
+ * ever fire regardless of real image content — both are quarantined under
+ * validators/_unimplemented/ now (see that folder's README). This function
+ * is called live from pipeline/stage1A.ts, so its silent no-op gave the
+ * impression that per-class structural validation was running in Stage 1A,
+ * when nothing was actually being checked.
+ *
+ * This is a status-explicit pass, not a behavior change: the dead call
+ * chain has been removed (rather than left calling stubs that could only
+ * ever pass) and the result now honestly labels itself as unimplemented.
+ * Stage 1A's REAL structural protection is validateStage1A, above — fully
+ * implemented, but currently unwired (see its own doc comment).
+ */
 export async function validateStage1AStructural(
   canonicalPath: string,
   candidatePath: string,
   masks: { structuralMask: StructuralMask; windowMask?: any; landcoverMask?: any; },
   sceneType: "interior" | "exterior"
 ): Promise<StructuralValidationResult> {
-  // Segment both images
-  const baseSeg = await segmentImageClasses(canonicalPath);
-  const candSeg = await segmentImageClasses(candidatePath);
-  // Hard fail if dimensions change
-  const candidatePathResized = await ensureSameSizeAsBase(canonicalPath, candidatePath);
-  // Run per-class checks
-  const wallRes = compareWalls(baseSeg, candSeg);
-  if (!wallRes.pass) return { ok: false, reason: wallRes.code || "wall_layout_changed" };
-  const winRes = compareWindows(baseSeg, candSeg);
-  if (!winRes.pass) return { ok: false, reason: winRes.code || "windows_changed" };
-  const doorRes = compareDoors(baseSeg, candSeg);
-  if (!doorRes.pass) return { ok: false, reason: doorRes.code || "doors_changed" };
-  const floorRes = compareFloorMaterial(baseSeg, candSeg);
-  if (!floorRes.pass) return { ok: false, reason: floorRes.code || "floor_material_changed" };
-  if (sceneType === "exterior") {
-    const grassRes = compareGrassConcrete(baseSeg, candSeg);
-    if (!grassRes.pass) return { ok: false, reason: grassRes.code || "grass_to_concrete" };
-    const driveRes = compareDrivewayPresence(baseSeg, candSeg);
-    if (!driveRes.pass) return { ok: false, reason: driveRes.code || "driveway_changed" };
-    const carRes = compareVehicles(baseSeg, candSeg);
-    if (!carRes.pass) return { ok: false, reason: carRes.code || "vehicle_changed" };
-  }
-  return { ok: true };
+  return {
+    ok: true,
+    meta: { unimplemented: true, reason: "per_class_structural_comparison_not_implemented" },
+  };
 }

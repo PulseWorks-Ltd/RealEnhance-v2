@@ -1,0 +1,133 @@
+{
+  "roomSummary": "This is a bright bedroom featuring grey carpeting, a large sliding glass door with purple curtains opening to an outdoor deck, and built-in double wardrobe doors on the right wall.",
+  "camera": "The camera stands in the corner or entrance of the bedroom, looking diagonally across the room toward the sliding door and the plain left wall.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "sliding_door",
+      "description": "dark-framed sliding glass door leading to an outdoor deck on the back wall",
+      "box": [
+        0.2,
+        0.32,
+        0.46,
+        0.77
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "curtain",
+      "description": "lavender full-length curtains hung on a dark curtain rod framing the sliding door",
+      "box": [
+        0.16,
+        0.23,
+        0.49,
+        0.82
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "closet_door",
+      "description": "white six-panel double wardrobe doors with round knobs on the right wall",
+      "box": [
+        0.66,
+        0.22,
+        0.98,
+        0.89
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "light_fitting",
+      "description": "recessed ceiling downlight in the ceiling above the sliding door",
+      "box": [
+        0.32,
+        0.18,
+        0.35,
+        0.2
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "left wall",
+      "description": "smooth plain light-grey wall on the left with no openings or doors",
+      "usableForLargeFurniture": true,
+      "partlyVisible": true
+    },
+    {
+      "name": "back wall",
+      "description": "wall dominated by the sliding glass door and lavender curtains",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    },
+    {
+      "name": "right wall",
+      "description": "wall containing a short section of plain wall and the large double closet doors",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "sleeping area",
+      "description": "occupying the left side of the room along the plain left wall"
+    },
+    {
+      "name": "circulation area",
+      "description": "open floor space extending between the room entrance, sliding door, and wardrobe doors"
+    }
+  ],
+  "kitchenVisible": false,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "diningSpace": {
+    "fits": "none",
+    "reason": "This is a dedicated bedroom."
+  },
+  "bedSpace": {
+    "bed": "queen",
+    "bedsideTables": 1,
+    "wallMetres": 3,
+    "depthMetres": 3.5,
+    "wallRunsOffPhoto": true,
+    "measuredWith": "double wardrobe doors (~1.6 m wide across both leaves)",
+    "reason": "The left wall is completely plain with no doors or windows and has over 3 meters of visible run, providing sufficient room for a queen bed and two bedside tables while maintaining clear passage to the sliding door and closet."
+  },
+  "layout": [
+    {
+      "item": "Queen bed",
+      "placement": "headboard placed against the plain left wall, pulled slightly away from the corner to leave ample space before the curtain pole and sliding door — pushed to the end of the wall furthest from the door (against the corner or out to the edge of the photo, which may cut part of it off), leaving at least one door-width of clear wall before the door frame; it must not be centred on the wall"
+    },
+    {
+      "item": "Bedside table",
+      "placement": "beside the headboard on the near side toward the foreground"
+    },
+    {
+      "item": "Table lamp",
+      "placement": "on the bedside table"
+    },
+    {
+      "item": "Area rug",
+      "placement": "laid partially under the lower two-thirds of the queen bed, resting flat on the carpet"
+    },
+    {
+      "item": "Framed wall art",
+      "placement": "hung centrally on the plain left wall directly above the headboard"
+    }
+  ],
+  "relationships": [
+    "The bed sits against the plain left wall facing toward the wardrobe, preserving a generous open walkway in the center of the room to access both the sliding door and the wardrobe."
+  ],
+  "avoid": [
+    "Do not place any furniture against the right wall that would block the swing of the double closet doors.",
+    "Do not place the bed against the back sliding door.",
+    "Do not hang artwork above the wardrobe doors or over the curtain rail."
+  ],
+  "keepUntouched": [
+    "dark-framed sliding glass door and lavender curtains on the back wall",
+    "white double wardrobe doors and handles on the right wall",
+    "ceiling downlight and all skirting boards"
+  ]
+}
