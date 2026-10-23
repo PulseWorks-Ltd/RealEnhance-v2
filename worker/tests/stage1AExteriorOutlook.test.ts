@@ -36,6 +36,14 @@ describe("exterior outlook survey decision", () => {
   });
 });
 
+describe("exterior outlook survey: hazy glass", () => {
+  it("skips frosted, misted or sheer-curtained views", () => {
+    const r = evaluateOutlookSurvey({ views: [{ box: [0.1, 0.2, 0.4, 0.5], blownOut: "no", hazy: "yes", sky: "grey", greenery: "yes" }] });
+    expect(r.eligible).toBe(false);
+    expect(r.reason).toContain("hazy");
+  });
+});
+
 describe("exterior outlook code adjustments", () => {
   // 200x100: left half grey wall (room), right half a "window" with a green
   // bush, a black frame bar and a blown-white patch.
@@ -83,5 +91,21 @@ describe("exterior outlook code adjustments", () => {
     }
     const bush = await at(r.image, 130, 60);
     expect(bush[1]).toBeGreaterThan(120); // the view itself still gets the lift
+  });
+
+  it("leaves a warm-tinted wall alone when the box runs past the window", async () => {
+    // 200x100: peach-tinted wall everywhere, with a green view (window) in the middle.
+    const w = 200, h = 100, px = Buffer.alloc(w * h * 3);
+    const set = (x: number, y: number, c: number[]) => { const i = (y * w + x) * 3; px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const inWindow = x >= 70 && x < 120 && y >= 30 && y < 70;
+      set(x, y, inWindow ? [70, 120, 60] : [190, 176, 167]); // view : warm-lit wall (too colourful for the white/grey test)
+    }
+    const img = await sharp(px, { raw: { width: w, height: h, channels: 3 } }).png().toBuffer();
+    // The box runs well past the window on the right and below.
+    const r = await applyOutlookAdjustments(img, [{ box: [0.3, 0.25, 0.8, 0.85], sky: "none", greenery: true, blownOut: false, description: "" }]);
+    expect(await at(r.image, 140, 50)).toEqual(await at(img, 140, 50)); // wall inside the box, right of the window
+    expect(await at(r.image, 95, 78)).toEqual(await at(img, 95, 78));   // wall inside the box, below the window
+    expect((await at(r.image, 95, 50))[1]).toBeGreaterThan(120);        // the view still gets the lift
   });
 });
