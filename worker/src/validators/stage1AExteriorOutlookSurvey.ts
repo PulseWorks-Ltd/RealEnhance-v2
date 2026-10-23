@@ -12,11 +12,13 @@
 // - Usable view: code brightens and greens the view inside its box
 //   after Stage 1A (see stage1AExteriorOutlookAdjust.ts) — no AI involved.
 //
-// Fails closed: any error or unclear answer means "not eligible".
+// Fails closed: an unclear answer, or an error on the retry too, means "not eligible".
 import { callValidatorModel } from "./validatorModelCall";
 
 export const EXTERIOR_OUTLOOK_SURVEY_MODEL = String(process.env.STAGE1A_OUTLOOK_SURVEY_MODEL || "gemini-3.8-flash");
 const SURVEY_TIMEOUT_MS = Number(process.env.STAGE1A_OUTLOOK_SURVEY_TIMEOUT_MS || 30000);
+// Tries per photo (a failed or timed-out call is retried; 1 = no retry).
+const SURVEY_ATTEMPTS = Math.max(1, Math.round(Number(process.env.STAGE1A_OUTLOOK_SURVEY_ATTEMPTS || 2)));
 // A view smaller than this share of the photo (box area, %) is too small to bother with.
 const MIN_VIEW_AREA_PCT = Number(process.env.STAGE1A_OUTLOOK_MIN_VIEW_PCT || 0.5);
 
@@ -88,18 +90,28 @@ export function evaluateOutlookSurvey(raw: any): OutlookSurvey {
 }
 
 export async function surveyExteriorOutlook(params: { imagePath: string; jobId: string; imageId: string }): Promise<OutlookSurvey> {
-  try {
-    const raw = await callValidatorModel({
-      images: [{ path: params.imagePath, label: "Photo:" }],
-      systemInstruction: "You are a careful visual inspector of real-estate photos.",
-      userPrompt: buildOutlookSurveyPrompt(),
-      model: EXTERIOR_OUTLOOK_SURVEY_MODEL,
-      reasonPrefix: "stage1a_outlook_survey",
-      timeoutMs: SURVEY_TIMEOUT_MS,
-      ctx: { jobId: params.jobId, imageId: params.imageId, callLabel: "outlook_survey" },
-    });
-    return evaluateOutlookSurvey(raw);
-  } catch (err: any) {
-    return { eligible: false, skyToBlue: false, views: [], reason: `survey failed: ${String(err?.message || err).slice(0, 200)}` };
+  // A slow or failed call is retried once: one timed-out call (Oct 2026,
+  // Bedroom 01) silently cost a photo its blue sky and view lift.
+  let lastErr: any;
+  for (let attempt = 1; attempt <= SURVEY_ATTEMPTS; attempt++) {
+    try {
+      const raw = await callValidatorModel({
+        images: [{ path: params.imagePath, label: "Photo:" }],
+        systemInstruction: "You are a careful visual inspector of real-estate photos.",
+        userPrompt: buildOutlookSurveyPrompt(),
+        model: EXTERIOR_OUTLOOK_SURVEY_MODEL,
+        reasonPrefix: "stage1a_outlook_survey",
+        timeoutMs: SURVEY_TIMEOUT_MS,
+        ctx: { jobId: params.jobId, imageId: params.imageId, attempt, callLabel: "outlook_survey" },
+      });
+      return evaluateOutlookSurvey(raw);
+    } catch (err: any) {
+      lastErr = err;
+      if (attempt < SURVEY_ATTEMPTS) {
+        console.warn(`[STAGE1A_OUTLOOK_SURVEY_RETRY] ${JSON.stringify({ jobId: params.jobId, imageId: params.imageId, attempt, error: String(err?.message || err).slice(0, 200) })}`);
+      }
+    }
   }
+  const tries = SURVEY_ATTEMPTS > 1 ? ` (after ${SURVEY_ATTEMPTS} tries)` : "";
+  return { eligible: false, skyToBlue: false, views: [], reason: `survey failed${tries}: ${String(lastErr?.message || lastErr).slice(0, 200)}` };
 }
