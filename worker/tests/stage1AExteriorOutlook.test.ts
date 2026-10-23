@@ -65,4 +65,23 @@ describe("exterior outlook code adjustments", () => {
     expect(await at(r.image, 142, 60)).toEqual(await at(s.img, 142, 60)); // frame untouched
     expect(await at(r.image, 170, 10)).toEqual(await at(s.img, 170, 10)); // blown white stays
   });
+
+  it("only adjusts outdoor pixels: white frames and sills, grey sky and dark blinds stay as they are", async () => {
+    const w = 200, h = 100, px = Buffer.alloc(w * h * 3);
+    const set = (x: number, y: number, c: number[]) => { const i = (y * w + x) * 3; px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (x < 40) set(x, y, [36, 40, 82]);         // navy blind
+      else if (x < 60) set(x, y, [238, 238, 234]); // white window frame
+      else if (y < 40) set(x, y, [204, 207, 212]); // grey sky
+      else if (y >= 85) set(x, y, [236, 235, 230]); // white sill
+      else set(x, y, [70, 120, 60]);              // bush
+    }
+    const img = await sharp(px, { raw: { width: w, height: h, channels: 3 } }).png().toBuffer();
+    const r = await applyOutlookAdjustments(img, [{ box: [0, 0, 1, 1], sky: "grey", greenery: true, blownOut: false, description: "" }]);
+    for (const [x, y] of [[20, 50], [50, 50], [130, 20], [130, 92]]) {
+      expect(await at(r.image, x, y)).toEqual(await at(img, x, y));
+    }
+    const bush = await at(r.image, 130, 60);
+    expect(bush[1]).toBeGreaterThan(120); // the view itself still gets the lift
+  });
 });

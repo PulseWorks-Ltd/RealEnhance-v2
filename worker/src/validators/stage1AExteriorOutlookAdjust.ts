@@ -4,10 +4,13 @@
 // outside the boxes changes. Grey sky to blue is the only part left to
 // Gemini (sky-only prompt in the Stage 1A call).
 //
-// Per pixel, inside a softly feathered box:
+// Per pixel, inside a softly feathered box, outdoor pixels only:
 // - brighten a little and warm the light (sunlit feel);
 // - make greens more vibrant (saturation, not hue or shape);
-// - leave near-black (window frames, mullions) and blown white alone.
+// - leave alone anything that is probably not the view: near-black and dark
+//   tones (window frames, mullions, blinds, curtains), and bright neutral
+//   white/grey (white frames, sills, interior wall and the sky itself, which
+//   is Gemini's job; warming it turned grey skies peach), plus blown white.
 //
 // STAGE1A_OUTLOOK_ADJUST=off disables it.
 import sharp from "sharp";
@@ -20,6 +23,8 @@ export function outlookAdjustEnabled(): boolean {
 const BRIGHTEN = Number(process.env.STAGE1A_OUTLOOK_BRIGHTEN || 0.08);  // dark tones up to +16%, mid +8%, highlights ~0
 const WARM = Number(process.env.STAGE1A_OUTLOOK_WARM || 0.03);          // red +3%, blue -3%
 const GREEN_SAT = Number(process.env.STAGE1A_OUTLOOK_GREEN_SAT || 0.25); // greens 25% more saturated
+const NEUTRAL_MAX_CHROMA = 22; // below this colour spread (0-255) a bright pixel counts as white/grey
+const NEUTRAL_MIN_LUM = 150;   // ...from this brightness up
 const FEATHER_FRAC = 0.06; // soft edge, as a share of the box's shorter side
 const INSET_FRAC = 0.03;   // stay this far inside the box: a box that runs a little past the glass must not light up the wall or floor
 
@@ -53,13 +58,18 @@ export async function applyOutlookAdjustments(image: Buffer, views: OutlookView[
     const p = i * 3;
     let r = data[p], g = data[p + 1], b = data[p + 2];
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-    // Frames/mullions (near-black) and blown white stay as they are.
-    w *= smooth((lum - 30) / 30);
-    if (Math.min(r, g, b) >= 248) w = 0;
+    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+    if (Math.min(r, g, b) >= 248) continue; // blown white stays
+    // Bright, colourless pixels (white frames and sills, wall, sky) are not
+    // the view we want to lift: leave them alone.
+    w *= 1 - smooth((NEUTRAL_MAX_CHROMA - chroma) / 10) * smooth((lum - NEUTRAL_MIN_LUM) / 40);
     if (w <= 0) continue;
     // Greens: more saturated (only where green clearly leads), and not warmed
-    // (warming pushes green toward yellow).
-    const greenness = g > r + 6 && g > b + 6 ? smooth((g - Math.max(r, b)) / 30) : 0;
+    // (warming pushes green toward yellow). Dark greens (tree shade) still count.
+    const greenness = g > r + 6 && g > b + 6 ? smooth((g - Math.max(r, b)) / 30) * smooth((lum - 25) / 30) : 0;
+    // Everything else needs to be out of the dark tones (frames, blinds, curtains).
+    w *= Math.max(greenness, smooth((lum - 45) / 45));
+    if (w <= 0) continue;
     if (greenness > 0) {
       const s = 1 + GREEN_SAT * greenness;
       r = lum + (r - lum) * s; g = lum + (g - lum) * s; b = lum + (b - lum) * s;
