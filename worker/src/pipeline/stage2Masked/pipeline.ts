@@ -58,6 +58,13 @@ import {
   checkCameraAlignment,
   checkFloatingFurniture,
   checkFloorMoved,
+  measureSkirtingOffsets,
+  planSkirtingLineUp,
+  applySkirtingLineUp,
+  type SkirtingLineUp,
+  SKIRTING_LINE_UP,
+  FLOOR_MOVED_RISE_PCT,
+  type SkirtingRun,
   FLOOR_MOVED_CHECK,
   planFloorPatches,
   applyFloorPatches,
@@ -1084,6 +1091,44 @@ export async function runMaskedStage2Job(p: {
         // Gemini's own floor and skirting under the piece ("floor patch");
         // otherwise re-stage. Planning needs no AI call, so a photo that must be
         // re-staged anyway skips the blend and door check.
+        // Skirting beside furniture: Gemini drew a wall's floor line higher or
+        // lower right next to a piece standing against it. Line the piece up
+        // with the real skirting when that is safe (no AI call); otherwise the
+        // floor-moved check below re-stages.
+        let skirtingLeft: SkirtingRun[] = [];
+        if (FLOOR_MOVED_CHECK) {
+          const sk = await measureSkirtingOffsets(original, ctx.staged, layers.solid, w, h).catch((e: any) => ({ runs: [] as SkirtingRun[], checkedColsPct: 0, error: String(e?.message || e) }));
+          row.skirtingBeside = sk;
+          skirtingLeft = sk.runs;
+          if (sk.runs.length) {
+            const plan: SkirtingLineUp = SKIRTING_LINE_UP ? planSkirtingLineUp(sk.runs, layers.floor, w, h, (sk as any).realLine || []) : { ok: false, why: "line-up switched off" };
+            row.skirtingLineUp = { ok: plan.ok, why: plan.why, ...(plan.ok ? { wallPct: plan.wallPct, movedDownPct: plan.movedDownPct, growPct: plan.growPct } : {}) };
+            if (plan.ok) {
+              const ap = await applySkirtingLineUp(ctx.staged, {
+                floor: layers.floor, tightFloor: layers.tightFloor, artRegion: layers.artRegion, solid: layers.solid, zone: layers.zone, core: layers.core,
+              }, layers.floor, plan, w, h);
+              ctx = { ...ctx, staged: ap.staged };
+              const solid = ap.masks.solid!;
+              layers = {
+                ...layers,
+                floor: ap.masks.floor!,
+                ...(layers.tightFloor ? { tightFloor: ap.masks.tightFloor! } : {}),
+                artRegion: ap.masks.artRegion!,
+                solid,
+                zone: ap.masks.zone!,
+                core: ap.masks.core!,
+                solidPng: await maskToPng(solid, w, h),
+              };
+              io.save?.("3b_skirting_lined_up.webp", await sharp(ctx.staged).webp({ quality: 90 }).toBuffer());
+              const after = await measureSkirtingOffsets(original, ctx.staged, layers.solid, w, h).catch(() => ({ runs: [] as SkirtingRun[], checkedColsPct: 0 }));
+              row.skirtingLineUp.after = after.runs;
+              skirtingLeft = after.runs;
+              p.log?.(`[${ctx.name}] skirting beside furniture was ${Math.abs(plan.run!.dyPct)}% ${plan.run!.dyPct < 0 ? "higher" : "lower"} in Gemini's picture (x ${plan.run!.x1Pct}-${plan.run!.x2Pct}%) — pulled the furniture against that wall (x ${plan.wallPct![0]}-${plan.wallPct![1]}%) ${plan.k! >= 1 ? "forward" : "back"}: ${plan.k! >= 1 ? "down" : "up"} ${Math.abs(plan.movedDownPct!)}% and ${Math.abs(plan.growPct!)}% ${plan.k! >= 1 ? "bigger" : "smaller"}${after.runs.length ? ` (still off: ${after.runs.map((r) => `${r.dyPct}% at x ${r.x1Pct}-${r.x2Pct}%`).join("; ")})` : ""}`);
+            } else {
+              p.warn?.(`[${ctx.name}] skirting beside furniture off by ${sk.runs.map((r) => `${r.dyPct}% at x ${r.x1Pct}-${r.x2Pct}%`).join("; ")} — not lined up: ${plan.why}`);
+            }
+          }
+        }
         row.floatingCheck = await checkFloatingFurniture(original, layers.floor, w, h).catch((e: any) => ({ floating: false, runs: [], error: String(e?.message || e) }));
         let floorPlan: Awaited<ReturnType<typeof planFloorPatches>> | null = null;
         if (row.floatingCheck.floating) {
@@ -1098,6 +1143,12 @@ export async function runMaskedStage2Job(p: {
         // Merging would paste a rug or bed onto the real wall.
         if (FLOOR_MOVED_CHECK) {
           row.floorMovedCheck = await checkFloorMoved(original, ctx.staged, layers.solid, w, h).catch((e: any) => ({ moved: false, error: String(e?.message || e) }));
+          // A clear offset beside furniture that wasn't lined up counts too.
+          const besides = skirtingLeft.filter((r) => Math.abs(r.dyPct) >= FLOOR_MOVED_RISE_PCT);
+          if (!row.floorMovedCheck.moved && besides.length) {
+            const r = [...besides].sort((a, b) => b.widthPct - a.widthPct)[0];
+            row.floorMovedCheck = { ...row.floorMovedCheck, moved: true, besideFurniture: besides, longestRunPct: r.widthPct, maxRisePct: Math.abs(r.dyPct), atXPct: [Math.round(r.x1Pct), Math.round(r.x2Pct)] };
+          }
           if (row.floorMovedCheck.moved) {
             p.warn?.(`[${ctx.name}] Gemini moved the floor line to fit the furniture (its floor reaches up to ${row.floorMovedCheck.maxRisePct}% of the photo's height over the real wall, across ${row.floorMovedCheck.longestRunPct}% of the width) — re-staging`);
           }

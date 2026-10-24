@@ -3228,6 +3228,217 @@ export async function checkFloorMoved(original: Buffer, staged: Buffer, furnitur
 }
 
 // ---------------------------------------------------------------------------
+// Skirting beside furniture. Gemini sometimes draws a wall's floor line a few
+// percent higher or lower than the real one, right next to the furniture it
+// stands against (Oct 2026, Bedroom 05: ~5% higher on the short stretch of
+// wall left of the bed). The floor-moved check above only looks at columns
+// with no furniture anywhere below the floor line, so a narrow stretch beside
+// a bed is never checked; the bed is pasted standing on Gemini's floor and
+// its back corner misses the real skirting.
+//
+// measureSkirtingOffsets: for columns where only the strip AROUND the floor
+// line must be clear of furniture, where Gemini's floor line is vs the real
+// one. A steady offset over a short stretch (2%+ of the width) counts.
+// planSkirtingLineUp / applySkirtingLineUp: the furniture standing against
+// that wall is pulled forward (or back) in perspective — lower and bigger —
+// with its shadows, until it meets the real skirting. If that isn't safe the
+// photo is re-staged.
+// No AI calls. STAGE2_SKIRTING_LINE_UP=off turns the line-up off (the
+// measurement still feeds the floor-moved check).
+// ---------------------------------------------------------------------------
+export const SKIRTING_LINE_UP = String(process.env.STAGE2_SKIRTING_LINE_UP ?? "on").trim().toLowerCase() !== "off";
+export const SKIRTING_OFFSET_MIN_PCT = Number(process.env.STAGE2_SKIRTING_OFFSET_MIN_PCT || 2.5); // of photo height
+export const SKIRTING_MIN_RUN_PCT = Number(process.env.STAGE2_SKIRTING_MIN_RUN_PCT || 2);        // of photo width
+export const SKIRTING_MAX_SHIFT_PCT = Number(process.env.STAGE2_SKIRTING_MAX_SHIFT_PCT || 8);    // never move furniture further
+
+export type SkirtingRun = { x1Pct: number; x2Pct: number; widthPct: number; dyPct: number };
+// Where the horizon sits (fraction of the photo height from the top), for
+// "pulling" furniture forward in perspective. Real-estate photos are taken
+// about level, so it is close to the middle; small errors only change the
+// size by a percent or two.
+export const SKIRTING_HORIZON = Number(process.env.STAGE2_SKIRTING_HORIZON || 0.45);
+
+export async function measureSkirtingOffsets(original: Buffer, staged: Buffer, furniture: Uint8Array, w: number, h: number): Promise<{ runs: SkirtingRun[]; checkedColsPct: number; realLine: number[] }> {
+  const W = 800, H = Math.max(8, Math.round((W * h) / w));
+  const ob = await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer();
+  const sb = await sharp(staged).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer();
+  const [lo, ls] = await Promise.all([realFloorLine(ob, W, H), realFloorLine(sb, W, H)]);
+  const og = await sharp(ob).greyscale().blur(1.2).raw().toBuffer();
+  const mk = await sharp(Buffer.from(furniture.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
+    .resize(W, H, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const pad = Math.round(H * 0.08), band = Math.round(H * 0.04), side = Math.round(W * 0.012);
+  const wallUp = Math.round(H * 0.1);
+  const off = new Float32Array(W).fill(NaN);
+  let valid = 0;
+  for (let x = 0; x < W; x++) {
+    const f = lo[x], g = ls[x];
+    if (f < 0 || f >= H - 3 || g < 0 || g >= H - 3 || f - wallUp < 0) continue;
+    // Only the strip around both floor lines must be clear of furniture.
+    let near = false;
+    const yTop = Math.max(0, Math.min(f, g) - pad), yBot = Math.min(H - 1, Math.max(f, g) + band);
+    for (let xx = Math.max(0, x - side); !near && xx <= Math.min(W - 1, x + side); xx++)
+      for (let y = yTop; y <= yBot; y++) if (mk[y * W + xx] > 127) { near = true; break; }
+    if (near) continue;
+    // The real photo must show wall above and floor below (not a door or a
+    // floor running into a corner): a clear brightness step at the line.
+    let a = 0, b = 0, n = 0;
+    for (let y = f - wallUp; y < f - Math.round(H * 0.03); y++) { a += og[y * W + x]; n++; }
+    const wall = n ? a / n : 0;
+    n = 0;
+    for (let y = f + 3; y <= Math.min(H - 1, f + band); y++) { b += og[y * W + x]; n++; }
+    const floor = n ? b / n : 0;
+    if (Math.abs(wall - floor) < 12) continue;
+    valid++;
+    off[x] = ((g - f) / H) * 100; // negative = Gemini's floor line is higher
+  }
+  // Runs of a steady offset (same sign, within 1.2% of the run's median),
+  // allowing tiny gaps.
+  const runs: SkirtingRun[] = [];
+  let x = 0;
+  while (x < W) {
+    if (!(Math.abs(off[x]) >= SKIRTING_OFFSET_MIN_PCT)) { x++; continue; }
+    const vals: number[] = [off[x]];
+    let end = x, gap = 0;
+    for (let k = x + 1; k < W; k++) {
+      if (Number.isNaN(off[k])) { if (++gap > 3) break; continue; }
+      const sorted = [...vals].sort((p, q) => p - q), med = sorted[sorted.length >> 1];
+      if (Math.sign(off[k]) !== Math.sign(med) || Math.abs(off[k] - med) > 1.2) break;
+      vals.push(off[k]); end = k; gap = 0;
+    }
+    const widthPct = ((end - x + 1) / W) * 100;
+    if (widthPct >= SKIRTING_MIN_RUN_PCT && vals.length >= 3) {
+      const sorted = [...vals].sort((p, q) => p - q);
+      runs.push({ x1Pct: +((x / W) * 100).toFixed(1), x2Pct: +(((end + 1) / W) * 100).toFixed(1), widthPct: +widthPct.toFixed(1), dyPct: +sorted[sorted.length >> 1].toFixed(1) });
+    }
+    x = end + 1;
+  }
+  // The real floor line, as fractions of the height (-1 = not found), for the line-up plan.
+  const realLine = Array.from(lo, (v) => (v < 0 ? -1 : v / H));
+  return { runs, checkedColsPct: +((valid / W) * 100).toFixed(1), realLine };
+}
+
+export type SkirtingLineUp = {
+  ok: boolean; why: string; run?: SkirtingRun;
+  select?: Uint8Array;       // furniture pixels that move
+  k?: number; vx?: number; vy?: number; // scale about (vx, vy), in pixels
+  wallPct?: [number, number]; movedDownPct?: number; growPct?: number;
+};
+
+/**
+ * "Pull forward": the furniture standing against the wall whose skirting was
+ * off is moved toward (or away from) the camera in perspective — lower AND
+ * bigger (or higher and smaller) — until the back of it meets the real
+ * skirting. Moving it straight down kept its size, so the bed looked too
+ * small, and a plant in the next corner was dragged along with it (owner
+ * review, Oct 2026, Bedroom 05). Only pieces against that wall move, plus
+ * anything lying on the open floor in front of it (the rug); pieces standing
+ * against another wall stay where Gemini put them.
+ */
+export function planSkirtingLineUp(runs: SkirtingRun[], furniture: Uint8Array, w: number, h: number, realLine: number[]): SkirtingLineUp {
+  if (!runs.length) return { ok: false, why: "no steady offset" };
+  const run = [...runs].sort((a, b) => b.widthPct - a.widthPct)[0];
+  if (runs.some((r) => Math.sign(r.dyPct) !== Math.sign(run.dyPct))) return { ok: false, why: "offsets point both ways (Gemini tilted the floor line)", run };
+  if (Math.abs(run.dyPct) > SKIRTING_MAX_SHIFT_PCT) return { ok: false, why: `offset ${run.dyPct}% too large to move furniture`, run };
+  const L = realLine.length;
+  if (!L) return { ok: false, why: "no floor line", run };
+  const at = (xFrac: number) => realLine[Math.max(0, Math.min(L - 1, Math.round(xFrac * (L - 1))))];
+  // The wall the stretch belongs to: follow its floor line both ways until it
+  // turns (a corner) or disappears.
+  const c1 = Math.round((run.x1Pct / 100) * (L - 1)), c2 = Math.round((run.x2Pct / 100) * (L - 1));
+  const slope = Math.sign((realLine[c2] - realLine[c1]) || 0);
+  const step = Math.max(2, Math.round(L * 0.01));
+  const sameWall = (a: number, b: number) => realLine[a] >= 0 && realLine[b] >= 0 && (slope === 0 ? Math.abs(realLine[b] - realLine[a]) < 0.01 : Math.sign(realLine[b] - realLine[a]) === slope || Math.abs(realLine[b] - realLine[a]) < 0.002);
+  let wx1 = c1, wx2 = c2;
+  while (wx2 + step < L && sameWall(wx2, wx2 + step)) wx2 += step;
+  while (wx1 - step >= 0 && sameWall(wx1 - step, wx1)) wx1 -= step;
+  const wallX1 = (wx1 / (L - 1)) * w, wallX2 = (wx2 / (L - 1)) * w;
+  // Pixels that move: furniture in front of that wall; beyond its ends only
+  // what lies on the open floor (below the real floor line), not pieces
+  // standing against the next wall.
+  const margin = w * 0.015, floorGap = h * 0.015;
+  const select = new Uint8Array(w * h);
+  let n = 0, sx1 = w, sx2 = 0, sy2 = 0, other = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (!furniture[i]) continue;
+    let take = x >= wallX1 - margin && x <= wallX2 + margin;
+    if (!take) { const f = at(x / w); take = f >= 0 && y >= f * h + floorGap; }
+    if (take) { select[i] = 1; n++; if (x < sx1) sx1 = x; if (x > sx2) sx2 = x; if (y > sy2) sy2 = y; } else other++;
+  }
+  const rx1 = (run.x1Pct / 100) * w, rx2 = (run.x2Pct / 100) * w;
+  if (!n || sx2 < rx1 - w * 0.03 || sx1 > rx2 + w * 0.03) return { ok: false, why: "no furniture beside the offset stretch", run };
+  // Scale about a point on the horizon above the furniture, so the floor line
+  // where the offset was measured lands on the real one.
+  const vy = SKIRTING_HORIZON * h, vx = (sx1 + sx2) / 2;
+  const yReal = at(((run.x1Pct + run.x2Pct) / 200)) * h;
+  const yGem = yReal + (run.dyPct / 100) * h;
+  if (yReal <= vy + h * 0.05 || yGem <= vy + h * 0.05) return { ok: false, why: "floor line too close to the horizon to scale safely", run };
+  const k = (yReal - vy) / (yGem - vy);
+  if (k < 0.85 || k > 1.25) return { ok: false, why: `would resize the furniture by ${Math.round((k - 1) * 100)}%`, run };
+  // Growing must not push a piece that ends above the bottom edge off it.
+  const newBottom = vy + k * (sy2 - vy);
+  if (sy2 < h - 2 && newBottom >= h - 1) return { ok: false, why: "pulling the furniture forward would cut it off at the bottom of the photo", run };
+  const newLeft = vx + k * (sx1 - vx), newRight = vx + k * (sx2 - vx);
+  if ((sx1 > 1 && newLeft < 0) || (sx2 < w - 2 && newRight > w - 1)) return { ok: false, why: "pulling the furniture forward would cut it off at the side of the photo", run };
+  return {
+    ok: true, why: "steady offset beside furniture", run, select, k, vx, vy,
+    wallPct: [+((wallX1 / w) * 100).toFixed(1), +((wallX2 / w) * 100).toFixed(1)],
+    movedDownPct: +(((yReal - yGem) / h) * 100).toFixed(1),
+    growPct: +((k - 1) * 100).toFixed(1),
+  };
+}
+
+/**
+ * Applies the plan to the staged picture and every trace mask: the selected
+ * furniture, with the shadow zone around it, is scaled by k about (vx, vy).
+ * Other furniture is never moved or overwritten. Masks: nearest pixel;
+ * picture: bilinear.
+ */
+export async function applySkirtingLineUp(
+  staged: Buffer, masks: Record<string, Uint8Array | null | undefined>, furniture: Uint8Array, plan: SkirtingLineUp, w: number, h: number,
+): Promise<{ staged: Buffer; masks: Record<string, Mask | null | undefined> }> {
+  const { select, k, vx, vy } = plan as Required<SkirtingLineUp>;
+  // Region that travels with the furniture: the pieces plus their shadow area,
+  // minus any piece that stays.
+  let region: Mask = dilate(select, w, h, Math.max(2, Math.round(w * 0.02)));
+  region = growDown(region, w, h, Math.round(h * 0.03));
+  for (let i = 0; i < region.length; i++) if (furniture[i] && !select[i]) region[i] = 0;
+  const keep = (i: number) => furniture[i] && !select[i];
+  const { data } = await sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer({ resolveWithObject: true });
+  const out = Buffer.from(data);
+  const dst = new Uint8Array(w * h); // destination pixels written from the region
+  const srcIdx = new Int32Array(w * h).fill(-1);
+  for (let y = 0; y < h; y++) {
+    const sy = vy + (y - vy) / k;
+    if (sy < 0 || sy > h - 1) continue;
+    for (let x = 0; x < w; x++) {
+      const sx = vx + (x - vx) / k;
+      if (sx < 0 || sx > w - 1) continue;
+      const ni = Math.round(sy) * w + Math.round(sx);
+      if (!region[ni]) continue;
+      const i = y * w + x;
+      if (keep(i)) continue;
+      dst[i] = 1; srcIdx[i] = ni;
+      const x0 = Math.floor(sx), y0 = Math.floor(sy), x1 = Math.min(w - 1, x0 + 1), y1 = Math.min(h - 1, y0 + 1);
+      const fx = sx - x0, fy = sy - y0;
+      for (let c = 0; c < 3; c++) {
+        const v = data[(y0 * w + x0) * 3 + c] * (1 - fx) * (1 - fy) + data[(y0 * w + x1) * 3 + c] * fx * (1 - fy) + data[(y1 * w + x0) * 3 + c] * (1 - fx) * fy + data[(y1 * w + x1) * 3 + c] * fx * fy;
+        out[i * 3 + c] = Math.round(v);
+      }
+    }
+  }
+  const moved: Record<string, Mask | null | undefined> = {};
+  for (const [name, m] of Object.entries(masks)) {
+    if (!m) { moved[name] = m as any; continue; }
+    const o: Mask = new Uint8Array(m.length);
+    for (let i = 0; i < m.length; i++) o[i] = region[i] && !keep(i) ? 0 : m[i];
+    for (let i = 0; i < m.length; i++) if (dst[i]) o[i] = m[srcIdx[i]];
+    moved[name] = o;
+  }
+  return { staged: await sharp(out, { raw: { width: w, height: h, channels: 3 } }).png().toBuffer(), masks: moved };
+}
+
+// ---------------------------------------------------------------------------
 // Floor patch for floating furniture. Gemini drew the piece standing on ITS
 // floor; the merge pasted it onto the real photo, where the floor/skirting sits
 // elsewhere, so the legs hang. Fix: under the piece, use Gemini's own floor,
