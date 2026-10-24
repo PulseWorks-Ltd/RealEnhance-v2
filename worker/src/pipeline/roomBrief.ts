@@ -164,6 +164,7 @@ Rules — these always apply:
 - Wall art only on plain wall: never above a door, doorway or wardrobe door, never over or above a window, and never above a headboard that stands below a window.
 - Describe every position with words about visible landmarks and the room ("at the back of the room, in front of the kitchen bench", "against the plain wall on the left, between the sliding door and the window"). Never use coordinates, pixels, percentages or wall numbers in "layout", "relationships", "avoid" or "keepUntouched".
 - Write each placement so that someone looking at the same photo can find the exact spot. Only refer to features you listed in "landmarks".
+- Name every wall by where it is in the photo AND what is on it — never by a direction alone. Good: "the wall straight ahead with the high strip window", "the wall on the right of the photo with the large picture window", "the short wall at the left edge of the photo, next to the entry". Never write just "the left wall", "the right wall", "the far wall" or "the back wall": in a photo taken from a corner those are ambiguous, and the furniture ends up on the wrong wall. In "layout", "relationships" and "avoid", refer to walls using exactly the names you gave them in "walls".
 - Write "camera" as a full sentence starting "The camera…", and each "avoid" entry as a full sentence starting "Do not…".
 - Plan only the main furniture in "layout" (up to about 8 items, fewer in a small or tight space, and none where the room type above says the layout stays empty). Small decor is handled separately.
 - Every piece must fit in the floor space the photo really shows. Never plan furniture that would only fit if the room were bigger or the camera were moved. A wall that runs off the edge of the photo counts only for its visible length.
@@ -173,9 +174,9 @@ Return ONLY a JSON object:
 {
   "roomSummary": string,          // 1–2 sentences: what the room is and how it is laid out
   "camera": string,               // where the camera stands and what it looks toward
-  "landmarks": [ { "id": "L1", "type": ${LANDMARK_TYPES}, "description": string, "box": [x1, y1, x2, y2] } ],
-                                  // description says what it is and where ("black TV wall bracket on the white wall on the right"); box = rough 0–1 bounding box
-  "walls": [ { "name": string, "description": string, "usableForLargeFurniture": boolean, "partlyVisible": boolean } ],
+  "landmarks": [ { "id": "L1", "type": ${LANDMARK_TYPES}, "description": string, "box_2d": [ymin, xmin, ymax, xmax] } ],
+                                  // description says what it is and where ("black TV wall bracket on the wall on the right of the photo"); box_2d = rough bounding box, top/left/bottom/right on a 0–1000 scale
+  "walls": [ { "name": string, "description": string, "usableForLargeFurniture": boolean, "partlyVisible": boolean } ],   // name = where it is in the photo + what is on it ("the wall straight ahead with the high strip window")
   "zones": [ { "name": string, "description": string } ],
   "kitchenVisible": boolean,
   "fridgeSpace": { "present": boolean, "description": string },   // true only for an empty cavity clearly built for a fridge
@@ -208,6 +209,41 @@ function finishingTouchesFor(roomType: string): string {
 
 function hasCoordinates(text: string): boolean {
   return /\[\s*0?\.\d|\b0\.\d{2,}\b|\d+\s*%|\bpixel|\bwall_\d|\bx\s*=|\by\s*=/i.test(text);
+}
+
+// A wall named by direction alone ("the left wall") is ambiguous in a photo
+// taken from a corner: Oct 2026, job_56b49ee9 called the wall straight ahead
+// (with the high strip window) "the left wall", and a re-stage put the bed
+// against the real left wall at the photo's edge, across the entry.
+const BARE_WALL = /\b(?:left|right|far|back|rear|front|side|near|end|opposite|main|long|short)(?:[- ]hand)?\s+wall\b/i;
+const BARE_WALL_NAME = /^\s*(?:the\s+)?(?:(?:left|right|far|back|rear|front|side|near|end|opposite|main|long|short)(?:[- ]hand)?\s+)+wall\s*$/i;
+
+/** Walls named by direction alone, in "walls" or in the placement text. */
+export function checkWallNames(brief: RoomBrief): string[] {
+  const issues: string[] = [];
+  const names = (brief.walls || []).map((w) => String(w?.name || "").trim()).filter(Boolean);
+  const bare = names.filter((n) => BARE_WALL_NAME.test(n));
+  if (bare.length) issues.push(`name each wall by where it is in the photo and what is on it, not by direction alone (${bare.map((n) => `"${n}"`).join(", ")}) — for example "the wall straight ahead with the high strip window"`);
+  let text = [...(brief.layout || []).map((l) => String(l?.placement || "")), ...(brief.relationships || []), ...(brief.avoid || [])].join(" \n ");
+  for (const n of [...names].sort((a, b) => b.length - a.length)) {
+    if (!BARE_WALL_NAME.test(n)) text = text.split(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi")).join(" ");
+  }
+  const m = text.match(BARE_WALL);
+  if (!bare.length && m) issues.push(`refer to walls by the names given in "walls", not by direction alone ("${m[0]}")`);
+  return issues;
+}
+
+/** Landmark boxes: Gemini's native box_2d [ymin, xmin, ymax, xmax] on 0–1000 becomes box [x1, y1, x2, y2] on 0–1. */
+export function normaliseLandmarkBoxes(brief: any): void {
+  for (const l of Array.isArray(brief?.landmarks) ? brief.landmarks : []) {
+    const b = Array.isArray(l?.box_2d) && l.box_2d.length === 4 ? l.box_2d.map(Number) : null;
+    if (b && b.every((n: number) => Number.isFinite(n))) {
+      const scale = Math.max(...b) > 1.5 ? 1000 : 1;
+      const [y1, x1, y2, x2] = b.map((n: number) => Math.min(1, Math.max(0, n / scale)));
+      l.box = [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)];
+      delete l.box_2d;
+    }
+  }
 }
 
 /** Checks the brief against the rules the code must guarantee. */
@@ -682,6 +718,7 @@ export async function buildRoomBrief(params: {
     let brief: RoomBrief;
     try {
       brief = extractJson(text) as RoomBrief;
+      normaliseLandmarkBoxes(brief);
     } catch {
       lastIssues = ["the answer was not valid JSON — return only the JSON object"];
       continue;
@@ -719,6 +756,9 @@ export async function buildRoomBrief(params: {
       ...(/^bedroom/i.test(String(params.roomType || "")) ? checkBedFits(brief) : []),
       ...checkDeskPlacement(brief, params.roomType),
       ...checkSofaPlacement(brief, params.roomType),
+      // Asked about once, like the fit rules: a plan that still names a wall
+      // by direction alone is used rather than losing the whole plan.
+      ...checkWallNames(brief),
     ];
     if (bedFit.length) console.log("[ROOM_BRIEF_FIT]", JSON.stringify({ attempt, bedSpace: (brief as any).bedSpace, issues: bedFit }));
     if (attempt === 1 && lastIssues.length === 0 && bedFit.length) usableBrief = brief;

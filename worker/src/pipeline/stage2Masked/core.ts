@@ -1738,7 +1738,7 @@ Respond with ONLY a JSON object: { "furniturePresent": "yes" | "no", "doorAccess
  * the bed run off the edge") was wrong for roomy photos and pushed the bed in
  * front of the entry (Oct 2026, job_56b49ee9).
  */
-export function floorMovedHint(check: { atXPct?: number[] } | null | undefined): string {
+export function floorMovedHint(check: { atXPct?: number[] } | null | undefined, opts: { tightShot?: boolean } = {}): string {
   const at = Array.isArray(check?.atXPct) && check!.atXPct!.length === 2 ? check!.atXPct! : null;
   let where = "";
   if (at) {
@@ -1746,7 +1746,12 @@ export function floorMovedHint(check: { atXPct?: number[] } | null | undefined):
     const side = mid < 33 ? "on the left of the photo" : mid > 67 ? "on the right of the photo" : "in the middle of the photo";
     where = ` ${side} (about ${Math.round(Number(at[0]))}–${Math.round(Number(at[1]))}% of the way across)`;
   }
-  return `Your previous attempt changed the room to make the furniture fit: the line where the wall meets the floor${where} was moved, so the wall or floor no longer matches the input photo. Keep the same layout described above — the same pieces in the same places — but draw that wall, its skirting board and the floor edge exactly where the input photo shows them. If a piece then no longer fits, make it a little smaller or let the edge of the photo cut it off; never change the wall or floor to make room.`;
+  const base = `Your previous attempt changed the room to make the furniture fit: the line where the wall meets the floor${where} was moved, so the wall or floor no longer matches the input photo. Keep the same layout described above — the same pieces in the same places — but draw that wall, its skirting board and the floor edge exactly where the input photo shows them. If a piece then no longer fits, make it a little smaller or let the edge of the photo cut it off; never change the wall or floor to make room.`;
+  // Only for photos the room plan measured as tight shots (very little floor):
+  // there the stronger "let it run off the edge, no rug" is right.
+  return opts.tightShot
+    ? `${base} This photo shows very little floor: let the bed or other large pieces run off the bottom or side edge of the photo, use smaller pieces, and leave out the rug.`
+    : base;
 }
 
 // What the room plan (room brief) says, for the re-stage hint: which walls
