@@ -1721,10 +1721,32 @@ ${list}
 
 Look at the furniture in Image 2 and the room in Image 1, and answer:
 1. furniturePresent: did staging add a sofa, armchair, coffee table, TV unit or dining table?
-2. blocksDoor: does any sofa, armchair, coffee table, TV unit, sideboard, dining table or dining chair stand in front of, touch, cover or hide any part of a door, an open door leaf, a door frame, a doorway or an opening that Image 1 shows (including one missing from Image 2 because it was painted over)? Also answer "yes" if any of them stands on the floor an open door sweeps when it closes, or right in the walking path through a doorway. For a sliding door, only its OPENING counts — the panel that slides open and the walking path through it; furniture in front of a FIXED glass panel beside the opening is fine and does not count. Furniture that only LOOKS close because of the camera angle, but stands well clear in the room, does not count.
+2. doorAccess: for the door or doorway most affected by the sofa, armchair, coffee table, TV unit, sideboard, dining table or dining chairs in Image 2, judge it the way a buyer walking through the home would:
+   - "blocked": a person could NOT walk through it normally — a piece stands right in the doorway or the walking path through it, an open door could not swing or close, the opening of a sliding door is covered, or a door/doorway was painted over or is missing in Image 2;
+   - "passable": a piece stands in front of part of it or hides part of it in the photo, but there is still a clear walking path to it and through it (for example a free-standing sofa with room to walk around it);
+   - "clear": nothing is near it.
+   For a sliding door, only its OPENING counts; furniture in front of a FIXED glass panel beside the opening is fine. Furniture that only LOOKS close because of the camera angle, but stands well clear in the room, is "clear".
 3. blockedWhat: which piece and which door, or "none". Describe the door in plain words and say where it is in the photo (for example "the armchair blocks the white door at the far right edge of the photo"), not only its id.
 4. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that a piece stands where Image 1 shows wall or skirting board? Answer "yes" only for a real change to the room, not for shadows or furniture covering things.
-Respond with ONLY a JSON object: { "furniturePresent": "yes" | "no", "blocksDoor": "yes" | "no", "blockedWhat": string, "roomWidened": "yes" | "no", "reason": string }`;
+Respond with ONLY a JSON object: { "furniturePresent": "yes" | "no", "doorAccess": "blocked" | "passable" | "clear", "blockedWhat": string, "roomWidened": "yes" | "no", "reason": string }`;
+}
+
+/**
+ * Re-stage hint after Gemini moved a wall's floor line to fit furniture.
+ * Says where in the photo it happened and asks for the same layout with the
+ * line put back. The old fixed hint ("the photo shows only a little floor: let
+ * the bed run off the edge") was wrong for roomy photos and pushed the bed in
+ * front of the entry (Oct 2026, job_56b49ee9).
+ */
+export function floorMovedHint(check: { atXPct?: number[] } | null | undefined): string {
+  const at = Array.isArray(check?.atXPct) && check!.atXPct!.length === 2 ? check!.atXPct! : null;
+  let where = "";
+  if (at) {
+    const mid = (Number(at[0]) + Number(at[1])) / 2;
+    const side = mid < 33 ? "on the left of the photo" : mid > 67 ? "on the right of the photo" : "in the middle of the photo";
+    where = ` ${side} (about ${Math.round(Number(at[0]))}–${Math.round(Number(at[1]))}% of the way across)`;
+  }
+  return `Your previous attempt changed the room to make the furniture fit: the line where the wall meets the floor${where} was moved, so the wall or floor no longer matches the input photo. Keep the same layout described above — the same pieces in the same places — but draw that wall, its skirting board and the floor edge exactly where the input photo shows them. If a piece then no longer fits, make it a little smaller or let the edge of the photo cut it off; never change the wall or floor to make room.`;
 }
 
 // What the room plan (room brief) says, for the re-stage hint: which walls
@@ -1753,10 +1775,12 @@ export function doorPlace(bbox: [number, number, number, number]): string {
 /** Swap the door check's own ids (D1, S2...) for words: Gemini staging never sees that list. */
 export function doorsInWords(text: string, doors: DoorOpening[]): string {
   const byId = new Map(doors.map((d) => [d.id.toUpperCase(), d]));
-  return text.replace(/\b(?:doors?\s+|doorways?\s+)?([A-Z]{1,2}\d{1,2})\b/g, (whole, id: string) => {
+  // "(A1)" right after the check's own description of the door adds nothing: drop it.
+  const dropped = text.replace(/\s*\(([A-Z]{1,2}\d{1,2})\)/g, (whole, id: string) => (byId.has(id.toUpperCase()) ? "" : whole));
+  return dropped.replace(/\b(?:doors?\s+|doorways?\s+)?([A-Z]{1,2}\d{1,2})\b/g, (whole, id: string) => {
     const d = byId.get(id.toUpperCase());
     if (!d) return whole;
-    const desc = String(d.description || d.type || "door").trim().replace(/^(the|a|an)\s+/i, "");
+    const desc = String(d.description || d.type || "door").trim().replace(/^(the|a|an)\s+/i, "").replace(/[.;,\s]+$/, "");
     return `the ${desc} ${doorPlace(d.bbox)}`;
   });
 }
@@ -1766,10 +1790,17 @@ const SECONDARY_PIECE = /armchair|accent chair|lounge chair|side ?table|sideboar
 
 function piecesIn(blockedWhat: string, plan: LivingPlan | null): string[] {
   const text = blockedWhat.toLowerCase();
-  const planned = (plan?.items || []).filter((it) => {
-    const key = it.toLowerCase().replace(/s$/, "");
-    return key && text.includes(key);
-  });
+  const items = plan?.items || [];
+  const word = (w: string) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?\\b`, "i");
+  // Full name ("coffee table"), then the head noun ("sofa" for "3-seater sofa")
+  // when only one planned piece has it ("table" could be coffee or dining).
+  const planned = items.filter((it) => word(it.replace(/s$/, "")).test(text));
+  const head = (it: string) => (it.split(/\s+/).pop() || "").replace(/s$/, "");
+  for (const it of items) {
+    if (planned.includes(it)) continue;
+    const h = head(it);
+    if (h.length > 2 && items.filter((o) => head(o) === h).length === 1 && word(h).test(text)) planned.push(it);
+  }
   if (planned.length) return planned;
   const generic = ["sofa", "armchair", "chair", "coffee table", "dining table", "tv unit", "sideboard", "side table", "ottoman", "bench"];
   return generic.filter((g) => text.includes(g)).slice(0, 2);
@@ -1811,7 +1842,11 @@ export function livingDoorRestageHint(blockedWhatRaw: string, doors: DoorOpening
 export function evaluateLivingDoor(raw: any, doors: DoorOpening[] = [], plan: LivingPlan | null = null) {
   const yes = (v: any) => String(v || "").trim().toLowerCase() === "yes";
   const present = yes(raw?.furniturePresent);
-  const blocksDoor = present && yes(raw?.blocksDoor);
+  // Only a door a person can't walk through fails (owner's standard, Oct 2026:
+  // a free-standing sofa that hides the bottom of a doorway but leaves a clear
+  // path is fine). Older answers without doorAccess: blocksDoor decides.
+  const access = String(raw?.doorAccess || "").trim().toLowerCase();
+  const blocksDoor = present && (access ? access === "blocked" : yes(raw?.blocksDoor));
   const roomWidened = yes(raw?.roomWidened);
   const hints: string[] = [];
   if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller sofa or table, leave out the armchair, or let the edge of the photo cut a piece off.");

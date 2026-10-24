@@ -67,3 +67,38 @@ describe("living / dining re-stage hint", () => {
     expect(hint).toContain("closed beige interior door");
   });
 });
+
+describe("living / dining door check: walkable standard and hint fixes (Oct 2026 batch)", () => {
+  const { evaluateLivingDoor, livingDoorRestageHint, livingPlanFromBrief, doorsInWords, floorMovedHint, buildLivingDoorPrompt } = require("../src/pipeline/stage2Masked/core");
+  const base = { furniturePresent: "yes", roomWidened: "no" };
+
+  it("fails only a door a person can't walk through", () => {
+    expect(evaluateLivingDoor({ ...base, doorAccess: "blocked", blockedWhat: "sofa across the hallway doorway" }).failed).toBe(true);
+    expect(evaluateLivingDoor({ ...base, doorAccess: "passable", blockedWhat: "sofa hides the bottom of the doorway" }).failed).toBe(false);
+    expect(evaluateLivingDoor({ ...base, doorAccess: "clear" }).failed).toBe(false);
+    expect(buildLivingDoorPrompt([])).toContain('"doorAccess": "blocked" | "passable" | "clear"');
+  });
+
+  it("matches 'beige sofa' to the planned '3-seater sofa' instead of telling Gemini to both move and keep it", () => {
+    const plan = livingPlanFromBrief({ walls: [], layout: [{ item: "3-seater sofa" }, { item: "coffee table" }, { item: "dining table" }, { item: "dining chairs" }, { item: "armchair" }] });
+    const hint = livingDoorRestageHint("the beige sofa blocks the open hallway doorway", [], plan);
+    expect(hint).toContain("Only the 3-seater sofa was the problem");
+    expect(hint).not.toMatch(/keep the[^.]*3-seater sofa/);
+    // "table" alone is ambiguous (coffee or dining) and "armchair" is not a "chair".
+    expect(livingDoorRestageHint("the armchair blocks the door", [], plan)).toContain("Only the armchair was the problem");
+  });
+
+  it("drops a door id in brackets after the check's own description, and trims stray full stops", () => {
+    const doors = [{ id: "A1", type: "doorway", description: "the open doorway with a white frame leading to a hallway.", bbox: [0.5, 0.2, 0.56, 0.6] }];
+    expect(doorsInWords("the beige sofa blocks the open doorway (A1) in the middle-back wall", doors)).toBe("the beige sofa blocks the open doorway in the middle-back wall");
+    expect(doorsInWords("sofa blocks A1", doors)).toBe("sofa blocks the open doorway with a white frame leading to a hallway in the middle of the photo");
+  });
+
+  it("floor-moved hint says where, keeps the layout, and no longer claims there is little floor", () => {
+    const hint = floorMovedHint({ atXPct: [16, 25] });
+    expect(hint).toContain("on the left of the photo (about 16–25% of the way across)");
+    expect(hint).toContain("Keep the same layout");
+    expect(hint).not.toContain("only a little floor");
+    expect(floorMovedHint(null)).toContain("the line where the wall meets the floor was moved");
+  });
+});

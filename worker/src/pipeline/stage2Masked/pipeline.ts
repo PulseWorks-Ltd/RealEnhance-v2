@@ -70,6 +70,7 @@ import {
   askDeskDoor,
   askLivingDoor,
   livingPlanFromBrief,
+  floorMovedHint,
   LIVING_DOOR_CHECK,
   alignStagedToOriginal,
   furnitureCutAtEmptyEdge,
@@ -1217,7 +1218,7 @@ export async function runMaskedStage2Job(p: {
         : []),
       ...(row.framingCheck?.framingChanged ? [reshapeHint(row.cameraAlignment)] : []),
       ...(row.floorMovedCheck?.moved
-        ? ["Your previous attempt changed the room to make the furniture fit: the floor was raised or the bottom of a wall was pushed back, so a rug or piece of furniture stood where the photo shows wall. Keep every wall, skirting board and floor edge exactly where it is. The photo shows only a little floor: let the bed or other large pieces run off the bottom or side edge of the photo, use smaller pieces, and leave out the rug."]
+        ? [floorMovedHint(row.floorMovedCheck)]
         : []),
     ];
   }
