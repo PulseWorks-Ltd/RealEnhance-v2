@@ -1722,23 +1722,104 @@ ${list}
 Look at the furniture in Image 2 and the room in Image 1, and answer:
 1. furniturePresent: did staging add a sofa, armchair, coffee table, TV unit or dining table?
 2. blocksDoor: does any sofa, armchair, coffee table, TV unit, sideboard, dining table or dining chair stand in front of, touch, cover or hide any part of a door, an open door leaf, a door frame, a doorway or an opening that Image 1 shows (including one missing from Image 2 because it was painted over)? Also answer "yes" if any of them stands on the floor an open door sweeps when it closes, or right in the walking path through a doorway. For a sliding door, only its OPENING counts — the panel that slides open and the walking path through it; furniture in front of a FIXED glass panel beside the opening is fine and does not count. Furniture that only LOOKS close because of the camera angle, but stands well clear in the room, does not count.
-3. blockedWhat: which piece and which door, or "none".
+3. blockedWhat: which piece and which door, or "none". Describe the door in plain words and say where it is in the photo (for example "the armchair blocks the white door at the far right edge of the photo"), not only its id.
 4. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that a piece stands where Image 1 shows wall or skirting board? Answer "yes" only for a real change to the room, not for shadows or furniture covering things.
 Respond with ONLY a JSON object: { "furniturePresent": "yes" | "no", "blocksDoor": "yes" | "no", "blockedWhat": string, "roomWidened": "yes" | "no", "reason": string }`;
 }
 
-export function evaluateLivingDoor(raw: any) {
+// What the room plan (room brief) says, for the re-stage hint: which walls
+// large furniture may stand against, and which pieces were planned.
+export type LivingPlan = { usableWalls: string[]; items: string[] };
+export function livingPlanFromBrief(brief: any): LivingPlan | null {
+  if (!brief || typeof brief !== "object" || !Array.isArray(brief.layout)) return null;
+  const items = brief.layout.map((l: any) => String(l?.item || "").trim().toLowerCase()).filter(Boolean);
+  const usableWalls = (Array.isArray(brief.walls) ? brief.walls : [])
+    .filter((w: any) => w?.usableForLargeFurniture === true)
+    .map((w: any) => String(w?.name || "").trim())
+    .filter(Boolean);
+  return { usableWalls, items };
+}
+
+/** Where a door sits across the photo, in words. */
+export function doorPlace(bbox: [number, number, number, number]): string {
+  const cx = (bbox[0] + bbox[2]) / 2;
+  if (bbox[2] >= 0.97 || cx >= 0.92) return "at the far right edge of the photo";
+  if (bbox[0] <= 0.03 || cx <= 0.08) return "at the far left edge of the photo";
+  if (cx < 0.38) return "on the left of the photo";
+  if (cx > 0.62) return "on the right of the photo";
+  return "in the middle of the photo";
+}
+
+/** Swap the door check's own ids (D1, S2...) for words: Gemini staging never sees that list. */
+export function doorsInWords(text: string, doors: DoorOpening[]): string {
+  const byId = new Map(doors.map((d) => [d.id.toUpperCase(), d]));
+  return text.replace(/\b(?:doors?\s+|doorways?\s+)?([A-Z]{1,2}\d{1,2})\b/g, (whole, id: string) => {
+    const d = byId.get(id.toUpperCase());
+    if (!d) return whole;
+    const desc = String(d.description || d.type || "door").trim().replace(/^(the|a|an)\s+/i, "");
+    return `the ${desc} ${doorPlace(d.bbox)}`;
+  });
+}
+
+// Pieces that are nice to have: leaving one out is the surest fix.
+const SECONDARY_PIECE = /armchair|accent chair|lounge chair|side ?table|sideboard|console|ottoman|pouf|bench|bookcase|bookshelf|shelf|plant|lamp|cabinet|tv unit|tv stand|media unit|desk|stool/i;
+
+function piecesIn(blockedWhat: string, plan: LivingPlan | null): string[] {
+  const text = blockedWhat.toLowerCase();
+  const planned = (plan?.items || []).filter((it) => {
+    const key = it.toLowerCase().replace(/s$/, "");
+    return key && text.includes(key);
+  });
+  if (planned.length) return planned;
+  const generic = ["sofa", "armchair", "chair", "coffee table", "dining table", "tv unit", "sideboard", "side table", "ottoman", "bench"];
+  return generic.filter((g) => text.includes(g)).slice(0, 2);
+}
+
+/**
+ * The re-stage hint after furniture blocked a door. It names the door in words,
+ * keeps the rest of the planned layout, changes only the piece that blocked,
+ * and never contradicts the room plan by sending the sofa to a "plain wall"
+ * when the plan has none (Oct 2026, job_0d2b0a4b: every wall had a door, the
+ * old hint moved the free-standing sofa in front of the back-wall doors).
+ */
+export function livingDoorRestageHint(blockedWhatRaw: string, doors: DoorOpening[] = [], plan: LivingPlan | null = null): string {
+  const blockedWhat = doorsInWords(String(blockedWhatRaw || "a piece by a door").slice(0, 160), doors);
+  const clear = "Every door, door leaf, doorway and the opening side of every sliding door — and the walking path through it — must stay fully visible and clear (furniture may stand in front of a fixed glass panel beside a sliding door's opening).";
+  if (!plan) {
+    return `Your previous attempt placed furniture in front of a door: ${blockedWhat}. ${clear} Put the sofa with its back to a plain wall that has no door on it, keep the dining table and chairs clear of every doorway, use smaller pieces, leave out the armchair or sideboard, or slide a piece away from the door and let the edge of the photo cut it off.`;
+  }
+  const pieces = piecesIn(blockedWhat, plan);
+  const others = plan.items.filter((it) => !pieces.includes(it));
+  const parts = [`Your previous attempt placed furniture in front of a door: ${blockedWhat}. ${clear}`];
+  if (pieces.length) {
+    const list = pieces.join(" and ");
+    parts.push(`Only the ${list} ${pieces.length > 1 ? "were" : "was"} the problem${others.length ? `: keep the ${others.join(", ")} exactly where the layout puts ${others.length > 1 ? "them" : "it"}` : ""}.`);
+    for (const piece of pieces) {
+      if (SECONDARY_PIECE.test(piece)) parts.push(`Leave the ${piece} out — or, only if it fits well clear of every door, use a smaller ${piece} placed so no part of it reaches a door, door frame, doorway or the path through it.`);
+      else if (/dining/i.test(piece)) parts.push(`Use a smaller ${piece} with fewer chairs, placed so no table or chair reaches a doorway or the path through it.`);
+      else parts.push(`Use a smaller ${piece} and move it further into the open room, away from that door, so no part of it reaches a door, door frame, doorway or the path through it.`);
+    }
+  } else {
+    parts.push("Keep the planned layout and change only the piece that was in front of the door: leave it out, or make it smaller and move it away from the door.");
+  }
+  parts.push(plan.usableWalls.length
+    ? `If a large piece must stand against a wall, use only: ${plan.usableWalls.join(", ")}.`
+    : "No wall in this room is free for large furniture: keep the sofa and other large pieces free-standing in the open room as the layout says, and never move them toward a wall that has a door or doorway on it.");
+  return parts.join(" ");
+}
+
+export function evaluateLivingDoor(raw: any, doors: DoorOpening[] = [], plan: LivingPlan | null = null) {
   const yes = (v: any) => String(v || "").trim().toLowerCase() === "yes";
   const present = yes(raw?.furniturePresent);
   const blocksDoor = present && yes(raw?.blocksDoor);
   const roomWidened = yes(raw?.roomWidened);
   const hints: string[] = [];
   if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller sofa or table, leave out the armchair, or let the edge of the photo cut a piece off.");
-  if (blocksDoor) hints.push(`Your previous attempt placed furniture in front of a door (${String(raw?.blockedWhat || "a piece by a door").slice(0, 120)}). Every door, door leaf, doorway and the opening side of every sliding door — and the walking path through it — must stay fully visible and clear (furniture may stand in front of a fixed glass panel beside a sliding door's opening). Put the sofa with its back to a plain wall that has no door on it, keep the dining table and chairs clear of every doorway, use smaller pieces, leave out the armchair or sideboard, or slide a piece away from the door and let the edge of the photo cut it off.`);
+  if (blocksDoor) hints.push(livingDoorRestageHint(String(raw?.blockedWhat || ""), doors, plan));
   return { furniturePresent: present, blocksDoor, roomWidened, failed: blocksDoor || roomWidened, restageHints: hints, answer: raw };
 }
 
-async function askLivingDoorOnce(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string, run = 0) {
+async function askLivingDoorOnce(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string, run = 0, plan: LivingPlan | null = null) {
   const stagedPath = path.join(dir, `12_living_door_check_input${run ? `_${run}` : ""}.jpg`);
   fs.writeFileSync(stagedPath, await sharp(stagedImage).jpeg({ quality: 88 }).toBuffer());
   try {
@@ -1749,7 +1830,7 @@ async function askLivingDoorOnce(emptyPath: string, stagedImage: Buffer, doors: 
       name,
       "living_door",
     );
-    return { model, ...evaluateLivingDoor(raw) };
+    return { model, ...evaluateLivingDoor(raw, doors, plan) };
   } catch (e: any) {
     return { model: "none", error: String(e?.message || e).slice(0, 200), ...evaluateLivingDoor(null) };
   }
@@ -1788,8 +1869,8 @@ export function askBedWall(emptyPath: string, stagedImage: Buffer, doors: DoorOp
 export function askDeskDoor(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
   return withConsensus((k) => askDeskDoorOnce(emptyPath, stagedImage, doors, dir, name, k), (r: any) => Boolean(r.failed));
 }
-export function askLivingDoor(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
-  return withConsensus((k) => askLivingDoorOnce(emptyPath, stagedImage, doors, dir, name, k), (r: any) => Boolean(r.failed));
+export function askLivingDoor(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string, plan: LivingPlan | null = null) {
+  return withConsensus((k) => askLivingDoorOnce(emptyPath, stagedImage, doors, dir, name, k, plan), (r: any) => Boolean(r.failed));
 }
 
 // ── Reflective surfaces (once per job, on the empty room) ───────────────────

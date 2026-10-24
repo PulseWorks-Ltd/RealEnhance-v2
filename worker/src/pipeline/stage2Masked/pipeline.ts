@@ -69,6 +69,7 @@ import {
   askReflectiveSurfaces,
   askDeskDoor,
   askLivingDoor,
+  livingPlanFromBrief,
   LIVING_DOOR_CHECK,
   alignStagedToOriginal,
   furnitureCutAtEmptyEdge,
@@ -956,9 +957,14 @@ export async function runMaskedStage2Job(p: {
       const deskDoorP = BED_WALL_CHECK && !ctx.offline && /study|office/i.test(p.roomType)
         ? getDoors().then((doors) => askDeskDoor(ctx.originalPath, staged, doors || [], dir, ctx.name)).catch(() => null)
         : Promise.resolve(null);
-      // And for sofas, TV units and dining sets in living / dining rooms.
+      // And for sofas, TV units and dining sets in living / dining rooms. The
+      // room plan (if Stage 2 used one) shapes the re-stage hint.
+      let livingPlan: ReturnType<typeof livingPlanFromBrief> = null;
+      try {
+        if (fs.existsSync(stagedPath + ".room-brief.json")) livingPlan = livingPlanFromBrief(JSON.parse(fs.readFileSync(stagedPath + ".room-brief.json", "utf8")));
+      } catch {}
       const livingDoorP = LIVING_DOOR_CHECK && !ctx.offline && /living|dining/i.test(p.roomType) && !/bed/i.test(p.roomType)
-        ? getDoors().then((doors) => askLivingDoor(ctx.originalPath, staged, doors || [], dir, ctx.name)).catch(() => null)
+        ? getDoors().then((doors) => askLivingDoor(ctx.originalPath, staged, doors || [], dir, ctx.name, livingPlan)).catch(() => null)
         : Promise.resolve(null);
       const reflective = await reflectiveP;
       if (reflective) {
