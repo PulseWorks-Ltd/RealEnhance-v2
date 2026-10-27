@@ -83,14 +83,33 @@ function wallMatch(r: number, g: number, b: number, lum: number, walls: WallColo
   return best;
 }
 
-export async function applyOutlookAdjustments(image: Buffer, views: OutlookView[]): Promise<{ image: Buffer; changedPctOfImage: number }> {
+/**
+ * opts.mask: the painted outline of the outside view (stage1AExteriorOutlookMask.ts),
+ * 0/1 at the image's size. When given it replaces the boxes: only the glass is
+ * lifted, softened a few pixels inside its edge, and the wall-colour rule is not
+ * needed.
+ */
+export async function applyOutlookAdjustments(
+  image: Buffer,
+  views: OutlookView[],
+  opts: { mask?: Uint8Array | null } = {},
+): Promise<{ image: Buffer; changedPctOfImage: number; usedMask: boolean }> {
   const { data, info } = await sharp(image).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const W = info.width, H = info.height;
   const out = Buffer.from(data);
   // Strongest weight per pixel, so overlapping boxes don't double up.
   const weight = new Float32Array(W * H);
   const walls: WallColour[] = [];
-  for (const v of views) {
+  const mask = opts.mask && opts.mask.length === W * H ? opts.mask : null;
+  if (mask) {
+    // Soft inner edge: the blurred outline falls from 1 to 0.5 at the glass
+    // edge; inside the glass that becomes 1 -> 0, and nothing outside it.
+    const sigma = Math.max(1.5, W * 0.003);
+    const blurred = await sharp(Buffer.from(mask.map((v) => (v ? 255 : 0))), { raw: { width: W, height: H, channels: 1 } })
+      .blur(sigma).extractChannel(0).raw().toBuffer();
+    for (let i = 0; i < W * H; i++) if (mask[i]) weight[i] = smooth((blurred[i] / 255 - 0.5) / 0.4);
+  }
+  for (const v of mask ? [] : views) {
     walls.push(...sampleWallColours(data, W, H, v.box));
     const bw = (v.box[2] - v.box[0]) * W, bh = (v.box[3] - v.box[1]) * H;
     const inset = Math.round(Math.min(bw, bh) * INSET_FRAC);
@@ -144,5 +163,5 @@ export async function applyOutlookAdjustments(image: Buffer, views: OutlookView[
     if (Math.abs(out[p] - data[p]) + Math.abs(out[p + 1] - data[p + 1]) + Math.abs(out[p + 2] - data[p + 2]) > 3) changed++;
   }
   const png = await sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
-  return { image: png, changedPctOfImage: +((changed / (W * H)) * 100).toFixed(2) };
+  return { image: png, changedPctOfImage: +((changed / (W * H)) * 100).toFixed(2), usedMask: Boolean(mask) };
 }

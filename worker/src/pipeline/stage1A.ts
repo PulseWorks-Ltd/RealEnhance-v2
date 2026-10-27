@@ -725,11 +725,25 @@ async function enhanceWithGeminiStage1A(
     try {
       const { outlookAdjustEnabled, applyOutlookAdjustments } = await import("../validators/stage1AExteriorOutlookAdjust.js");
       if (outlookAdjustEnabled()) {
-        const adj = await applyOutlookAdjustments(await fs.promises.readFile(finalGeminiPath), outlookSurvey.views);
+        const finalImage = await fs.promises.readFile(finalGeminiPath);
+        // The exact outline of the glass, painted by Gemini on this very
+        // image; the survey's boxes are the fallback.
+        let mask: Uint8Array | null = null;
+        try {
+          const { outlookMaskEnabled, traceOutlookMask } = await import("../validators/stage1AExteriorOutlookMask.js");
+          if (outlookMaskEnabled()) {
+            const traced = await traceOutlookMask(finalImage, outlookSurvey.views);
+            mask = traced.mask;
+            console.log("[STAGE1A_OUTLOOK_MASK]", JSON.stringify({ jobId, imageId, used: Boolean(mask), reason: traced.reason, ...traced.stats }));
+          }
+        } catch (maskErr) {
+          logIfNotFocusMode("[stage1A] Outlook outline failed — using the survey boxes", maskErr);
+        }
+        const adj = await applyOutlookAdjustments(finalImage, outlookSurvey.views, { mask });
         const adjustedPath = finalGeminiPath.replace(/\.(jpg|jpeg|png|webp)$/i, "") + "-outlook.webp";
         await sharp(adj.image).webp({ quality: 95 }).toFile(adjustedPath);
         finalGeminiPath = adjustedPath;
-        console.log("[STAGE1A_OUTLOOK_ADJUST]", JSON.stringify({ jobId, imageId, views: outlookSurvey.views.length, changedPctOfImage: adj.changedPctOfImage }));
+        console.log("[STAGE1A_OUTLOOK_ADJUST]", JSON.stringify({ jobId, imageId, views: outlookSurvey.views.length, usedMask: adj.usedMask, changedPctOfImage: adj.changedPctOfImage }));
       }
     } catch (adjErr) {
       // Fail-open: the plain Stage 1A result is still a good enhancement.
