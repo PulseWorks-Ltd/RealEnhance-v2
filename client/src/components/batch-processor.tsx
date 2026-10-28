@@ -35,6 +35,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
 import { EmptyStateLaunchpad } from "@/components/ui/empty-state-launchpad";
+import { friendlyEditError } from "@/lib/edit-errors";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
@@ -1567,6 +1568,8 @@ export default function BatchProcessor({
   const retryInFlightRef = useRef<Set<number>>(new Set());
   const [editingImages, setEditingImages] = useState<Set<number>>(new Set());
   const [editCompletedImages, setEditCompletedImages] = useState<Set<number>>(new Set());
+  // Per-card note after a failed edit (the card keeps its pre-edit image).
+  const [editErrorByIndex, setEditErrorByIndex] = useState<Record<number, string>>({});
   const regionEditJobIdsRef = useRef<Set<string>>(new Set());
   const activeRegionEditIndexRef = useRef<number | null>(null);
   const editingImagesRef = useRef<Set<number>>(new Set());
@@ -4717,15 +4720,7 @@ export default function BatchProcessor({
             }
 
             if (isRegionEdit && status === "failed") {
-              clearEditFallbackTimer(idx);
-              setEditingImages(prev => {
-                const next = new Set(prev);
-                next.delete(idx);
-                return next;
-              });
-              if (pendingEditStateForIndex?.jobId === polledId) {
-                delete pendingEditJobByIndexRef.current[idx];
-              }
+              restoreCardAfterFailedEdit(idx, it?.errorMessage || it?.error || it?.message || it?.meta?.errorMessage || "");
               if (polledId) regionEditJobIdsRef.current.delete(polledId);
             }
 
@@ -4992,6 +4987,38 @@ export default function BatchProcessor({
     clearBatchJobState(currentUserId);
   };
 
+  // A failed edit ends the card's editing state and puts the card back exactly
+  // as it was before the edit (its staged/enhanced image is still good), with
+  // a note saying why the edit wasn't applied. Without this the card was left
+  // in "editing" and showed "Queued" / "Finalizing" forever (Oct 2026).
+  function restoreCardAfterFailedEdit(idx: number, rawError: unknown) {
+    clearEditFallbackTimer(idx);
+    const previousResult = preEditResultSnapshotRef.current[idx];
+    const previousDisplayStage = preEditDisplayStageSnapshotRef.current[idx];
+    setResults(prev => prev.map((r, i) => {
+      if (i !== idx) return r;
+      if (previousResult) return previousResult;
+      // No snapshot: at least leave the editing state.
+      const st = String(r?.status || "").toLowerCase();
+      return st === "editing" ? { ...r, status: "completed", currentStage: null, progressLabel: null } : r;
+    }));
+    if (previousDisplayStage) {
+      setDisplayStageByIndex(prev => ({ ...prev, [idx]: previousDisplayStage }));
+    }
+    setEditingImages(prev => {
+      const next = new Set(prev);
+      next.delete(idx);
+      return next;
+    });
+    setEditErrorByIndex(prev => ({ ...prev, [idx]: friendlyEditError(rawError) }));
+    delete pendingEditJobByIndexRef.current[idx];
+    delete editInFlightSourceUrlRef.current[idx];
+    delete preEditStageUrlsRef.current[idx];
+    delete preEditResultSnapshotRef.current[idx];
+    delete preEditDisplayStageSnapshotRef.current[idx];
+    console.warn('[BatchProcessor] region edit failed — card restored', { idx, error: String(rawError || "") });
+  }
+
   // Helper: start polling a single region-edit job via the global batch status endpoint
   const startRegionEditPolling = async (jobId: string, imageIndex: number) => {
     console.log('[BatchProcessor] startRegionEditPolling', { jobId, imageIndex });
@@ -5009,6 +5036,11 @@ export default function BatchProcessor({
       // Polling lifecycle ended for this job
       regionEditJobIdsRef.current.delete(jobId);
       setIsEditingInProgress(false);
+      // Polling ended without the edit completing (failed, timed out or
+      // stopped): never leave the card stuck in its editing state.
+      if (pendingEditJobByIndexRef.current[imageIndex]?.jobId === jobId) {
+        restoreCardAfterFailedEdit(imageIndex, "edit did not finish");
+      }
     }
   };
 
@@ -9158,6 +9190,20 @@ export default function BatchProcessor({
                                       {missingEditedArtifactMessage}
                                     </p>
                                   )}
+                                  {editErrorByIndex[i] && !isEditing && (
+                                    <div className="mt-1 flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs text-rose-700" data-testid={`edit-error-${i}`}>
+                                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-rose-500" />
+                                      <span className="flex-1"><span className="font-semibold">Edit failed.</span> {editErrorByIndex[i]}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditErrorByIndex(prev => { const next = { ...prev }; delete next[i]; return next; })}
+                                        className="text-rose-400 hover:text-rose-600"
+                                        aria-label="Dismiss"
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                  )}
                                   {autoInsertedStage1B && (
                                     <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
                                       <Info className="mt-0.5 h-3.5 w-3.5 text-amber-600" />
@@ -9479,6 +9525,12 @@ export default function BatchProcessor({
                   editInFlightSourceUrlRef.current[activeEditIndex] = pinnedEditSourceUrl;
                 }
                 setEditingImages(prev => new Set(prev).add(activeEditIndex));
+                setEditErrorByIndex(prev => {
+                  if (!(activeEditIndex in prev)) return prev;
+                  const next = { ...prev };
+                  delete next[activeEditIndex];
+                  return next;
+                });
                 setEditCompletedImages(prev => {
                   const next = new Set(prev);
                   next.delete(activeEditIndex);
