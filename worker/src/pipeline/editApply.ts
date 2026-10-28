@@ -14,7 +14,7 @@ import {
   type EditContext,
 } from "./prompts";
 import { siblingOutPath, writeImageDataUrl } from "../utils/images";
-import { wholeImageRemove, wholeImageRemoveEnabled } from "./editWholeImage";
+import { wholeImageEdit, wholeImageEditEnabled } from "./editWholeImage";
 import { detectOpeningsFromStage1A, type OpeningRegion } from "../utils/openingGeometry";
 import path from "path";
 
@@ -3126,9 +3126,11 @@ export async function applyEdit({
       throw new Error("[editApply] Missing authoritative mask after normalization");
     }
 
-    // Remove: the whole photo goes to Gemini and only the marked area is
-    // pasted back (see editWholeImage.ts). Fails rather than guessing.
-    if (mode === "Remove" && wholeImageRemoveEnabled()) {
+    // Remove / Add / Replace: the whole photo goes to Gemini and only the
+    // marked area (plus, for Add/Replace, the new piece's spill and shadow
+    // right beside it) is pasted back (see editWholeImage.ts). Fails rather
+    // than guessing.
+    if (wholeImageEditEnabled(mode)) {
       const maskRaw = await sharp(maskPngBuffer)
         .removeAlpha()
         .grayscale()
@@ -3137,15 +3139,17 @@ export async function applyEdit({
         .toBuffer();
       const maskBits = new Uint8Array(meta.width * meta.height);
       for (let i = 0; i < maskBits.length; i += 1) maskBits[i] = maskRaw[i] > 127 ? 1 : 0;
-      const result = await wholeImageRemove({
+      const result = await wholeImageEdit({
+        mode: mode as "Remove" | "Add" | "Replace",
+        roomType,
         photoPath: baseImagePath,
         mask: maskBits,
-        instruction: instruction || "remove the marked item",
+        instruction: instruction || (mode === "Remove" ? "remove the marked item" : "stage this area"),
         jobId,
         log: (msg, data) => console.log(msg, data ? JSON.stringify(data).slice(0, 1500) : ""),
       });
       await sharp(result.image).webp({ quality: 95 }).toFile(outPath);
-      console.log("[editApply] WHOLE_IMAGE_REMOVE_DONE", { jobId, attempts: result.attempts, outPath });
+      console.log("[editApply] WHOLE_IMAGE_EDIT_DONE", { jobId, mode, attempts: result.attempts, outPath });
       return outPath;
     }
 

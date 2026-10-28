@@ -1,5 +1,5 @@
 jest.mock("../src/ai/gemini", () => ({ getGeminiClient: () => ({}), closestGeminiAspectRatio: () => "4:3" }));
-import { checkWholeImageAnswer, pasteMarkedArea, lineUpAroundArea, buildWholeImageRemovePrompt } from "../src/pipeline/editWholeImage";
+import { checkWholeImageAnswer, pasteMarkedArea, lineUpAroundArea, buildWholeImageRemovePrompt, buildWholeImageEditPrompt, findSpill, wholeImageEditEnabled } from "../src/pipeline/editWholeImage";
 import sharp from "sharp";
 
 // A plain "wall" with a gentle gradient and a dark "painting" in the middle.
@@ -34,7 +34,7 @@ describe("whole-image remove", () => {
   it("rejects an answer where nothing was removed", () => {
     const chk = checkWholeImageAnswer(photo(), photo(), mask, W, H);
     expect(chk.ok).toBe(false);
-    expect(chk.why).toMatch(/not removed/);
+    expect(chk.why).toMatch(/nothing changed/);
   });
 
   it("rejects an answer that redrew the scene around the item (demo job_39c3b786)", () => {
@@ -71,5 +71,41 @@ describe("whole-image remove", () => {
     expect(t).toMatch(/Change nothing outside the red-marked area/);
     expect(t).toMatch(/Return the whole photo/);
     expect(t).toMatch(/remove the painting/);
+  });
+
+  // Add / Replace: a dark "piece" drawn in the area, reaching a little (or far) past it.
+  function withPiece(x1: number, y1: number, x2: number, y2: number): Buffer {
+    const b = wallOnly(photo());
+    for (let y = y1; y < y2; y++) for (let x = x1; x < x2; x++) { const i = (y * W + x) * 3; b[i] = 90; b[i + 1] = 70; b[i + 2] = 50; }
+    return b;
+  }
+
+  it("Add: takes the part of the new piece just past the area along with it", () => {
+    const sp = findSpill(photo(), withPiece(78, 40, 128, 104), mask, [1, 1, 1], W, H); // 4 px past the right edge
+    expect(sp.pctOfImage).toBeGreaterThan(0);
+    expect(sp.edgeShare).toBeLessThan(0.15);
+  });
+
+  it("Add: flags a new piece that runs well past the area (retried, never cut off)", () => {
+    const sp = findSpill(photo(), withPiece(60, 20, 150, 130), maskRect(76, 36, 124, 104), [1, 1, 1], W, H);
+    expect(sp.edgeShare).toBeGreaterThan(0.15);
+  });
+
+  it("Add/Replace prompts ask for the piece inside the area and nothing else changed", () => {
+    const add = buildWholeImageEditPrompt("Add", "add a sofa", { roomType: "living_room" });
+    expect(add).toMatch(/inside the red-marked area of this room \(a living room\)/);
+    expect(add).toMatch(/do not move, remove or restyle anything else/);
+    const rep = buildWholeImageEditPrompt("Replace", "a round dining table", { fitInside: true });
+    expect(rep).toMatch(/Remove the old item completely/);
+    expect(rep).toMatch(/fits entirely inside the marked area/);
+    expect(rep).toMatch(/exactly where the old one stood/);
+    // The marked box goes to Gemini as [ymin, xmin, ymax, xmax] on 0-1000.
+    expect(buildWholeImageEditPrompt("Add", "a plant", { box: [0.1, 0.2, 0.3, 0.6] })).toMatch(/\[200, 100, 600, 300\]/);
+  });
+
+  it("whole-image modes: Remove, Add and Replace by default; Reinstate and Restore never", () => {
+    expect(["Remove", "Add", "Replace"].every((m) => wholeImageEditEnabled(m))).toBe(true);
+    expect(wholeImageEditEnabled("Reinstate")).toBe(false);
+    expect(wholeImageEditEnabled("Restore")).toBe(false);
   });
 });
