@@ -14,6 +14,7 @@ import {
   type EditContext,
 } from "./prompts";
 import { siblingOutPath, writeImageDataUrl } from "../utils/images";
+import { wholeImageRemove, wholeImageRemoveEnabled } from "./editWholeImage";
 import { detectOpeningsFromStage1A, type OpeningRegion } from "../utils/openingGeometry";
 import path from "path";
 
@@ -3123,6 +3124,29 @@ export async function applyEdit({
 
     if (!maskPngBuffer) {
       throw new Error("[editApply] Missing authoritative mask after normalization");
+    }
+
+    // Remove: the whole photo goes to Gemini and only the marked area is
+    // pasted back (see editWholeImage.ts). Fails rather than guessing.
+    if (mode === "Remove" && wholeImageRemoveEnabled()) {
+      const maskRaw = await sharp(maskPngBuffer)
+        .removeAlpha()
+        .grayscale()
+        .resize(meta.width, meta.height, { fit: "fill", kernel: sharp.kernel.nearest })
+        .raw()
+        .toBuffer();
+      const maskBits = new Uint8Array(meta.width * meta.height);
+      for (let i = 0; i < maskBits.length; i += 1) maskBits[i] = maskRaw[i] > 127 ? 1 : 0;
+      const result = await wholeImageRemove({
+        photoPath: baseImagePath,
+        mask: maskBits,
+        instruction: instruction || "remove the marked item",
+        jobId,
+        log: (msg, data) => console.log(msg, data ? JSON.stringify(data).slice(0, 1500) : ""),
+      });
+      await sharp(result.image).webp({ quality: 95 }).toFile(outPath);
+      console.log("[editApply] WHOLE_IMAGE_REMOVE_DONE", { jobId, attempts: result.attempts, outPath });
+      return outPath;
     }
 
     // Image-quality fix (2026-09-22): Reinstate used to paste baseline pixels
