@@ -1,5 +1,5 @@
 jest.mock("../src/ai/gemini", () => ({ getGeminiClient: () => ({}), closestGeminiAspectRatio: () => "4:3" }));
-import { checkWholeImageAnswer, pasteMarkedArea, lineUpAroundArea, buildWholeImageRemovePrompt, buildWholeImageEditPrompt, findSpill, wholeImageEditEnabled } from "../src/pipeline/editWholeImage";
+import { checkWholeImageAnswer, pasteMarkedArea, lineUpAroundArea, buildWholeImageRemovePrompt, buildWholeImageEditPrompt, findNewPiece, wholeImageEditEnabled } from "../src/pipeline/editWholeImage";
 import sharp from "sharp";
 
 // A plain "wall" with a gentle gradient and a dark "painting" in the middle.
@@ -80,15 +80,18 @@ describe("whole-image remove", () => {
     return b;
   }
 
-  it("Add: takes the part of the new piece just past the area along with it", () => {
-    const sp = findSpill(photo(), withPiece(78, 40, 128, 104), mask, [1, 1, 1], W, H); // 4 px past the right edge
-    expect(sp.pctOfImage).toBeGreaterThan(0);
-    expect(sp.edgeShare).toBeLessThan(0.15);
+  it("Add: a piece reaching well past a too-small area is taken whole when it is mostly inside", () => {
+    // area 76-124 x 36-104; piece 70-140 x 30-110: about 2/3 inside
+    const np = findNewPiece(photo(), withPiece(70, 30, 140, 110), mask, [1, 1, 1], W, H);
+    expect(np.insideShare).toBeGreaterThanOrEqual(0.5);
+    expect(np.edgeShare).toBeLessThanOrEqual(0.15);
+    expect(np.piece[(105 * W + 135)]).toBe(1); // the part outside the area comes along
   });
 
-  it("Add: flags a new piece that runs well past the area (retried, never cut off)", () => {
-    const sp = findSpill(photo(), withPiece(60, 20, 150, 130), maskRect(76, 36, 124, 104), [1, 1, 1], W, H);
-    expect(sp.edgeShare).toBeGreaterThan(0.15);
+  it("Add: a piece mostly outside the area is refused (retried)", () => {
+    const small = maskRect(90, 50, 110, 70);
+    const np = findNewPiece(photo(), withPiece(60, 20, 150, 130), small, [1, 1, 1], W, H);
+    expect(np.insideShare).toBeLessThan(0.5);
   });
 
   it("Add/Replace prompts ask for the piece inside the area and nothing else changed", () => {

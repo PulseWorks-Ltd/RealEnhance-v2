@@ -14,11 +14,13 @@
 //  - the room moved (zoom/shift lined up when it is only that; otherwise retry);
 //  - the wall/floor around the area changed (Gemini redrew the scene);
 //  - nothing changed inside the area (the item wasn't removed / added).
-// Add and Replace: the new piece may reach a little past the marked area (its
-// own edge, its shadow on the floor). Changes connected to the area within a
-// narrow band are pasted with it; a piece that runs past the band is retried
-// (asked to fit inside the area) rather than cut off. The surroundings check
-// starts beyond that band.
+// Add and Replace: users often mark too small an area for the piece they ask
+// for (a chair, a TV unit), so the new piece may reach well past the marked
+// area, up to REACH, as long as most of it (MIN_INSIDE_SHARE) lies inside the
+// area. The whole piece and its shadow are pasted, never cut at the outline
+// (Oct 2026: a TV-on-a-unit Add failed both attempts on a narrow 3.5% band).
+// A piece mostly outside the area, or running past REACH, is retried and asked
+// to fit inside. The surroundings are checked around the piece as drawn.
 // Two attempts; if both fail the edit fails (nothing published, refunded).
 //
 // One Gemini image call per attempt; the checks and paste are code only.
@@ -61,9 +63,10 @@ const RING_OUTER = 0.05;      // ...to here around the area (share of width)
 const RING_DIFF = 30;         // per-pixel difference that counts as changed (0-255)
 const RING_MAX_CHANGED = 0.3; // share of the surroundings that may change
 const MIN_INSIDE_CHANGE = 6;  // average difference inside the area: below this nothing was removed
-const SPILL = 0.035;          // Add/Replace: the new piece and its shadow may reach this far past the area (share of width)
+const REACH = Number(process.env.EDIT_ADD_REACH || 0.15);              // Add/Replace: how far past the area the new piece may reach (share of width)
+const MIN_INSIDE_SHARE = Number(process.env.EDIT_ADD_MIN_INSIDE || 0.5); // share of the new piece that must lie inside the marked area
 const SPILL_DIFF = 18;        // difference that counts as part of the new piece / its shadow
-const SPILL_MAX_EDGE = 0.15;  // share of the band's outer edge the piece may touch before it counts as running past it
+const SPILL_MAX_EDGE = 0.15;  // share of the reach band's outer edge the piece may touch before it counts as running past it
 
 // box: the marked area's bounds, 0-1 [x1, y1, x2, y2]; given to Gemini as
 // [ymin, xmin, ymax, xmax] on 0-1000 (its native box order).
@@ -179,27 +182,27 @@ export function checkWholeImageAnswer(o: Buffer, g: Buffer, mask: Uint8Array, w:
 }
 
 /**
- * Add/Replace: the parts of the new piece (and its shadow) that reach past the
- * marked area, within the spill band and connected to the area. edgeShare is
- * how much of the band's outer edge they touch (a piece running past it).
+ * Add/Replace: the new piece as Gemini drew it — every changed region (piece
+ * and shadow) that overlaps the marked area, out to REACH past it. insideShare
+ * is how much of it lies inside the area; edgeShare is how much of the reach
+ * band's outer edge it touches (a piece running past REACH).
  */
-export function findSpill(o: Buffer, g: Buffer, mask: Uint8Array, gains: number[], w: number, h: number): { spill: Uint8Array; edgeShare: number; pctOfImage: number } {
-  const bandR = Math.max(3, Math.round(w * SPILL));
+export function findNewPiece(o: Buffer, g: Buffer, mask: Uint8Array, gains: number[], w: number, h: number): { piece: Uint8Array; insideShare: number; edgeShare: number; pctOfImage: number } {
+  const bandR = Math.max(3, Math.round(w * REACH));
   const band = dilate(mask, w, h, bandR);
   const changed = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) {
-    if (!band[i] || mask[i]) continue;
+    if (!band[i]) continue;
     let d = 0;
     for (let c = 0; c < 3; c++) d = Math.max(d, Math.abs(o[i * 3 + c] - g[i * 3 + c] * gains[c]));
     if (d > SPILL_DIFF) changed[i] = 1;
   }
-  const touch = dilate(mask, w, h, 2);
-  const spill = new Uint8Array(w * h);
-  let n = 0;
-  for (const piece of labelComponents(changed, w, h)) {
-    if (piece.pixels.length < w * h * 0.0002) continue;
-    if (!piece.pixels.some((i) => touch[i])) continue;
-    for (const i of piece.pixels) { spill[i] = 1; n++; }
+  const piece = new Uint8Array(w * h);
+  let inside = 0, outside = 0;
+  for (const comp of labelComponents(changed, w, h)) {
+    if (comp.pixels.length < w * h * 0.0002) continue;
+    if (!comp.pixels.some((i) => mask[i])) continue;
+    for (const i of comp.pixels) { piece[i] = 1; if (mask[i]) inside++; else outside++; }
   }
   const inner = dilate(mask, w, h, Math.max(1, bandR - 2));
   let edge = 0, hit = 0;
@@ -208,9 +211,15 @@ export function findSpill(o: Buffer, g: Buffer, mask: Uint8Array, gains: number[
     const x = i % w, y = (i / w) | 0;
     if (x === 0 || y === 0 || x === w - 1 || y === h - 1) continue; // the photo's own edge is not "running past"
     edge++;
-    if (spill[i]) hit++;
+    if (piece[i]) hit++;
   }
-  return { spill, edgeShare: edge ? Number((hit / edge).toFixed(3)) : 0, pctOfImage: Number(((n / (w * h)) * 100).toFixed(2)) };
+  const total = inside + outside;
+  return {
+    piece,
+    insideShare: total ? Number((inside / total).toFixed(3)) : 1,
+    edgeShare: edge ? Number((hit / edge).toFixed(3)) : 0,
+    pctOfImage: Number(((total / (w * h)) * 100).toFixed(2)),
+  };
 }
 
 /** The photo with only the marked area taken from the answer (colour-matched, soft edge). */
@@ -296,7 +305,8 @@ export async function wholeImageEdit(params: {
   onAnswer?: (attempt: number, answer: Buffer) => void;
 }): Promise<WholeImageEditResult> {
   const { mode } = params;
-  const ringFrom = mode === "Remove" ? 0 : SPILL;
+  // Add/Replace: line-up, framing and colour are measured beyond the reach band.
+  const ringFrom = mode === "Remove" ? 0 : REACH;
   let fitInside = false;
   const log = params.log || ((m: string, d?: any) => console.log(m, d ?? ""));
   const meta = await sharp(params.photoPath).metadata();
@@ -374,16 +384,26 @@ export async function wholeImageEdit(params: {
       }
       let pasteArea: Uint8Array = mask;
       if (mode !== "Remove") {
-        const sp = findSpill(photoRaw, answerRaw, mask, chk.gains, w, h);
-        row.spill = { pctOfImage: sp.pctOfImage, edgeShare: sp.edgeShare };
-        if (sp.edgeShare > SPILL_MAX_EDGE) {
-          row.outcome = `the new piece runs past the marked area (${Math.round(sp.edgeShare * 100)}% of the band's edge)`;
+        const np = findNewPiece(photoRaw, answerRaw, mask, chk.gains, w, h);
+        row.newPiece = { pctOfImage: np.pctOfImage, insideShare: np.insideShare, edgeShare: np.edgeShare };
+        if (np.insideShare < MIN_INSIDE_SHARE || np.edgeShare > SPILL_MAX_EDGE) {
+          row.outcome = np.insideShare < MIN_INSIDE_SHARE
+            ? `the new piece is mostly outside the marked area (${Math.round(np.insideShare * 100)}% inside)`
+            : `the new piece runs far past the marked area (${Math.round(np.edgeShare * 100)}% of the reach band's edge)`;
           log(`[editWholeImage] attempt ${attempt}: ${row.outcome}`);
           fitInside = true;
           continue;
         }
         pasteArea = new Uint8Array(w * h);
-        for (let i = 0; i < w * h; i++) pasteArea[i] = mask[i] | sp.spill[i];
+        for (let i = 0; i < w * h; i++) pasteArea[i] = mask[i] | np.piece[i];
+        // The room right around the piece as drawn must be unchanged.
+        const near = checkWholeImageAnswer(photoRaw, answerRaw, pasteArea, w, h);
+        row.nearCheck = { ringChangedShare: near.ringChangedShare };
+        if (near.ringChangedShare > RING_MAX_CHANGED) {
+          row.outcome = `${Math.round(near.ringChangedShare * 100)}% of the room around the new piece changed`;
+          log(`[editWholeImage] attempt ${attempt}: ${row.outcome}`);
+          continue;
+        }
       }
       const image = await pasteMarkedArea(photoRaw, answerRaw, pasteArea, chk.gains, w, h);
       row.outcome = "pasted";
