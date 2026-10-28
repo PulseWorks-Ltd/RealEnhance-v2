@@ -159,7 +159,7 @@ ${roomTypeGuidance(roomType)}
 ${styleDescription ? `Style: ${styleDescription}.\n` : ""}
 Rules — these always apply:
 - Use only the floor and the walls that are clearly visible in the photo. A wall cut off at the edge of the photo may only be used for the part that is visible; never place anything that needs more wall than the photo shows, and never invent, extend or move a wall.
-- Every TV must hang on, or stand against, a wall that is clearly visible. If there is a TV wall bracket, the TV goes on that bracket and nowhere else.
+- Every TV must hang on, or stand against, a wall that is clearly visible. If there is a TV wall bracket, the TV goes on that bracket and nowhere else. If a TV is ALREADY mounted on the wall, it stays exactly where it is: list it in "keepUntouched", add no other TV, and arrange the seating to face it.
 - Keep every door, sliding door and doorway clear, with a walking path between them. Furniture may stand in front of the lower part of a window (a sofa back, headboard, desk or low unit overlapping the bottom of the glass is fine), but never hide most of a window, and never paint, wall or board over a window. Do not cover the heat pump, switches, outlets, the fireplace or any other fixed feature.
 - Wall art only on plain wall: never above a door, doorway or wardrobe door, never over or above a window, and never above a headboard that stands below a window.
 - Describe every position with words about visible landmarks and the room ("at the back of the room, in front of the kitchen bench", "against the plain wall on the left, between the sliding door and the window"). Never use coordinates, pixels, percentages or wall numbers in "layout", "relationships", "avoid" or "keepUntouched".
@@ -210,6 +210,9 @@ function finishingTouchesFor(roomType: string): string {
 function hasCoordinates(text: string): boolean {
   return /\[\s*0?\.\d|\b0\.\d{2,}\b|\d+\s*%|\bpixel|\bwall_\d|\bx\s*=|\by\s*=/i.test(text);
 }
+
+// A kept-untouched entry that is an actual TV ("TV wall bracket" alone is the bracket).
+const EXISTING_TV = /\b(tv|television)\b(?!\s*(wall\s*)?(bracket|mount\b))/i;
 
 // A wall named by direction alone ("the left wall") is ambiguous in a photo
 // taken from a corner: Oct 2026, job_56b49ee9 called the wall straight ahead
@@ -305,8 +308,11 @@ export function checkRoomBrief(brief: RoomBrief, roomType: string): string[] {
 
   const bracket = (brief.landmarks || []).find((l) => l?.type === "tv_bracket" || /\b(tv|television)\b.*\bbracket\b|\bbracket\b.*\b(tv|television)\b/i.test(String(l?.description || "")));
   const tvItems = brief.layout.filter((l) => /\b(tv|television)\b/i.test(l.item) && !/\b(unit|console|cabinet|stand)\b/i.test(l.item));
-  if (bracket && tvItems.length === 0) issues.push("the room has a TV wall bracket — the layout must mount a TV on it");
-  if (bracket && tvItems.length > 0 && !tvItems.some((t) => /bracket/i.test(t.placement))) {
+  // A TV already on the bracket is kept as it is (listed in keepUntouched).
+  // ("TV wall bracket" alone is the bracket, not a TV.)
+  const existingTvKept = (brief.keepUntouched || []).some((k) => EXISTING_TV.test(String(k)));
+  if (bracket && tvItems.length === 0 && !existingTvKept) issues.push("the room has a TV wall bracket — the layout must mount a TV on it");
+  if (bracket && tvItems.length > 0 && !existingTvKept && !tvItems.some((t) => /bracket/i.test(t.placement))) {
     issues.push("the TV must be mounted on the existing TV wall bracket — say so in its placement");
   }
 
@@ -857,6 +863,11 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
   const relationships = (brief.relationships || []).filter(Boolean).map(asSentence);
   const avoid = (brief.avoid || []).filter(Boolean).map(asSentence);
   const keep = (brief.keepUntouched || []).filter(Boolean).map((k) => String(k).trim().replace(/[\s.;,]+$/, ""));
+  // A TV already on the wall: Gemini kept it but still added a second TV and
+  // unit at the edge of the photo (Oct 2026, job_4ac443fb re-run), so say it.
+  if (keep.some((k) => EXISTING_TV.test(k))) {
+    avoid.push("Do not add a second TV anywhere — the room already has its TV on the wall bracket. A TV unit, if any, goes directly beneath that TV, nowhere else.");
+  }
   const zones = (brief.zones || []).filter((z) => z?.name && z?.description).map((z) => `${z.name}: ${asSentence(z.description)}`);
 
   return [

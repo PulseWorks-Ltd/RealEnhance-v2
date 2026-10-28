@@ -325,3 +325,21 @@ describe("living / dining plans", () => {
     expect(checkSofaPlacement({ layout: [{ item: "Sofa", placement: "nowhere" }] }, "bedroom")).toEqual([]);
   });
 });
+
+describe("room brief: a TV already on the wall (job_4ac443fb, Oct 2026)", () => {
+  it("accepts keeping the existing TV as it is instead of planning a new one", () => {
+    const b = { ...good, layout: good.layout.filter((l) => l.item !== "TV"), keepUntouched: ["The existing black TV mounted on its wall bracket on the right"] };
+    expect(checkRoomBrief(b, "kitchen_living_dining")).toEqual([]);
+  });
+  it("tells the planner to keep an existing TV where it is", () => {
+    expect(buildRoomBriefInstruction("living_room")).toContain("If a TV is ALREADY mounted on the wall, it stays exactly where it is");
+  });
+});
+
+describe("staging prompt with a TV already on the wall", () => {
+  it("tells Gemini not to add a second TV", () => {
+    const b = { ...good, layout: good.layout.filter((l) => l.item !== "TV"), keepUntouched: ["the television already mounted on the bracket on the right"] };
+    expect(buildStage2PromptFromRoomBrief(b, { roomType: "living_room" })).toContain("Do not add a second TV anywhere");
+    expect(buildStage2PromptFromRoomBrief(good, { roomType: "living_room" })).not.toContain("Do not add a second TV");
+  });
+});

@@ -624,6 +624,21 @@ function getStage2ConfiguredMaxAttempts(): number {
   return Math.min(configuredAttempts, maxInternalAttempts);
 }
 
+/** Refresh mode: the TV on its wall bracket stays put (from the structural baseline's tv_mount fixtures). */
+export function buildRefreshTvAnchorSection(baseline: StructuralBaseline | null | undefined): string {
+  const mounts = (baseline?.anchorFixtures || []).filter((f: any) => f?.type === "tv_mount");
+  if (!mounts.length) return "";
+  const where = (f: any) => {
+    const b = Array.isArray(f.bbox) ? f.bbox : null;
+    if (!b) return "";
+    const cx = (Number(b[0]) + Number(b[2])) / 2;
+    const side = cx < 0.33 ? "on the left of the photo" : cx > 0.67 ? "on the right of the photo" : "in the middle of the photo";
+    return ` (${side})`;
+  };
+  const lines = mounts.map((f: any) => `- ${String(f.description || "the TV wall bracket").replace(/[.\s]+$/, "")}${where(f)}`);
+  return `\n\nTHE TV IN THIS ROOM — FIXED ANCHOR\nThis room has a TV wall bracket:\n${lines.join("\n")}\nIf a TV is mounted on it, that TV stays exactly where it is — same wall, same place, same size, still on its bracket — and the seating is arranged to face it. If the bracket is empty, mount the TV on it. Never move the TV to another wall, never remove the bracket, never add a second TV, and never build, extend or angle a wall to hang a TV on.`;
+}
+
 export function resolveStage2MaxAttempts(): number {
   return getStage2ConfiguredMaxAttempts();
 }
@@ -848,6 +863,13 @@ export async function runStage2GenerationAttempt(
   const legacyProtectedFeatureSection = opts.structuralBaseline
     ? buildUniversalFeatureProtectionSection(opts.structuralBaseline, null).section
     : "";
+  // Refresh mode: name the room's own wall-mounted TV as a fixed anchor,
+  // with where it is. The generic "anchor (e.g. bed, sofa)" wording let
+  // Gemini treat a TV on its bracket as movable decor and rehang it on a
+  // wall it invented (Oct 2026, job_4ac443fb).
+  const refreshTvAnchorSection = resolvedPromptMode === "refresh"
+    ? buildRefreshTvAnchorSection(opts.structuralBaseline)
+    : "";
 
   const STAGE2_PROMPT_LEGACY = `${useTest
     ? require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType)
@@ -856,7 +878,7 @@ export async function runStage2GenerationAttempt(
         sourceStage: opts.sourceStage,
         mode: resolvedPromptMode,
         layoutContext: opts.layoutContext || undefined,
-      })}${legacyProtectedFeatureSection}`;
+      })}${legacyProtectedFeatureSection}${refreshTvAnchorSection}`;
 
   const STAGE2_PROMPT_NANO_BANANA = `Virtual Staging Instructions for nano banana (or Pro)
 

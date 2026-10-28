@@ -980,12 +980,25 @@ export function resolveFurnishedGateDecision(params: {
 
   const hasTvAnchor = anchors.includes("tv");
   const hasNonTvAnchor = anchors.some((anchor) => anchor !== "tv");
-  const hasEligibleAnchor = hasNonTvAnchor || (livingRoomLike && hasTvAnchor);
   const tvOnlyAnchor = hasTvAnchor && !hasNonTvAnchor;
   const movableFurnitureDetected =
     (Array.isArray(analysis.furnitureItems) && analysis.furnitureItems.some(isMovableFurnitureItem))
     || toBool(analysis.hasMovableSeating);
-  const hasEligibleFurnitureSignal = movableFurnitureDetected && (!tvOnlyAnchor || livingRoomLike);
+  // A TV with no other furniture in the room is a fixture (in practice a TV
+  // on a wall bracket), not furniture to refresh. Counting it made an empty
+  // living room "furnished": refresh mode ran on Gemini's whole picture, and
+  // Gemini moved the TV off its bracket onto a wall it invented (Oct 2026,
+  // job_4ac443fb). Such a room is staged from empty (masked staging, which
+  // keeps the real TV and bracket), with the room plan arranging the seating
+  // around the TV.
+  const isTvItem = (item: FurnitureItem) => normalizeToken(item?.legacyType || item?.type) === "tv" || normalizeToken(item?.type) === "tv";
+  const movableNonTvFurniture =
+    (Array.isArray(analysis.furnitureItems) && analysis.furnitureItems.some((item) => isMovableFurnitureItem(item) && !isTvItem(item)))
+    || toBool(analysis.hasMovableSeating);
+  const tvIsOnlyFixture = (tvOnlyAnchor || (!anchors.length && movableFurnitureDetected)) && !movableNonTvFurniture
+    && (hasTvAnchor || (Array.isArray(analysis.furnitureItems) && analysis.furnitureItems.some(isTvItem)));
+  const hasEligibleAnchor = hasNonTvAnchor || (livingRoomLike && hasTvAnchor && !tvIsOnlyFixture);
+  const hasEligibleFurnitureSignal = movableFurnitureDetected && !tvIsOnlyFixture && (!tvOnlyAnchor || livingRoomLike);
 
   // Room-type-aware "is there actually a primary anchor here" — see
   // classifyRoomTypeForPrimaryAnchor's header comment. For a room type this
@@ -999,9 +1012,10 @@ export function resolveFurnishedGateDecision(params: {
     : null;
   const hasPrimaryRoomAnchor = primaryAnchorTypes === null
     ? (hasEligibleAnchor || hasEligibleFurnitureSignal)
-    : anchors.some((a) => primaryAnchorTypes.has(a))
+    : anchors.some((a) => primaryAnchorTypes.has(a) && !(a === "tv" && tvIsOnlyFixture))
       || (Array.isArray(analysis.furnitureItems) && analysis.furnitureItems.some((item) => {
         if (!isMovableFurnitureItem(item)) return false;
+        if (tvIsOnlyFixture && isTvItem(item)) return false;
         const t = normalizeToken(item?.legacyType || item?.type);
         return primaryAnchorTypes.has(t);
       }));

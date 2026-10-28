@@ -160,6 +160,11 @@ REFRESH TRANSFORMATION FREEDOM
 
 Refresh mode is judged by the quality and realism of the final staged image, not by similarity to the input furniture.
 
+WHAT COUNTS AS AN ANCHOR IN THIS ROOM
+- Every TV mounted on a wall, with its wall bracket, is an anchor. It is fixed to the wall: it stays on its bracket, on the same wall, in the same place, at the same size. You may restyle it slightly (a newer-looking screen), but never move it, take it off its bracket, rehang it elsewhere, remove it, or add a second TV — and never build, extend or angle a wall to hang a TV on.
+- The room's main piece is also an anchor: the sofa or sectional, the bed, the dining table or the desk — whichever the photo shows.
+- Everything else is non-anchor furniture.
+
 ALLOWED STAGING TRANSFORMATIONS
 - Non-anchor furniture may be replaced, removed, or repositioned to produce the best realistic staged result for the selected room type.
 - Layout may improve when needed for better function, circulation, composition, or buyer appeal.
