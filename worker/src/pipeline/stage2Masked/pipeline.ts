@@ -66,6 +66,8 @@ import {
   FLOOR_MOVED_RISE_PCT,
   type SkirtingRun,
   FLOOR_MOVED_CHECK,
+  FLOOR_OVER_WALL_GUARD,
+  floorOverRealWall,
   planFloorPatches,
   applyFloorPatches,
   canRealign,
@@ -170,6 +172,9 @@ const CLOSEUP_MIN_AREA_PCT = 0.3;
 const CLOSEUP_MIN_TOUCHING_PCT = 10;
 const CUT_UNDER_MIN_AREA_PCT = Number(process.env.CUT_UNDER_MIN_AREA_PCT || 0.8); // missed area under furniture...
 const CUT_UNDER_MIN_PCT = Number(process.env.CUT_UNDER_MIN_PCT || 40);              // ...with this much furniture right above it...
+// Share of a "missed" area that is Gemini's floor over the real wall above
+// which it counts as a moved floor line, not furniture the trace missed.
+const FLOOR_OVER_WALL_SHARE = Number(process.env.STAGE2_FLOOR_OVER_WALL_SHARE || 0.4);
 // A changed area under traced furniture that the trace left out (legs, a
 // base, or the piece's shadow/reflection on the floor).
 function isCutUnder(m: any): boolean {
@@ -509,6 +514,19 @@ export async function traceLayers(ctx: MaskedContext) {
   // differs from the original — bare floor showing between chair legs stays.
   const tightFloor = ctx.tight ? await fillChangedGaps(floor, original, staged, w, h) : null;
   if (tightFloor) row.possiblyMissedByTrace = (tightFloor as any).possiblyMissedByTrace;
+  // Where Gemini drew floor over the real wall (pushed a wall back). Such an
+  // area is not furniture the trace missed: it is never taken from Gemini's
+  // picture, and the re-stage decision treats it as a moved floor line.
+  const floorOverWall = FLOOR_OVER_WALL_GUARD
+    ? await floorOverRealWall(original, staged, floor, w, h).catch(() => null)
+    : null;
+  if (floorOverWall && floorOverWall.pctOfImage > 0) row.floorOverWall = { pctOfImage: floorOverWall.pctOfImage, maxRisePct: floorOverWall.maxRisePct };
+  const overWallShare = (piece: ArrayLike<number>) => {
+    if (!floorOverWall) return 0;
+    let n = 0;
+    for (let j = 0; j < piece.length; j++) if (floorOverWall.mask[piece[j]]) n++;
+    return piece.length ? n / piece.length : 0;
+  };
   if (tightFloor) {
     // Keep Gemini's own pixels in areas missed under furniture — the legs or
     // base when the trace really cut a piece off, or the piece's natural
@@ -520,6 +538,7 @@ export async function traceLayers(ctx: MaskedContext) {
     const filled: any[] = [];
     list.forEach((m, k) => {
       if (!px[k] || !((ctx.fillMissedUnder && isCutUnder(m)) || isSmallMissedUnder(m))) return;
+      if (overWallShare(px[k]) >= FLOOR_OVER_WALL_SHARE) return; // Gemini's floor over the real wall
       const piece = px[k];
       for (let j = 0; j < piece.length; j++) { floor[piece[j]] = 1; tightFloor[piece[j]] = 1; }
       filled.push(m);
@@ -602,7 +621,7 @@ export async function traceLayers(ctx: MaskedContext) {
   }
   const undone = await undoneOverlay(original, staged, solid, w, h);
   save(ctx, "4_changes_removed_by_pasteback.jpg", undone);
-  return { floor, tightFloor, artRegion, solid, zone, core, solidPng, traced, undone };
+  return { floor, tightFloor, artRegion, solid, zone, core, solidPng, traced, undone, floorOverWall: floorOverWall?.mask ?? null };
 }
 
 export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
@@ -703,6 +722,7 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
     }
   }
   let sunPatchMask: Mask | null = null;
+  let noBorrow: Mask | null = null;
   let harmFinal: Buffer;
   if (blendUsable) {
     const hZonePng = await maskToPng(hZone, w, h);
@@ -718,7 +738,24 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
       sunPatchMask = new Uint8Array(w * h);
       for (let i = 0; i < w * h; i++) sunPatchMask[i] = m[i] > 0 ? 1 : 0;
     }
-    const hm = await compositeHarmonise(sun.buffer, harmRaw!, tSolidPng, furnPng, hZonePng);
+    // Where Gemini's blend (or its staging) shows floor over the real wall,
+    // its "darker" pixels are floor, not shadow: nothing is borrowed there
+    // (Oct 2026, job_609fbe6a: a blurred grey panel on the real wall).
+    let noShadowPng: Buffer | null = null;
+    if (FLOOR_OVER_WALL_GUARD) {
+      const fb = await floorOverRealWall(original, harmRaw!, tSolid, w, h, { fullColumns: true }).catch(() => null);
+      const both = new Uint8Array(w * h);
+      let any = false;
+      for (let i = 0; i < both.length; i++) if ((fb && fb.mask[i]) || (layers.floorOverWall && layers.floorOverWall[i])) { both[i] = 1; any = true; }
+      if (any) {
+        noBorrow = dilate(both, w, h, Math.max(2, Math.round(w * 0.012)));
+        for (let i = 0; i < noBorrow.length; i++) if (tSolid[i]) noBorrow[i] = 0;
+        noShadowPng = await maskToPng(noBorrow, w, h);
+        row.harmonise.floorOverWallPctOfImage = +(ratioOf(noBorrow) * 100).toFixed(2);
+        save(ctx, "9_floor_over_wall.png", noShadowPng);
+      }
+    }
+    const hm = await compositeHarmonise(sun.buffer, harmRaw!, tSolidPng, furnPng, hZonePng, noShadowPng);
     harmFinal = hm.buffer;
     Object.assign(row.harmonise, {
       blendUsed: true,
@@ -750,7 +787,7 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
     // Checked against (and repaired from) the app-built final: same room
     // structure as the safe composite, but with sun patches already
     // softened and shadows in, so repairs near furniture match.
-    const cb = await checkBlend(harmFinal, harmRaw, tSolid, zoneAll, w, h);
+    const cb = await checkBlend(harmFinal, harmRaw, tSolid, zoneAll, w, h, noBorrow);
     checkedBlendView = cb.repairedView;
     save(ctx, "11_checked_blend_repairs.jpg", cb.repairedView);
     row.checkedBlend = {
@@ -1077,9 +1114,27 @@ export async function runMaskedStage2Job(p: {
         // the close-up re-trace didn't fill. Merging would publish the piece
         // cut off, with the real wall or skirting showing through (Oct 2026,
         // production: a bedside table's legs) — re-stage instead.
-        const cutUnder = ((row.closeUpRetrace?.flaggedAreas || []) as any[]).filter(
-          isCutUnder
-        );
+        // An area that is mostly Gemini's floor drawn over the real wall is
+        // not a tracing miss: Gemini pushed the wall back so the piece stands
+        // on floor that doesn't exist (Oct 2026, job_609fbe6a: a bedside
+        // table). It re-stages as a moved floor line (below), whose hint tells
+        // Gemini to keep the wall where it is.
+        const fowMask = layers.floorOverWall;
+        const boxShare = (m: any) => {
+          if (!fowMask || !Array.isArray(m.box)) return 0;
+          const x1 = Math.max(0, Math.floor(m.box[0] * w)), y1 = Math.max(0, Math.floor(m.box[1] * h));
+          const x2 = Math.min(w - 1, Math.ceil(m.box[2] * w)), y2 = Math.min(h - 1, Math.ceil(m.box[3] * h));
+          let n = 0;
+          for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) if (fowMask[y * w + x]) n++;
+          return Math.min(1, n / Math.max(1, (m.areaPct / 100) * w * h));
+        };
+        const cutUnderAll = ((row.closeUpRetrace?.flaggedAreas || []) as any[]).filter(isCutUnder);
+        const floorUnder = cutUnderAll.filter((m) => boxShare(m) >= FLOOR_OVER_WALL_SHARE);
+        const cutUnder = cutUnderAll.filter((m) => !floorUnder.includes(m));
+        if (floorUnder.length) {
+          row.floorOverWallUnderFurniture = floorUnder.map((m) => ({ ...m, floorOverWallShare: +boxShare(m).toFixed(2) }));
+          p.warn?.(`[${ctx.name}] Gemini drew floor over the real wall under/beside furniture (${floorUnder.map((m) => `${m.areaPct}% at x ${Math.round(m.box[0] * 100)}-${Math.round(m.box[2] * 100)}%`).join("; ")}) — not a tracing miss`);
+        }
         const closeUpFilled = !row.closeUpRetrace?.rejected && (row.closeUpRetrace?.addedPctOfImage || 0) >= 0.5 * cutUnder.reduce((s, m) => s + m.areaPct, 0);
         if (cutUnder.length && !closeUpFilled) {
           row.furnitureCutByTrace = cutUnder;
@@ -1098,7 +1153,7 @@ export async function runMaskedStage2Job(p: {
         let skirtingLeft: SkirtingRun[] = [];
         if (FLOOR_MOVED_CHECK) {
           const sk = await measureSkirtingOffsets(original, ctx.staged, layers.solid, w, h).catch((e: any) => ({ runs: [] as SkirtingRun[], checkedColsPct: 0, error: String(e?.message || e) }));
-          row.skirtingBeside = sk;
+          row.skirtingBeside = { runs: sk.runs, checkedColsPct: sk.checkedColsPct }; // (not the floor line itself: it would bloat the logged report)
           skirtingLeft = sk.runs;
           if (sk.runs.length) {
             const plan: SkirtingLineUp = SKIRTING_LINE_UP ? planSkirtingLineUp(sk.runs, layers.floor, w, h, (sk as any).realLine || []) : { ok: false, why: "line-up switched off" };
@@ -1148,6 +1203,17 @@ export async function runMaskedStage2Job(p: {
           if (!row.floorMovedCheck.moved && besides.length) {
             const r = [...besides].sort((a, b) => b.widthPct - a.widthPct)[0];
             row.floorMovedCheck = { ...row.floorMovedCheck, moved: true, besideFurniture: besides, longestRunPct: r.widthPct, maxRisePct: Math.abs(r.dyPct), atXPct: [Math.round(r.x1Pct), Math.round(r.x2Pct)] };
+          }
+          // Furniture standing on floor Gemini drew over the real wall (found
+          // above, from the "missed" areas): the same fault.
+          if (!row.floorMovedCheck.moved && row.floorOverWallUnderFurniture?.length) {
+            const list = row.floorOverWallUnderFurniture as any[];
+            row.floorMovedCheck = {
+              ...row.floorMovedCheck, moved: true, underFurniture: true,
+              maxRisePct: Math.max(row.floorMovedCheck.maxRisePct || 0, row.floorOverWall?.maxRisePct || 0),
+              longestRunPct: +Math.max(...list.map((m) => (m.box[2] - m.box[0]) * 100)).toFixed(1),
+              atXPct: [Math.round(Math.min(...list.map((m) => m.box[0])) * 100), Math.round(Math.max(...list.map((m) => m.box[2])) * 100)],
+            };
           }
           if (row.floorMovedCheck.moved) {
             p.warn?.(`[${ctx.name}] Gemini moved the floor line to fit the furniture (its floor reaches up to ${row.floorMovedCheck.maxRisePct}% of the photo's height over the real wall, across ${row.floorMovedCheck.longestRunPct}% of the width) — re-staging`);

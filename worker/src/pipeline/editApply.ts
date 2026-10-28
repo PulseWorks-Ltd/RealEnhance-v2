@@ -42,7 +42,7 @@ const HARMONIZE_MAX_BIAS = 10;
 const HARMONIZE_MAX_BLUR_SIGMA = 0.9;
 const HARMONIZE_MAX_SHARPEN_M2 = 0.38;
 
-type RegionRetryReason = "gemini_error" | "timeout" | "dimension_mismatch" | "empty_image" | "corrupted_image";
+type RegionRetryReason = "gemini_error" | "timeout" | "dimension_mismatch" | "empty_image" | "corrupted_image" | "content_leak";
 
 type PixelBox = {
   x: number;
@@ -482,14 +482,67 @@ async function reverseRegionInferenceTransform(
       .toBuffer();
   }
 
-  return sharp(normalizedGenerated)
-    .resize(metadata.cropWidth, metadata.cropHeight, {
-      fit: "cover",
-      position: normalizeSharpResizePosition("left top"),
-      kernel: sharp.kernel.lanczos3,
-    })
-    .removeAlpha()
-    .toBuffer();
+  // Any other shape is not an answer for this crop. Gemini sometimes returns
+  // a whole new picture instead (Oct 2026 demo, job_39c3b786: a 4:3 redraw of
+  // the empty Stage 1A room for a tall 190x403 crop). Cutting a piece out of
+  // it pasted a slice of another room over the wall, so it is retried instead.
+  throw new RetryableRegionEditError(
+    "dimension_mismatch",
+    `Region edit returned ${generatedWidth}x${generatedHeight}, which matches neither the crop (${metadata.cropWidth}x${metadata.cropHeight}) nor the padded square (${metadata.inferenceWidth}x${metadata.inferenceHeight})`,
+  );
+}
+
+// Remove: the wall/floor AROUND the item (inside the crop, away from the
+// marked area) must still be the photo's own. If most of it changed, Gemini
+// redrew the scene instead of filling the item's area — retried, never
+// published. Allows a general relight (per-channel gain) and changes right
+// next to the marked area (frame shadow, edge clean-up).
+const REMOVE_RING_DIFF = 30;          // per-pixel difference that counts as changed (0-255)
+const REMOVE_RING_MAX_CHANGED = 0.35; // share of the surrounding area that may change
+export async function checkRemoveSurroundingsKept(params: {
+  original: Buffer;
+  edited: Buffer;
+  guidanceMask: Buffer; // 255 = marked area, 128 = rest of the crop
+  width: number;
+  height: number;
+}): Promise<{ checkedPct: number; changedShare: number; ok: boolean }> {
+  const { width: w, height: h } = params;
+  const [a, b, g] = await Promise.all([
+    sharp(params.original).removeAlpha().resize(w, h, { fit: "fill" }).blur(1.2).raw().toBuffer(),
+    sharp(params.edited).removeAlpha().resize(w, h, { fit: "fill" }).blur(1.2).raw().toBuffer(),
+    sharp(params.guidanceMask).removeAlpha().grayscale().resize(w, h, { fit: "fill", kernel: sharp.kernel.nearest }).raw().toBuffer(),
+  ]);
+  // Keep a margin around the marked area out of the test.
+  const margin = Math.max(3, Math.round(Math.min(w, h) * 0.06));
+  // Grow the marked area by the margin (square, row pass then column pass).
+  const rowGrown = new Uint8Array(w * h);
+  for (let y = 0; y < h; y += 1) {
+    let last = -Infinity;
+    for (let x = 0; x < w; x += 1) { if (g[y * w + x] > 200) last = x; if (x - last <= margin) rowGrown[y * w + x] = 1; }
+    last = Infinity;
+    for (let x = w - 1; x >= 0; x -= 1) { if (g[y * w + x] > 200) last = x; if (last - x <= margin) rowGrown[y * w + x] = 1; }
+  }
+  const nearMarked = new Uint8Array(w * h);
+  for (let x = 0; x < w; x += 1) {
+    let last = -Infinity;
+    for (let y = 0; y < h; y += 1) { if (rowGrown[y * w + x]) last = y; if (y - last <= margin) nearMarked[y * w + x] = 1; }
+    last = Infinity;
+    for (let y = h - 1; y >= 0; y -= 1) { if (rowGrown[y * w + x]) last = y; if (last - y <= margin) nearMarked[y * w + x] = 1; }
+  }
+  const ring: number[] = [];
+  for (let i = 0; i < w * h; i += 1) if (!nearMarked[i]) ring.push(i);
+  if (ring.length < w * h * 0.1) return { checkedPct: Math.round((ring.length / (w * h)) * 100), changedShare: 0, ok: true };
+  const sums = [0, 0, 0, 0, 0, 0];
+  for (const i of ring) for (let c = 0; c < 3; c += 1) { sums[c] += a[i * 3 + c]; sums[c + 3] += b[i * 3 + c]; }
+  const gains = [0, 1, 2].map((c) => (sums[c + 3] > 0 ? Math.min(1.5, Math.max(0.67, sums[c] / sums[c + 3])) : 1));
+  let changed = 0;
+  for (const i of ring) {
+    let d = 0;
+    for (let c = 0; c < 3; c += 1) d = Math.max(d, Math.abs(a[i * 3 + c] - b[i * 3 + c] * gains[c]));
+    if (d > REMOVE_RING_DIFF) changed += 1;
+  }
+  const changedShare = changed / ring.length;
+  return { checkedPct: Math.round((ring.length / (w * h)) * 100), changedShare: Number(changedShare.toFixed(3)), ok: changedShare <= REMOVE_RING_MAX_CHANGED };
 }
 
 async function buildDeltaMaskForCrop(params: {
@@ -1749,7 +1802,24 @@ RETRY INSTRUCTION:
       });
 
       const validated = await validateRegionEditResultOrThrow(editedBuffer, regionIndex);
-      return await reverseRegionInferenceTransform(validated, preparedInference.metadata);
+      const mapped = await reverseRegionInferenceTransform(validated, preparedInference.metadata);
+      if (mode === "Remove") {
+        const kept = await checkRemoveSurroundingsKept({
+          original: croppedEditableImageBuffer,
+          edited: mapped,
+          guidanceMask: guidanceMaskPngBuffer,
+          width: expandedBox.width,
+          height: expandedBox.height,
+        });
+        console.log("[editApply] REMOVE_SURROUNDINGS_CHECK", { regionIndex, attempt, ...kept });
+        if (!kept.ok) {
+          throw new RetryableRegionEditError(
+            "content_leak",
+            `Region ${regionIndex + 1}: ${Math.round(kept.changedShare * 100)}% of the area around the removed item changed (limit ${Math.round(REMOVE_RING_MAX_CHANGED * 100)}%)`,
+          );
+        }
+      }
+      return mapped;
     } catch (error) {
       lastError = error;
       const retryReason = getRetryReason(error);

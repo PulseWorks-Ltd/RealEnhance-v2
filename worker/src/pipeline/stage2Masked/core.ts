@@ -2160,7 +2160,10 @@ export async function removeSunPatches(safe: Buffer, harmonised: Buffer, solidPn
 // Failed patches are repaired with the safe composite's pixels, relit to match
 // the blend's light around them. If too much fails, the caller falls back.
 export const BLEND_MAX_REPAIR_PCT = Number(process.env.BLEND_MAX_REPAIR_PCT || 8);
-export async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Array, zone: Uint8Array, w: number, h: number) {
+// mustRepair (optional): areas where the blend is known not to show the real
+// room (Gemini's floor over the real wall); patches there always fail, even
+// though "darker near furniture" would otherwise pass as a shadow.
+export async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Array, zone: Uint8Array, w: number, h: number, mustRepair: Uint8Array | null = null) {
   const meta = await sharp(safe).metadata();
   const fw = meta.width || 0, fh = meta.height || 0;
   const N = fw * fh;
@@ -2174,6 +2177,7 @@ export async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Ar
     sharp(await maskToPng(furniture, w, h)).resize(AW, AH, { fit: "fill" }).grayscale().raw().toBuffer(),
     sharp(await maskToPng(zone, w, h)).resize(AW, AH, { fit: "fill" }).grayscale().raw().toBuffer(),
   ]);
+  const mustA = mustRepair ? await sharp(await maskToPng(mustRepair, w, h)).resize(AW, AH, { fit: "fill" }).grayscale().raw().toBuffer() : null;
   // Shapes and lines are compared on DETAIL images (image minus a blurred
   // copy), so smooth light changes — a lamp's glow, a soft shadow, Gemini's
   // general relighting — don't count; colour/brightness jumps are checked
@@ -2191,7 +2195,7 @@ export async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Ar
   const T = 24, STEP = 12, MAXS = 3;
   const suspect = new Uint8Array(AW * AH);
   let checked = 0, failed = 0;
-  const reasons = { appeared_or_gone: 0, content_changed: 0, brightened_near_furniture: 0, colour_changed: 0 };
+  const reasons = { appeared_or_gone: 0, content_changed: 0, brightened_near_furniture: 0, colour_changed: 0, floor_over_wall: 0 };
   // Per-patch average colour (safe and blend), for the colour-jump test.
   const GX = Math.floor((AW - T - 2 * MAXS) / STEP) + 1, GY = Math.floor((AH - T - 2 * MAXS) / STEP) + 1;
   const tileOk = new Uint8Array(GX * GY), tileZone = new Uint8Array(GX * GY), tileFailed = new Uint8Array(GX * GY);
@@ -2202,11 +2206,12 @@ export async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Ar
   const shiftX = new Float32Array(GX * GY), shiftY = new Float32Array(GX * GY), shiftW = new Float32Array(GX * GY);
   for (let gy = 0, ty = MAXS; gy < GY; gy++, ty += STEP) {
     for (let gx = 0, tx = MAXS; gx < GX; gx++, tx += STEP) {
-      let fCount = 0, zCount = 0, ma = 0, qa = 0;
+      let fCount = 0, zCount = 0, mCount = 0, ma = 0, qa = 0;
       for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) {
         const i = y * AW + x;
         if (furnA[i] >= 128) fCount++;
         if (zoneA[i] >= 128) zCount++;
+        if (mustA && mustA[i] >= 128) mCount++;
         ma += aG[i]; qa += aG[i] * aG[i];
       }
       const n = T * T;
@@ -2267,6 +2272,7 @@ export async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Ar
         }
         reason = brighter > n * 0.05 ? "brightened_near_furniture" : null;
       }
+      if (!reason && mCount > n * 0.15) reason = "floor_over_wall";
       if (!reason) continue;
       failed++;
       tileFailed[g] = 1;
@@ -2444,7 +2450,9 @@ export async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Ar
 // window, door or wall Gemini altered in its blend can never come through.
 export const HARM_MAX_FURNITURE_BRIGHTEN = Number(process.env.HARM_MAX_FURNITURE_BRIGHTEN || 1.03);
 export const HARM_SHADOW_SOFTEN = Math.max(1, Number(process.env.HARM_SHADOW_SOFTEN || 12));
-export async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solidPng: Buffer, corePng: Buffer, zonePng: Buffer) {
+// noShadowPng (optional): areas where nothing may be borrowed — Gemini's blend
+// shows something other than the real room there (floor over the real wall).
+export async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solidPng: Buffer, corePng: Buffer, zonePng: Buffer, noShadowPng: Buffer | null = null) {
   const meta = await sharp(safe).metadata();
   const fw = meta.width || 0, fh = meta.height || 0;
   const N = fw * fh;
@@ -2458,6 +2466,12 @@ export async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solid
     // Wide soft fade so the borrowed shadow has no visible edge.
     sharp(zonePng).resize(fw, fh, { fit: "fill" }).blur(Math.max(1, 12 * u)).grayscale().raw().toBuffer(),
   ]);
+  const [noShadowHard, noShadowSoft] = noShadowPng
+    ? await Promise.all([
+        sharp(noShadowPng).resize(fw, fh, { fit: "fill" }).grayscale().raw().toBuffer(),
+        sharp(noShadowPng).resize(fw, fh, { fit: "fill" }).blur(Math.max(1, 6 * u)).grayscale().raw().toBuffer(),
+      ])
+    : [null, null];
   // Overall colour/brightness shift of Gemini's blend, measured far from the
   // furniture, removed first so a general re-light is not mistaken for shadow.
   const sums = [0, 0, 0, 0, 0, 0];
@@ -2523,6 +2537,7 @@ export async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solid
       continue;
     }
     if (zoneHard[i] < 8 && solidA[i] < 8) continue;
+    if (noShadowHard && noShadowHard[i] > 127) continue; // not the real room in the blend: unknown
     if (zoneHard[i] >= 8) zonePixels++;
     const la = (t0 + t1 + t2) / 3, lh = (h0 + h1 + h2) / 3;
     const sa = t0 + t1 + t2 || 1, sh = h0 + h1 + h2 || 1;
@@ -2583,7 +2598,7 @@ export async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solid
   for (let i = 0; i < N; i++) {
     const ca = coreA[i] / 255;
     // Keep the furniture's own pixels free of borrowed floor shadow.
-    const dark = (darkMap[i] / 255) * (1 - ca);
+    const dark = (darkMap[i] / 255) * (1 - ca) * (noShadowSoft ? 1 - noShadowSoft[i] / 255 : 1);
     if (dark > maxDark) maxDark = dark;
     // Furniture lighting: Gemini's broad brightness change on the furniture.
     let light = 1;
@@ -3160,10 +3175,19 @@ export const FLOOR_MOVED_CHECK = String(process.env.STAGE2_FLOOR_MOVED_CHECK ?? 
 export const FLOOR_MOVED_RISE_PCT = Number(process.env.STAGE2_FLOOR_MOVED_RISE_PCT || 3);
 export const FLOOR_MOVED_MIN_RUN_PCT = Number(process.env.STAGE2_FLOOR_MOVED_MIN_RUN_PCT || 4);
 
+// Gemini's own floor line (lowest strong edge in its picture) backs up a
+// "floor moved" finding unless it was found at (or below) the real line.
+// Not found = no veto.
+export function geminiLineAgrees(geminiLine: number, realLine: number, H: number): boolean {
+  if (geminiLine < 0 || geminiLine >= H - 3) return true;
+  return realLine - geminiLine >= (H * FLOOR_MOVED_RISE_PCT * 0.67) / 100;
+}
+
 export async function checkFloorMoved(original: Buffer, staged: Buffer, furniture: Uint8Array, w: number, h: number) {
   const W = 800, H = Math.max(8, Math.round((W * h) / w));
   const ob = await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer();
   const line = await realFloorLine(ob, W, H);
+  const sLine = await realFloorLine(await sharp(staged).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer(), W, H);
   const orgb = await sharp(ob).blur(1.2).raw().toBuffer();
   const srgb = await sharp(staged).removeAlpha().resize(W, H, { fit: "fill" }).blur(1.2).raw().toBuffer();
   const mk = await sharp(Buffer.from(furniture.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
@@ -3211,6 +3235,11 @@ export async function checkFloorMoved(original: Buffer, staged: Buffer, furnitur
       if (realWall && geminiFloor) { rise = f - y; gap = 0; }
       else if (++gap > Math.round(H * 0.012)) break;
     }
+    // Colour alone can be fooled: a lamp's warm glow on a white wall above a
+    // beige carpet reads as "carpet" (Oct 2026 demo, Bedroom_14: both attempts
+    // failed, though Gemini's skirting was exactly where the real one is).
+    // So Gemini's own floor line must really be higher here too.
+    if (!geminiLineAgrees(sLine[x], f, H)) continue;
     if (rise >= (H * FLOOR_MOVED_RISE_PCT) / 100) moved[x] = 1;
     maxRise = Math.max(maxRise, rise);
   }
@@ -3225,6 +3254,111 @@ export async function checkFloorMoved(original: Buffer, staged: Buffer, furnitur
     maxRisePct: +((maxRise / H) * 100).toFixed(1),
     ...(best ? { atXPct: [+(((bestEnd - best + 1) / W) * 100).toFixed(0), +(((bestEnd + 1) / W) * 100).toFixed(0)] } : {}),
   };
+}
+
+// ── Floor over the real wall ────────────────────────────────────────────────
+// Where another picture (Gemini's staging or its blend) shows FLOOR over pixels
+// the real photo shows as WALL, rising from the real floor line: Gemini pushed
+// the bottom of a wall back. Same test as checkFloorMoved, but per pixel, in
+// every column (furniture pixels are skipped, not excluded), compared with
+// the other picture's OWN floor colour (Gemini often makes the floor a little
+// browner), and floor in shade still counts (0.45-1.3x as bright). Oct 2026, job_609fbe6a: at the right edge Gemini's floor rose up
+// to ~9% over the real wall. It was read as "furniture missed by the trace"
+// (a wasted re-stage), and the blend's floor there was read as a dark shadow
+// and painted onto the real wall as a blurred grey panel.
+export const FLOOR_OVER_WALL_GUARD = String(process.env.STAGE2_FLOOR_OVER_WALL_GUARD ?? "on").trim().toLowerCase() !== "off";
+// opts.fullColumns: also mark everything above it in those columns. Once the
+// wall has been pushed back there, whatever Gemini drew above that floor is
+// its moved wall too (job_609fbe6a: a shaded "corner" wall that was copied
+// as a tall grey shadow), so nothing in those columns can be borrowed.
+export async function floorOverRealWall(original: Buffer, other: Buffer, furniture: Uint8Array | null, w: number, h: number, opts: { fullColumns?: boolean } = {}): Promise<{ mask: Mask; pctOfImage: number; maxRisePct: number }> {
+  const W = 800, H = Math.max(8, Math.round((W * h) / w));
+  const ob = await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer();
+  const line = await realFloorLine(ob, W, H);
+  const sLine = await realFloorLine(await sharp(other).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer(), W, H);
+  const orgb = await sharp(ob).blur(1.2).raw().toBuffer();
+  const srgb = await sharp(other).removeAlpha().resize(W, H, { fit: "fill" }).blur(1.2).raw().toBuffer();
+  const mk = furniture
+    ? await sharp(Buffer.from(furniture.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } }).resize(W, H, { fit: "fill" }).extractChannel(0).raw().toBuffer()
+    : Buffer.alloc(W * H, 0);
+  const bandTop = Math.round(H * 0.07), bandBot = Math.round(H * 0.015), floorBand = Math.round(H * 0.04);
+  const px = (b: Buffer, x: number, y: number) => { const i = (y * W + x) * 3; return [b[i], b[i + 1], b[i + 2]]; };
+  const feat = (c: number[]) => { const s = c[0] + c[1] + c[2] + 1; return [s / 3, (c[0] / s) * 300, (c[2] / s) * 300]; };
+  const dist = (a: number[], b: number[]) => Math.hypot((a[0] - b[0]) * 0.5, a[1] - b[1], a[2] - b[2]);
+  // Floor colour of each picture, from below the real floor line (Gemini
+  // often recolours the floor a little, so its floor is matched to its own).
+  const fsO: number[][] = [], fsS: number[][] = [];
+  for (let x = 0; x < W; x += 2) {
+    const f = line[x]; if (f < 0) continue;
+    for (let y = f + 3; y <= Math.min(H - 1, f + floorBand); y += 2) {
+      fsO.push(feat(px(orgb, x, y)));
+      if (mk[y * W + x] <= 127) fsS.push(feat(px(srgb, x, y)));
+    }
+  }
+  const med = (fs: number[][], k: number) => { const v = fs.map((c) => c[k]).sort((a, b) => a - b); return v[v.length >> 1] ?? 0; };
+  const floorG = [med(fsO, 0), med(fsO, 1), med(fsO, 2)];
+  const floorGS = [med(fsS, 0), med(fsS, 1), med(fsS, 2)];
+  const small = new Uint8Array(W * H);
+  let maxRise = 0;
+  for (let x = 0; x < W; x++) {
+    let f = line[x];
+    if (f < 0 || f >= H - 3) f = H;
+    if (f - bandTop < 0) continue;
+    const fl = [0, 0, 0]; let fn = 0;
+    for (let y = f + 3; y <= Math.min(H - 1, f + floorBand); y++) { if (mk[y * W + x] > 127) continue; const c = feat(px(orgb, x, y)); fl[0] += c[0]; fl[1] += c[1]; fl[2] += c[2]; fn++; }
+    const floorC = fn >= 3 ? fl.map((v) => v / fn) : floorG;
+    const sl = [0, 0, 0]; let sn = 0;
+    for (let y = f + 3; y <= Math.min(H - 1, f + floorBand); y++) { if (mk[y * W + x] > 127) continue; const c = feat(px(srgb, x, y)); sl[0] += c[0]; sl[1] += c[1]; sl[2] += c[2]; sn++; }
+    const floorS = sn >= 3 ? sl.map((v) => v / sn) : floorGS;
+    const wr = [0, 0, 0]; let wn = 0;
+    for (let y = Math.max(0, f - Math.round(bandTop * 2.2)); y <= f - Math.round(bandTop * 1.2); y++) { if (mk[y * W + x] > 127) continue; const c = feat(px(orgb, x, y)); wr[0] += c[0]; wr[1] += c[1]; wr[2] += c[2]; wn++; }
+    if (wn < 3) continue;
+    const wallC = wr.map((v) => v / wn);
+    if (dist(wallC, floorC) < 15) continue;
+    let top = -1, gap = 0;
+    for (let y = Math.min(H - 1, f - 1); y >= Math.max(0, f - Math.round(H * 0.15)); y--) {
+      if (mk[y * W + x] > 127) continue; // furniture in front: look past it
+      const oc = feat(px(orgb, x, y)), sc = feat(px(srgb, x, y));
+      const realWall = dist(oc, floorC) > 12 && dist(oc, wallC) < dist(oc, floorC);
+      const shade = sc[0] / Math.max(1, floorS[0]);
+      const otherFloor = shade >= 0.45 && shade <= 1.3 && Math.hypot(sc[1] - floorS[1], sc[2] - floorS[2]) < 6 && dist(sc, oc) > 15;
+      if (!realWall && y > f - bandBot) continue; // the skirting edge itself
+      if (realWall && otherFloor) { top = y; gap = 0; }
+      else if (++gap > Math.round(H * 0.012)) break;
+    }
+    if (top < 0) continue;
+    // Gemini's own floor line must be higher too (see geminiLineAgrees), unless
+    // furniture sits on it, where the edge found may be the furniture's.
+    const g = sLine[x];
+    let onFurniture = false;
+    for (let y = Math.max(0, g - Math.round(H * 0.02)); g >= 0 && y <= Math.min(H - 1, g + Math.round(H * 0.02)); y++) if (mk[y * W + x] > 127) { onFurniture = true; break; }
+    if (!onFurniture && !geminiLineAgrees(g, f, H)) continue;
+    const rise = f - top;
+    if (rise < (H * FLOOR_MOVED_RISE_PCT) / 100) continue; // a skirting a little off is noise (the line-up handles it)
+    maxRise = Math.max(maxRise, rise);
+    for (let y = top; y < Math.min(H, f + bandBot); y++) if (mk[y * W + x] <= 127) small[y * W + x] = 1;
+  }
+  // Steady stretches only (a column or two on its own is noise).
+  const clean = removeSmallComponents(small, W, H, Math.round(W * H * 0.0008));
+  if (opts.fullColumns) {
+    // Whole columns, widened a little each side (and out to the photo edge
+    // when that is close), since the floor line isn't found in every column.
+    const hit = new Uint8Array(W);
+    for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) if (clean[y * W + x]) { hit[x] = 1; break; }
+    const pad = Math.round(W * 0.015);
+    const cols = new Uint8Array(W);
+    for (let x = 0; x < W; x++) if (hit[x]) {
+      const a = x - pad <= pad ? 0 : x - pad, b = x + pad >= W - 1 - pad ? W - 1 : x + pad;
+      for (let k = a; k <= b; k++) cols[k] = 1;
+    }
+    for (let x = 0; x < W; x++) if (cols[x]) for (let y = 0; y < H; y++) if (mk[y * W + x] <= 127) clean[y * W + x] = 1;
+  }
+  const big = await sharp(Buffer.from(clean.map((v) => (v ? 255 : 0))), { raw: { width: W, height: H, channels: 1 } })
+    .resize(w, h, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const mask = new Uint8Array(w * h);
+  let n = 0;
+  for (let i = 0; i < w * h; i++) if (big[i] > 127) { mask[i] = 1; n++; }
+  return { mask, pctOfImage: +((n / (w * h)) * 100).toFixed(2), maxRisePct: +((maxRise / H) * 100).toFixed(1) };
 }
 
 // ---------------------------------------------------------------------------
