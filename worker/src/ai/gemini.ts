@@ -455,13 +455,29 @@ export async function enhanceWithGemini(
   focusLog("GEMINI_INPUT", `[Gemini] 🔵 Input path: ${inputPath}`);
   focusLog("GEMINI_INPUT", `[Gemini] 🔵 Scene type: ${sceneType}, replaceSky: ${replaceSky}, declutter: ${declutter}`);
 
-  // Log model selection strategy
-  if (stage === "1A") {
-    focusLog("GEMINI_MODEL_STRATEGY", `[Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)`);
-  } else if (stage === "1B") {
-    focusLog("GEMINI_MODEL_STRATEGY", `[Gemini] 📋 Model strategy: Stage 1B primary=Gemini 3, fallback=Gemini 2.5`);
-  } else if (stage === "2") {
-    focusLog("GEMINI_MODEL_STRATEGY", `[Gemini] 📋 Model strategy: Stage 2 uses Gemini 2.5 (no fallback)`);
+  // Log model selection strategy — from the live configuration (this used to
+  // be fixed text saying "Gemini 2.5", which read like a fallback in the logs).
+  // A plan only: the "Success with primary/fallback model" lines say what ran.
+  if (stage === "1A" || stage === "1B" || stage === "2") {
+    let primary: string;
+    let fallback: string | null;
+    if (stage === "1A" && sceneType === "exterior" && process.env.STAGE1A_DISABLE_EXTERIOR_GEMINI3 !== "1") {
+      primary = MODEL_CONFIG.stage1AExterior.primary;
+      fallback = MODEL_CONFIG.stage1AExterior.fallback;
+    } else if (stage === "1A") {
+      const interior = String(process.env.REALENHANCE_MODEL_STAGE1A_INTERIOR_PRIMARY || "").trim();
+      const useInterior = sceneType !== "exterior" && modelSupportsImageConfig(interior);
+      primary = useInterior ? interior : MODEL_CONFIG.stage1A.primary;
+      fallback = useInterior ? MODEL_CONFIG.stage1A.primary : MODEL_CONFIG.stage1A.fallback;
+    } else if (stage === "1B") {
+      primary = MODEL_CONFIG.stage1B.primary;
+      fallback = MODEL_CONFIG.stage1B.fallback;
+    } else {
+      primary = MODEL_CONFIG.stage2.primary;
+      fallback = MODEL_CONFIG.stage2.fallback;
+    }
+    const size = modelSupportsImageConfig(primary) ? "2K" : "model default size";
+    focusLog("GEMINI_MODEL_STRATEGY", `[Gemini] 📋 Model plan: Stage ${stage} primary=${primary} (${size}), fallback=${fallback && fallback !== primary ? fallback : "none"}`);
   }
 
   try {
