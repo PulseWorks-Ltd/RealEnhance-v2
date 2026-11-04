@@ -11,6 +11,32 @@ import { addStagedLabel } from '../services/stagedLabel.js';
 import { getAgency } from '@realenhance/shared/agencies.js';
 import { makeZip } from '../services/zipper.js';
 import { getS3ObjectBuffer } from '../utils/s3.js';
+import multer from 'multer';
+import {
+  ADJUST_MAX_UPLOAD_BYTES,
+  PhotoAdjustError,
+  loadAdjustSourceImage,
+  resolveAdjustSource,
+  saveAdjustedVersion,
+} from '../services/photoAdjust.js';
+
+const adjustUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: ADJUST_MAX_UPLOAD_BYTES, files: 1 },
+});
+
+function sendAdjustError(res: Response, error: unknown, fallback: string) {
+  if (error instanceof PhotoAdjustError) {
+    return res.status(error.status).json({ error: error.code, message: error.message });
+  }
+  console.error('[photo-adjust] error:', error);
+  return res.status(500).json({ error: 'ADJUST_FAILED', message: fallback });
+}
+
+function adjustQueryFrom(source: Record<string, unknown>) {
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  return { url: str(source.url ?? source.sourceUrl), imageId: str(source.imageId ?? source.sourceImageId), jobId: str(source.jobId ?? source.sourceJobId) };
+}
 
 const ENHANCED_IMAGES_DEFAULT_LIMIT = Math.max(1, Number(process.env.ENHANCED_IMAGES_DEFAULT_LIMIT || 200));
 const ENHANCED_IMAGES_MAX_LIMIT = Math.max(ENHANCED_IMAGES_DEFAULT_LIMIT, Number(process.env.ENHANCED_IMAGES_MAX_LIMIT || 5000));
@@ -368,6 +394,77 @@ export function enhancedImagesRouter() {
       console.error('[enhanced-images] List error:', error);
       res.status(500).json({ error: 'Failed to list enhanced images' });
     }
+  });
+
+  /**
+   * Photo Adjust (free slider edits; see services/photoAdjust.ts).
+   * GET  /adjust/source        -> which pixels to edit + stored slider values
+   * GET  /adjust/source/image  -> those pixels (same-origin, so WebGL can read them)
+   * POST /adjust               -> save the browser-rendered PNG as a new version
+   */
+  router.get('/adjust/source', async (req: Request, res: Response) => {
+    try {
+      const user = (req.session as any)?.user;
+      if (!user) return res.status(401).json({ error: 'Unauthorized' });
+      const source = await resolveAdjustSource(user, adjustQueryFrom(req.query as any));
+      return res.json({
+        ok: true,
+        parentImageId: source.parentImageId,
+        reopenedFromParent: source.reopenedFromParent,
+        adjustments: source.adjustments,
+      });
+    } catch (error) {
+      return sendAdjustError(res, error, "This photo can't be adjusted right now.");
+    }
+  });
+
+  router.get('/adjust/source/image', async (req: Request, res: Response) => {
+    try {
+      const user = (req.session as any)?.user;
+      if (!user) return res.status(401).json({ error: 'Unauthorized' });
+      const source = await resolveAdjustSource(user, adjustQueryFrom(req.query as any));
+      const image = await loadAdjustSourceImage(source);
+      res.setHeader('Content-Type', image.contentType);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      return res.send(image.buffer);
+    } catch (error) {
+      return sendAdjustError(res, error, "Couldn't load the photo.");
+    }
+  });
+
+  router.post('/adjust', (req: Request, res: Response) => {
+    const user = (req.session as any)?.user;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    adjustUpload.single('image')(req, res, async (uploadErr: any) => {
+      if (uploadErr) {
+        const tooBig = uploadErr?.code === 'LIMIT_FILE_SIZE';
+        return res.status(tooBig ? 413 : 400).json({
+          error: tooBig ? 'ADJUST_TOO_LARGE' : 'ADJUST_BAD_UPLOAD',
+          message: tooBig ? 'The adjusted image is too large to save.' : "The adjusted image couldn't be uploaded.",
+        });
+      }
+      try {
+        const file = (req as any).file as { buffer: Buffer } | undefined;
+        if (!file?.buffer?.length) {
+          return res.status(400).json({ error: 'ADJUST_BAD_UPLOAD', message: "The adjusted image couldn't be uploaded." });
+        }
+        let adjustments: unknown = null;
+        try {
+          adjustments = JSON.parse(String((req.body as any)?.adjustments || '{}'));
+        } catch {
+          return res.status(400).json({ error: 'ADJUST_BAD_VALUES', message: 'The adjustment values were invalid.' });
+        }
+        const result = await saveAdjustedVersion({
+          user,
+          query: adjustQueryFrom((req.body as any) || {}),
+          png: file.buffer,
+          adjustments,
+        });
+        return res.json({ ok: true, ...result });
+      } catch (error) {
+        return sendAdjustError(res, error, "Couldn't save the adjusted photo. Please try again.");
+      }
+    });
   });
 
   /**

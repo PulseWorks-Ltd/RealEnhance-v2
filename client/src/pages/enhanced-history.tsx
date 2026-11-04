@@ -22,6 +22,8 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { ImageOff, Loader2, Info, Download, Pencil, Folder, X } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { RegionEditor } from '@/components/region-editor';
+import { AdjustWorkspace } from '@/components/adjust/AdjustWorkspace';
+import { EditModeSwitch, type EditMode } from '@/components/adjust/EditModeSwitch';
 import type { SourceStageLabel } from '@/lib/edit-source';
 
 const GALLERY_FETCH_LIMIT = 5000;
@@ -47,7 +49,7 @@ function getDownloadFilename(filenameBase: string, contentType?: string | null):
 }
 
 function resolveHistoryEditSourceStage(image: EnhancedImageListItem): SourceStageLabel | null {
-  if (image.source === 'region-edit') return 'edit';
+  if (image.source === 'region-edit' || image.source === 'adjust') return 'edit';
 
   const completedStages = new Set((image.stagesCompleted || []).map((stage) => String(stage).toUpperCase()));
   if (completedStages.has('2')) return '2';
@@ -85,6 +87,7 @@ export default function EnhancedHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<EnhancedImageListItem | null>(null);
   const [editingImage, setEditingImage] = useState<EnhancedImageListItem | null>(null);
+  const [editMode, setEditMode] = useState<EditMode>('adjust');
   const [editStatusByImageId, setEditStatusByImageId] = useState<Record<string, HistoryEditStatus>>({});
   const [deleteCandidate, setDeleteCandidate] = useState<EnhancedImageListItem | null>(null);
   const [deletingImageIds, setDeletingImageIds] = useState<Record<string, boolean>>({});
@@ -131,6 +134,18 @@ export default function EnhancedHistoryPage() {
     () => [...properties.flatMap((folder) => folder.images), ...unassignedImages],
     [properties, unassignedImages]
   );
+
+  // Adjust versions have no pipeline job of their own ("adjust_…"): AI Edit on
+  // one uses the nearest ancestor's real job so the edit keeps its lineage.
+  const resolveLineageJobId = useCallback((image: EnhancedImageListItem): string => {
+    const byId = new Map(allImages.map((i) => [String(i.id), i]));
+    let current: EnhancedImageListItem | undefined = image;
+    for (let depth = 0; current && depth < 6; depth++) {
+      if (current.source !== 'adjust') return current.jobId;
+      current = current.parentImageId ? byId.get(String(current.parentImageId)) : undefined;
+    }
+    return image.jobId;
+  }, [allImages]);
 
   const editIndexByImageId = useMemo(() => {
     const imageById = new Map(allImages.map((image) => [String(image.id), image]));
@@ -252,6 +267,7 @@ export default function EnhancedHistoryPage() {
       return;
     }
 
+    setEditMode('adjust');
     setEditingImage(image);
   }, [toast]);
 
@@ -435,7 +451,7 @@ export default function EnhancedHistoryPage() {
           ))}
           {image.source && (
             <Badge variant="secondary" className="text-xs bg-white/20 text-white border-0">
-              {image.source}
+              {image.source === 'adjust' ? 'Adjusted' : image.source}
             </Badge>
           )}
         </div>
@@ -626,13 +642,27 @@ export default function EnhancedHistoryPage() {
           contentClassName="w-screen h-screen max-w-none !p-0 !m-0 !rounded-none border-0 overflow-hidden"
           className="h-full w-full !p-0 !m-0 !space-y-0 bg-transparent"
         >
+          {editMode === 'adjust' ? (
+          <AdjustWorkspace
+            sourceUrl={editingImage.publicUrl}
+            sourceImageId={editingImage.id}
+            sourceJobId={editingImage.jobId}
+            onClose={() => setEditingImage(null)}
+            onSwitchToAiEdit={() => setEditMode('ai')}
+            onSaved={() => {
+              setEditingImage(null);
+              void fetchImages();
+            }}
+          />
+          ) : (
           <RegionEditor
+            headerSlot={<EditModeSwitch active="ai" onSelect={(m) => m === 'adjust' && setEditMode('adjust')} />}
             source="history"
             initialImageUrl={editingImage.publicUrl}
             originalImageUrl={editingImage.originalUrl || undefined}
             editSourceUrl={editingImage.publicUrl}
             editSourceStage={resolveHistoryEditSourceStage(editingImage) || undefined}
-            sourceJobId={editingImage.jobId}
+            sourceJobId={resolveLineageJobId(editingImage)}
             sourceImageId={editingImage.id}
             onCancel={() => setEditingImage(null)}
             onStart={() => {
@@ -656,6 +686,7 @@ export default function EnhancedHistoryPage() {
               void fetchImages();
             }}
           />
+          )}
         </Modal>
       )}
 

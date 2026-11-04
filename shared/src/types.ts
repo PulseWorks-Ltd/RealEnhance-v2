@@ -363,7 +363,7 @@ export interface EnhancedImage {
   jobId: JobId;
   propertyId?: string | null;
   parentImageId?: string | null;
-  source?: 'stage2' | 'region-edit';
+  source?: 'stage2' | 'region-edit' | 'adjust';
 
   // Stage completion tracking
   stagesCompleted: string[]; // e.g., ['1A', '1B', '2'] or ['1A', '2']
@@ -418,7 +418,7 @@ export interface EnhancedImageListItem {
   auditRef: string; // May be shown to users as generic "Support reference"
   propertyId?: string | null;
   parentImageId?: string | null;
-  source?: 'stage2' | 'region-edit';
+  source?: 'stage2' | 'region-edit' | 'adjust';
   versionCount?: number;
 }
 

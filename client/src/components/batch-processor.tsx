@@ -30,6 +30,9 @@ import { Modal } from "./Modal";
 import { EditModal } from "./EditModal";
 import { CompareSlider } from "./CompareSlider";
 import { RegionEditor } from "./region-editor";
+import { AdjustWorkspace } from "./adjust/AdjustWorkspace";
+import { EditModeSwitch, type EditMode } from "./adjust/EditModeSwitch";
+import type { AdjustSaveResult } from "@/lib/adjust/api";
 import { RetryDialog } from "./retry-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Dropzone } from "@/components/ui/dropzone";
@@ -1564,6 +1567,8 @@ export default function BatchProcessor({
   // Preview/edit modal state
   const [previewImage, setPreviewImage] = useState<PreviewModalImage | null>(null);
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
+  // Edit modal opens on the free Adjust sliders; AI Edit is one click away.
+  const [editMode, setEditMode] = useState<EditMode>("adjust");
   const [activeEditSource, setActiveEditSource] = useState<{ sourceUrl: string; sourceStage: SourceStageLabel; sourceJobId: string; currentCardJobId: string | null; imageId: string | null } | null>(null);
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
@@ -6453,8 +6458,52 @@ export default function BatchProcessor({
     }
 
     setActiveEditSource({ sourceUrl: imageUrl, sourceStage: urlSource, sourceJobId: sourceJobId, currentCardJobId, imageId });
+    setEditMode("adjust");
     setEditingImageIndex(imageIndex);
     setRegionEditorOpen(true);
+  };
+
+  // Photo Adjust saved a new version: show it on the card like an edit result.
+  // editLatestJobId is left pointing at the real source job, so a later AI Edit
+  // on the adjusted photo still finds its Stage 1A reference.
+  const handleAdjustSaved = (imageIndex: number, saved: AdjustSaveResult) => {
+    const url = saved.imageUrl;
+    setResults(prev => prev.map((r, i) => {
+      if (i !== imageIndex) return r;
+      const editHistory = [...(r?.editHistory || []), { url, ts: Date.now(), mode: "adjust" }];
+      return {
+        ...r,
+        image: url,
+        imageUrl: url,
+        resultUrl: url,
+        previewUrl: url,
+        version: Date.now(),
+        mode: "adjust",
+        editHistory,
+        latestEditUrl: url,
+        editLatestUrl: url,
+        adjustedImageId: saved.imageId,
+        completionSource: "adjust",
+        result: {
+          ...(r?.result || {}),
+          image: url,
+          imageUrl: url,
+          resultUrl: url,
+          previewUrl: url,
+          latestEditUrl: url,
+          editLatestUrl: url,
+        },
+      };
+    }));
+    setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: "edited" }));
+    setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: url }));
+    setProcessedImages(prev => Array.from(new Set([...prev, url])));
+  };
+
+  const closeEditModal = () => {
+    setRegionEditorOpen(false);
+    setEditingImageIndex(null);
+    setActiveEditSource(null);
   };
 
   const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: SourceStageLabel, stage1BWasRequested?: boolean, stagesToRun?: StageKey[], requestedStagesList?: StageKey[], baselineStage?: "original" | "1A" | "1B" | "latest") => {
@@ -9638,7 +9687,21 @@ export default function BatchProcessor({
       {/* RegionEditor Modal - all edit controls and enlarged image are inside the modal */}
       {regionEditorOpen && editingImageIndex !== null && activeEditSource && (
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); if (editingImageIndex !== null) { setEditingImages(prev => { const next = new Set(prev); next.delete(editingImageIndex); return next; }); } setEditingImageIndex(null); setActiveEditSource(null); }} maxWidth="full" contentClassName="w-screen h-screen max-w-none !p-0 !m-0 !rounded-none border-0 overflow-hidden" className="h-full w-full !p-0 !m-0 !space-y-0 bg-transparent">
+          {editMode === "adjust" ? (
+          <AdjustWorkspace
+            sourceUrl={activeEditSource.sourceUrl}
+            sourceImageId={activeEditSource.imageId}
+            sourceJobId={activeEditSource.sourceJobId}
+            onClose={closeEditModal}
+            onSwitchToAiEdit={() => setEditMode("ai")}
+            onSaved={(saved) => {
+              handleAdjustSaved(editingImageIndex, saved);
+              closeEditModal();
+            }}
+          />
+          ) : (
           <RegionEditor
+            headerSlot={<EditModeSwitch active="ai" onSelect={(m) => m === "adjust" && setEditMode("adjust")} />}
             source="batch"
             initialImageUrl={activeEditSource.sourceUrl}
             editSourceUrl={activeEditSource.sourceUrl}
@@ -9959,6 +10022,7 @@ export default function BatchProcessor({
               // The error toast is already shown by RegionEditor, so we don't duplicate it here
             }}
           />
+          )}
         </Modal>
       )}
 

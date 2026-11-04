@@ -68,6 +68,8 @@ interface RegionEditorProps {
   initialSceneType?: "auto" | "interior" | "exterior";
   initialRoomType?: string;
   source?: "batch" | "history";
+  /** Optional content shown above the sidebar title (e.g. the Adjust / AI Edit switch). */
+  headerSlot?: React.ReactNode;
 }
 
 export function RegionEditor({
@@ -88,6 +90,7 @@ export function RegionEditor({
   initialSceneType,
   initialRoomType,
   source = "batch",
+  headerSlot,
 }: RegionEditorProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(
@@ -1298,6 +1301,7 @@ export function RegionEditor({
   return (
     <div className="grid h-screen w-screen grid-cols-1 grid-rows-[minmax(0,1fr)_auto] bg-slate-50 rounded-none overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)_320px]">
       <aside className="h-full border-b border-slate-200 bg-white p-6 lg:border-b-0 lg:border-r lg:overflow-y-auto flex flex-col">
+        {headerSlot ? <div className="mb-4">{headerSlot}</div> : null}
         <div className="space-y-2">
           <h2 className="text-xl font-semibold text-slate-900">Edit Image</h2>
           <p className="text-sm text-slate-600">

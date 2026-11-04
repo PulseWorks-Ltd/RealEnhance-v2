@@ -184,6 +184,47 @@ export async function uploadOriginalToS3(localPath: string): Promise<S3UploadRes
   return { key, url, bucket, size, contentType };
 }
 
+/**
+ * Upload an in-memory output image (e.g. a Photo Adjust version) under the
+ * outputs prefix. ACL handling mirrors the worker's publishImage: public-read
+ * unless S3_NO_ACL is set, retrying without an ACL if the bucket refuses ACLs.
+ */
+export async function uploadOutputBufferToS3(params: {
+  buffer: Buffer;
+  filename: string;
+  contentType: string;
+}): Promise<S3UploadResult> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) throw new Error("S3_BUCKET not configured");
+
+  const prefix = (process.env.S3_OUTPUTS_PREFIX || "realenhance/outputs").replace(/\/+$/, "");
+  const key = `${prefix}/${Date.now()}-${sanitizeUploadFilename(params.filename)}`.replace(/^\/+/, "");
+  const client = getClient();
+  const base: any = { Bucket: bucket, Key: key, Body: params.buffer, ContentType: params.contentType };
+
+  const envNoAcl = process.env.S3_NO_ACL === "1" || process.env.S3_NO_ACL === "true";
+  const acl = process.env.S3_ACL || "public-read";
+  let uploaded = false;
+  if (!envNoAcl) {
+    try {
+      await client.send(new PutObjectCommand({ ...base, ACL: acl }));
+      uploaded = true;
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      const code = e?.Code || e?.code || e?.name;
+      const aclNotAllowed =
+        /does not allow ACLs|AccessControlListNotSupported|InvalidRequest/i.test(msg) ||
+        /AccessControlListNotSupported|InvalidRequest/i.test(String(code || ""));
+      if (!aclNotAllowed) throw e;
+    }
+  }
+  if (!uploaded) {
+    await client.send(new PutObjectCommand(base));
+  }
+
+  return { key, url: getS3PublicUrl(key), bucket, size: params.buffer.length, contentType: params.contentType };
+}
+
 export interface S3CopyResult {
   key: string;
   url: string;

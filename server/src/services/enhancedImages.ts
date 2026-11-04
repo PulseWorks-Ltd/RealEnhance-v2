@@ -48,7 +48,7 @@ interface CreateEnhancedImageParams {
   jobId: string;
   propertyId?: string | null;
   parentImageId?: string | null;
-  source?: 'stage2' | 'region-edit';
+  source?: 'stage2' | 'region-edit' | 'adjust';
   stagesCompleted: string[];
   completionType?: EnhancedImageCompletionType;
   userOutcome?: EnhancedImageUserOutcome;
