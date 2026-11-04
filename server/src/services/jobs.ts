@@ -29,6 +29,26 @@ function buildAwaitingPaymentExpiryIso(createdAtIso?: string): string {
   return new Date(baseTs + AWAITING_PAYMENT_TTL_MS).toISOString();
 }
 
+// After a confirmed payment (or a resume once credits are there), a job the
+// user asked to process is still released after its 10-minute timer, within
+// this window. The timer alone cancelled jobs whose payment landed late, so a
+// customer paid and got nothing (Nov 2026, Hero Pack). Running them uses the
+// credits just bought, for photos the user already pressed Process on.
+const AWAITING_PAYMENT_PAID_WINDOW_MS = Math.max(
+  AWAITING_PAYMENT_TTL_MS,
+  Number(process.env.AWAITING_PAYMENT_PAID_WINDOW_MINUTES || 120) * 60 * 1000,
+);
+export function isWithinPaidReleaseWindow(rec: any): boolean {
+  const createdTs = Date.parse(String(rec?.createdAt || rec?.payload?.createdAt || ""));
+  if (!Number.isFinite(createdTs)) return false;
+  return Date.now() - createdTs <= AWAITING_PAYMENT_PAID_WINDOW_MS;
+}
+// Expired for this caller: after a payment only once past the paid window.
+function shouldCancelForPaymentTimeout(rec: any, afterPayment: boolean): boolean {
+  if (!isAwaitingPaymentExpired(rec)) return false;
+  return !(afterPayment && isWithinPaidReleaseWindow(rec));
+}
+
 function isAwaitingPaymentExpired(rec: any): boolean {
   const expiresAt = String(rec?.expiresAt || "").trim();
   if (!expiresAt) return false;
@@ -747,7 +767,7 @@ export async function createAwaitingPaymentEnhanceJob(params: {
   return { jobId };
 }
 
-export async function enqueueStoredEnhanceJob(jobId: string): Promise<{ enqueued: boolean }> {
+export async function enqueueStoredEnhanceJob(jobId: string, opts: { afterPayment?: boolean } = {}): Promise<{ enqueued: boolean }> {
   const rec = await getJob(jobId);
   const payload = (rec as any)?.payload;
   if (!payload || payload.type !== "enhance") {
@@ -770,17 +790,17 @@ export async function enqueueStoredEnhanceJob(jobId: string): Promise<{ enqueued
     });
   }
 
-  return enqueueStoredJob(jobId);
+  return enqueueStoredJob(jobId, opts);
 }
 
-export async function enqueueStoredJob(jobId: string): Promise<{ enqueued: boolean }> {
+export async function enqueueStoredJob(jobId: string, opts: { afterPayment?: boolean } = {}): Promise<{ enqueued: boolean }> {
   const rec = await getJob(jobId);
   const payload = (rec as any)?.payload;
   if (!payload || typeof payload !== "object") {
     return { enqueued: false };
   }
 
-  if (String((rec as any)?.status || "") === "awaiting_payment" && isAwaitingPaymentExpired(rec)) {
+  if (String((rec as any)?.status || "") === "awaiting_payment" && shouldCancelForPaymentTimeout(rec, !!opts.afterPayment)) {
     await updateJob(jobId as any, {
       status: "cancelled",
       cancelReason: "payment_timeout",
@@ -879,7 +899,7 @@ export async function scanAndRecoverStuckJobs(): Promise<{ scanned: number; reco
   return { scanned, recovered };
 }
 
-export async function listAwaitingPaymentEnhanceJobs(userId: string): Promise<Array<{ jobId: string; createdAt: string; payload: any }>> {
+export async function listAwaitingPaymentEnhanceJobs(userId: string, opts: { afterPayment?: boolean } = {}): Promise<Array<{ jobId: string; createdAt: string; payload: any }>> {
   const indexKey = awaitingUserKey(userId);
 
   const indexedIds = await redisClient.zRange(indexKey, 0, -1);
@@ -904,7 +924,7 @@ export async function listAwaitingPaymentEnhanceJobs(userId: string): Promise<Ar
           staleIds.push(jobId);
           continue;
         }
-        if (isAwaitingPaymentExpired(rec)) {
+        if (shouldCancelForPaymentTimeout(rec, !!opts.afterPayment)) {
           await updateJob(jobId as any, {
             status: "cancelled",
             cancelReason: "payment_timeout",
@@ -957,7 +977,7 @@ export async function listAwaitingPaymentEnhanceJobs(userId: string): Promise<Ar
         ) {
           const jobId = String(rec?.jobId || rec?.id || keys[i].replace(/^jobs:/, "")).trim();
           if (!jobId) continue;
-          if (isAwaitingPaymentExpired(rec)) {
+          if (shouldCancelForPaymentTimeout(rec, !!opts.afterPayment)) {
             await updateJob(jobId as any, {
               status: "cancelled",
               cancelReason: "payment_timeout",

@@ -51,7 +51,9 @@ export async function releaseAwaitingPaymentJobs(userId: string): Promise<{
     return { released: 0, remainingAwaiting: 0, releasedJobIds: [] };
   }
 
-  const awaiting = await listAwaitingPaymentEnhanceJobs(userId);
+  // Called only after a confirmed payment: jobs past their 10-minute timer
+  // are still released (within the paid window) — see jobs.ts.
+  const awaiting = await listAwaitingPaymentEnhanceJobs(userId, { afterPayment: true });
   const releasedJobIds: string[] = [];
 
   for (const pending of awaiting) {
@@ -73,7 +75,7 @@ export async function releaseAwaitingPaymentJobs(userId: string): Promise<{
         requestedStage2,
       });
 
-      const enqueued = await enqueueStoredEnhanceJob(pending.jobId);
+      const enqueued = await enqueueStoredEnhanceJob(pending.jobId, { afterPayment: true });
       if (enqueued.enqueued) {
         await commitReservation({ jobId: pending.jobId });
         releasedJobIds.push(pending.jobId);

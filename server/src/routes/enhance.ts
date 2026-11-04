@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { requiredCreditsForJobOptions } from "@realenhance/shared/billing/rules.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
-import { enqueueStoredEnhanceJob, getJob, updateJob } from "../services/jobs.js";
+import { enqueueStoredEnhanceJob, getJob, isWithinPaidReleaseWindow, updateJob } from "../services/jobs.js";
 import { commitReservation, releaseReservation, reserveAllowance } from "../services/usageLedger.js";
 import { getUserById } from "../services/users.js";
 
@@ -90,7 +90,10 @@ export function enhanceRouter() {
       return res.status(409).json({ error: "invalid_job_state", status });
     }
 
-    if (isExpired(rec.expiresAt)) {
+    // Resume runs after the customer comes back from paying: within the paid
+    // window a job past its 10-minute timer is still resumed (it only goes
+    // ahead if the credits are there — checked below).
+    if (isExpired(rec.expiresAt) && !isWithinPaidReleaseWindow(rec)) {
       await updateJob(jobId as any, {
         status: "cancelled",
         cancelReason: "payment_timeout",
@@ -130,7 +133,7 @@ export function enhanceRouter() {
         requestedStage2,
       });
 
-      const enqueued = await enqueueStoredEnhanceJob(jobId);
+      const enqueued = await enqueueStoredEnhanceJob(jobId, { afterPayment: true });
       if (!enqueued.enqueued) {
         await releaseReservation({ jobId });
         return res.status(409).json({ error: "enqueue_failed" });
