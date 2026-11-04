@@ -36,6 +36,7 @@ import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
 import { EmptyStateLaunchpad } from "@/components/ui/empty-state-launchpad";
 import { friendlyEditError } from "@/lib/edit-errors";
+import { creditCoverageFor } from "@/lib/credit-coverage";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
@@ -801,6 +802,8 @@ interface PersistedBatchJob {
 // Stable placeholder for restored (non-image) file blobs so the UI never shows a broken icon
 const RESTORED_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 90'><rect width='120' height='90' fill='%23e5e7eb'/><path d='M43 30h34l4 6h8a5 5 0 015 5v27a5 5 0 01-5 5H31a5 5 0 01-5-5V41a5 5 0 015-5h8l4-6z' fill='%23d1d5db'/><circle cx='60' cy='53' r='12' fill='%23cbd5e1'/><circle cx='60' cy='53' r='7' fill='%239ca3af'/><text x='50%' y='82%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='10' fill='%239ca3af'>Preview</text></svg>";
 const TERMINAL_BATCH_RETENTION_MS = 72 * 60 * 60 * 1000;
+// Hero Pack: one-off, no subscription (server/src/routes/billing.ts).
+const HERO_PACK_CREDITS = 7;
 
 function normalizeJobStatus(raw: string | undefined): 'processing' | 'completed' | 'failed' | 'cancelled' | 'awaiting_payment' {
   const val = (raw || "").toLowerCase();
@@ -1575,6 +1578,8 @@ export default function BatchProcessor({
   const editingImagesRef = useRef<Set<number>>(new Set());
   const pendingEditJobByIndexRef = useRef<Record<number, PendingEditJobState>>({});
   const preEditResultSnapshotRef = useRef<Record<number, any>>({});
+  // The credit pop-up for a part-paid batch is offered once per batch.
+  const partialPaymentPromptShownRef = useRef(false);
   const preEditDisplayStageSnapshotRef = useRef<Record<number, DisplayOutputKey | undefined>>({});
   const preEditStageUrlsRef = useRef<Record<number, { stage2: string | null; stage1B: string | null; stage1A: string | null }>>({});
   const editInFlightSourceUrlRef = useRef<Record<number, string>>({});
@@ -2528,8 +2533,124 @@ export default function BatchProcessor({
     toast,
   ]);
 
+  // What the credits cover, photo by photo in batch order (each photo's own
+  // quote: 1 credit, or 2 for a staged room when that switch is on). The
+  // pop-up used to offer "7 credits for $19" with no word on how far that
+  // goes — a 29-photo batch needing ~50 credits (Nov 2026).
+  const creditCoverage = useMemo(
+    () => creditCoverageFor(
+      batchCreditEstimateInputs.map((x) => Number(x.credits) || 1),
+      Math.max(0, Number(creditGateModal.availableCredits) || 0),
+      HERO_PACK_CREDITS,
+    ),
+    [batchCreditEstimateInputs, creditGateModal.availableCredits]
+  );
+
+  // "Process the first N photos now": runs the photos the current credits
+  // cover (the server checks each one's credits as it resumes it) and marks
+  // the rest as not processed — they are cancelled, never charged.
+  const [processingCoveredNow, setProcessingCoveredNow] = useState(false);
+  const handleProcessCoveredNow = useCallback(async () => {
+    const pendingJobIds = creditGateModal.pendingJobIds;
+    if (!pendingJobIds.length) return;
+    setProcessingCoveredNow(true);
+    try {
+      const resumed: string[] = [];
+      let stopAt = pendingJobIds.length;
+      for (let i = 0; i < pendingJobIds.length; i += 1) {
+        const resp = await apiFetch("/api/enhance/resume", {
+          method: "POST",
+          body: JSON.stringify({ jobId: pendingJobIds[i] }),
+        }).catch(() => null);
+        const data: any = resp ? await resp.json().catch(() => ({})) : {};
+        if (data?.status === "processing") {
+          resumed.push(pendingJobIds[i]);
+          continue;
+        }
+        stopAt = i;
+        break;
+      }
+      const notProcessed = pendingJobIds.slice(stopAt);
+      await Promise.all(
+        notProcessed.map((jobId) =>
+          apiFetch("/api/enhance/cancel", { method: "POST", body: JSON.stringify({ jobId }) }).catch(() => null)
+        )
+      );
+      clearPendingEnhancementJobs();
+      setPendingRestoreSession(null);
+      setShowPendingRestoreBanner(false);
+      setCreditGateModal((prev) => ({ ...prev, open: false, pendingJobIds: [] }));
+      if (!resumed.length) {
+        toast({ title: "Nothing started", description: "There weren't enough credits for the first photo. Add credits to continue.", variant: "destructive" });
+        return;
+      }
+      // Jobs come back in batch order: job i is card i.
+      const scopeBatchId = activeBatchIdRef.current;
+      pendingJobIds.forEach((jobId, i) => { jobIdToIndexRef.current[jobId] = i; });
+      updateBatchResults(scopeBatchId, (prev) => {
+        const copy = prev ? [...prev] : [];
+        for (let i = stopAt; i < pendingJobIds.length; i += 1) {
+          copy[i] = {
+            ...(copy[i] || {}),
+            index: i,
+            status: "failed",
+            uiStatus: "error",
+            notProcessedForCredits: true,
+            error: "Not processed — not enough credits. Add credits and run this photo again.",
+          };
+        }
+        return copy;
+      }, "covered-now-split");
+      setRunState("running");
+      setJobIds(resumed);
+      setCancelIds(resumed);
+      setJobId(resumed[0] || "");
+      setActiveTab("enhance");
+      toast({
+        title: `Processing ${resumed.length} photo${resumed.length === 1 ? "" : "s"}`,
+        description: notProcessed.length
+          ? `${notProcessed.length} photo${notProcessed.length === 1 ? " was" : "s were"} not processed (not enough credits) and won't be charged.`
+          : "All photos are processing.",
+      });
+      await startPollingExistingBatch(resumed);
+    } finally {
+      setProcessingCoveredNow(false);
+    }
+  // startPollingExistingBatch is a plain function declared later in this component.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creditGateModal.pendingJobIds, toast, updateBatchResults]);
+
   const handleCancelPendingEnhancement = useCallback(async () => {
     const pendingJobIds = creditGateModal.pendingJobIds;
+    // Part of the batch is already processing: drop only the photos still
+    // waiting for payment (marked not processed), keep the rest running.
+    if (runState === "running" && pendingJobIds.length > 0) {
+      await Promise.all(
+        pendingJobIds.map((jobId) =>
+          apiFetch("/api/enhance/cancel", { method: "POST", body: JSON.stringify({ jobId }) }).catch(() => null)
+        )
+      );
+      clearPendingEnhancementJobs();
+      setPendingRestoreSession(null);
+      updateBatchResults(activeBatchIdRef.current, (prev) => {
+        const copy = prev ? [...prev] : [];
+        for (const jobId of pendingJobIds) {
+          const i = jobIdToIndexRef.current[jobId];
+          if (typeof i !== "number") continue;
+          copy[i] = {
+            ...(copy[i] || {}),
+            index: i,
+            status: "failed",
+            uiStatus: "error",
+            notProcessedForCredits: true,
+            error: "Not processed — not enough credits. Add credits and run this photo again.",
+          };
+        }
+        return copy;
+      }, "cancel-waiting-photos");
+      setCreditGateModal((prev) => ({ ...prev, open: false, pendingJobIds: [] }));
+      return;
+    }
     try {
       await Promise.all(
         pendingJobIds.map((jobId) =>
@@ -2543,7 +2664,7 @@ export default function BatchProcessor({
       resetBatchState("images");
       setCreditGateModal((prev) => ({ ...prev, open: false, pendingJobIds: [] }));
     }
-  }, [creditGateModal.pendingJobIds]);
+  }, [creditGateModal.pendingJobIds, runState, updateBatchResults]);
 
   const refreshCreditSummary = useCallback(async () => {
     if (!currentUserId) {
@@ -3514,7 +3635,7 @@ export default function BatchProcessor({
         }
         const data = await resp.json();
         const rawItems = Array.isArray(data.items) ? data.items : [];
-        const items = rawItems.filter((it: any) => {
+        let items = rawItems.filter((it: any) => {
           const incomingBatchId = String(
             it?.batchId ||
             it?.clientBatchId ||
@@ -3535,11 +3656,27 @@ export default function BatchProcessor({
 
         // Payment-gated jobs should not look like a stuck processing/preflight state.
         // Surface them as actionable credit-gate flow and stop active polling.
-        const awaitingPaymentItems = items.filter((it: any) => {
-          const raw = String(it?.status || it?.state || it?.jobState || it?.queueStatus || "").toLowerCase();
-          return raw === "awaiting_payment";
-        });
-        if (awaitingPaymentItems.length > 0) {
+        const isAwaitingPaymentItem = (it: any) =>
+          String(it?.status || it?.state || it?.jobState || it?.queueStatus || "").toLowerCase() === "awaiting_payment";
+        const awaitingPaymentItems = items.filter(isAwaitingPaymentItem);
+        // Part of the batch started (the credits bought covered some photos)
+        // and the rest still waits for payment: keep following the started
+        // photos and offer the pop-up for the rest, once. Stopping here froze
+        // the started photos' cards.
+        if (awaitingPaymentItems.length > 0 && awaitingPaymentItems.length < items.length) {
+          const waitingIds: string[] = Array.from(new Set(awaitingPaymentItems
+            .map((it: any) => String(it?.jobId || it?.id || it?.job_id || "").trim())
+            .filter(Boolean)));
+          ids = ids.filter((id) => !waitingIds.includes(id));
+          items = items.filter((it: any) => !isAwaitingPaymentItem(it));
+          if (!partialPaymentPromptShownRef.current) {
+            partialPaymentPromptShownRef.current = true;
+            const latestSummary = await refreshCreditSummary();
+            const latestAvailable = latestSummary?.availableCredits ?? Math.max(0, Number(availableCredits ?? 0));
+            const required = waitingIds.length * (extraDeclutterCredit ? 2 : 1);
+            openCreditGateModal(required, latestAvailable, waitingIds);
+          }
+        } else if (awaitingPaymentItems.length > 0) {
           const pendingJobIds: string[] = Array.from(new Set(awaitingPaymentItems
             .map((it: any) => String(it?.jobId || it?.id || it?.job_id || "").trim())
             .filter(Boolean)));
@@ -5203,16 +5340,26 @@ export default function BatchProcessor({
 
     const totalCreditsNeeded = requiredBatchCredits;
 
+    // Agency accounts: a batch short of credits is still sent, and the server
+    // holds it until payment (requiresPayment, below), so the photos survive
+    // the trip to Stripe and start as soon as the credits land. Stopping here
+    // in the browser sent the customer to pay with nothing kept (Nov 2026: a
+    // Hero Pack bought, no photos processed). Individual accounts have no
+    // server-held batch, so they still stop here.
+    // With no credits at all the server refuses the batch outright (no plan,
+    // nothing to hold against), so that case still stops here.
     const latestSummary = await refreshCreditSummary();
     const latestAvailable = latestSummary?.availableCredits ?? availableCredits;
-    if (latestAvailable !== null && totalCreditsNeeded > latestAvailable) {
+    const serverHoldsUnpaidBatch = !!user?.agencyId && Number(latestAvailable ?? 0) > 0;
+    if (!serverHoldsUnpaidBatch && latestAvailable !== null && totalCreditsNeeded > latestAvailable) {
       openCreditGateModal(totalCreditsNeeded, latestAvailable);
       return;
     }
-    
+
     try {
-      // Ensure signed in AND have enough credits (handles both in one call)
-      await ensureLoggedInAndCredits(totalCreditsNeeded);
+      // Ensure signed in AND have enough credits (handles both in one call;
+      // agency accounts only need signing in — the server gates credits).
+      await ensureLoggedInAndCredits(serverHoldsUnpaidBatch ? 0 : totalCreditsNeeded);
     } catch (e: any) {
       if (e.code === "INSUFFICIENT_CREDITS") {
         const available = Number.isFinite(e.availableCredits)
@@ -5243,6 +5390,7 @@ export default function BatchProcessor({
     });
     clientBatchIdRef.current = newBatchId;
     setClientBatchId(newBatchId);
+    partialPaymentPromptShownRef.current = false;
 
     // Clear all in-flight per-image UI flags from previous batch.
     setEditingImages(new Set());
@@ -9158,6 +9306,7 @@ export default function BatchProcessor({
                                     {isError ? (
                                         <div className="flex items-center gap-3">
                                           <StatusBadge status="failed" />
+                                          {!result?.notProcessedForCredits && (
                                           <button
                                             onClick={() => handleOpenRetryDialog(i)}
                                             disabled={!canRetryThisImage || isRetryStatusActive || retryingImages.has(i)}
@@ -9167,6 +9316,7 @@ export default function BatchProcessor({
                                             <RefreshCw className={`w-3 h-3 ${retryingImages.has(i) ? 'animate-spin' : ''}`} />
                                             Retry
                                           </button>
+                                          )}
                                           {result?.error && <span className="text-xs text-rose-600 truncate max-w-[200px]">{result.error}</span>}
                                         </div>
                                     ) : (isUiComplete || isEditComplete) ? (
@@ -9926,8 +10076,10 @@ export default function BatchProcessor({
           <DialogHeader>
             <DialogTitle>Continue Enhancing Your Images</DialogTitle>
             <DialogDescription>
-              This enhancement requires {creditGateModal.requiredCredits} credits, but your plan currently includes {creditGateModal.availableCredits} remaining. Each image uses 1 credit; staging a room that needs decluttering first uses 2.
-              Add {creditGateModal.missingCredits} more credits to continue processing your batch. Get 7 credits for $19 — no subscription required.
+              This batch of {creditCoverage.total} photo{creditCoverage.total === 1 ? "" : "s"} needs {creditGateModal.requiredCredits} credits, and you have {creditGateModal.availableCredits}. Each photo uses 1 credit; staging a room uses 2.
+              {creditCoverage.withPackCount >= creditCoverage.total
+                ? ` The Hero Pack (7 credits for $19, no subscription) covers the whole batch.`
+                : ` The Hero Pack (7 credits for $19, no subscription) covers about ${creditCoverage.withPackCount} of your ${creditCoverage.total} photos. For all of them you need ${creditGateModal.missingCredits} more credits — see Upgrade Plan for larger allowances.`}
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 space-y-1">
@@ -9936,11 +10088,26 @@ export default function BatchProcessor({
             <div>Needed: {creditGateModal.missingCredits} credits</div>
           </div>
           <div className="flex flex-wrap gap-2 pt-2">
+            {creditCoverage.nowCount > 0 && creditGateModal.pendingJobIds.length > 0 && (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={processingCoveredNow}
+                onClick={handleProcessCoveredNow}
+                data-testid="button-process-covered-now"
+              >
+                {processingCoveredNow
+                  ? "Starting…"
+                  : `Process the first ${creditCoverage.nowCount} photo${creditCoverage.nowCount === 1 ? "" : "s"} now (${creditCoverage.nowCredits} credit${creditCoverage.nowCredits === 1 ? "" : "s"})`}
+              </Button>
+            )}
             <Button
               type="button"
               onClick={handleContinueEnhancementCheckout}
             >
-              Get 7 credits for $19 — no subscription required
+              {creditCoverage.withPackCount >= creditCoverage.total
+                ? "Get 7 credits for $19 — covers this batch"
+                : `Get 7 credits for $19 — covers about ${creditCoverage.withPackCount} of ${creditCoverage.total} photos`}
             </Button>
             <Button
               type="button"
