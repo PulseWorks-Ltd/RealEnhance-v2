@@ -2436,7 +2436,47 @@ export async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Ar
     reasons,
     furnitureChanged,
     tooMuchChanged: repairPct > BLEND_MAX_REPAIR_PCT,
+    largestRepairCluster: largestTileCluster(tileFailed, GX, GY),
   };
+}
+
+// Largest group of touching (8-neighbour) failed patches.
+function largestTileCluster(failed: Uint8Array, gx: number, gy: number): number {
+  const seen = new Uint8Array(failed.length);
+  let best = 0;
+  for (let start = 0; start < failed.length; start++) {
+    if (!failed[start] || seen[start]) continue;
+    let n = 0;
+    const stack = [start];
+    seen[start] = 1;
+    while (stack.length) {
+      const k = stack.pop()!;
+      n++;
+      const x = k % gx, y = (k / gx) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= gx || ny >= gy) continue;
+        const j = ny * gx + nx;
+        if (failed[j] && !seen[j]) { seen[j] = 1; stack.push(j); }
+      }
+    }
+    if (n > best) best = n;
+  }
+  return best;
+}
+
+// Gemini's blend sometimes invents (or drops) a whole object — Nov 2026,
+// job_b44e07ee: a second bedside table and lamp. Patch repairs can't erase an
+// object cleanly (they are re-lit to the blend around them, which contains
+// it), so a faint ghost was published. When the checker finds signs of a whole
+// object, the app-built final (same room, shadows borrowed safely) is used.
+export const BLEND_MAX_APPEARED = Number(process.env.BLEND_MAX_APPEARED ?? 2);        // more "appeared or gone" patches than this
+export const BLEND_MAX_REPAIR_CLUSTER = Number(process.env.BLEND_MAX_REPAIR_CLUSTER ?? 14); // or one group of repairs bigger than this
+export function blendHasObjectChange(cb: { reasons: Record<string, number>; largestRepairCluster: number }): string | null {
+  const appeared = Number(cb.reasons?.appeared_or_gone || 0);
+  if (appeared > BLEND_MAX_APPEARED) return `${appeared} patch(es) where something appeared or vanished`;
+  if (cb.largestRepairCluster > BLEND_MAX_REPAIR_CLUSTER) return `one group of ${cb.largestRepairCluster} repaired patches (an object-sized change)`;
+  return null;
 }
 
 // Phase 3. Starts from the SAFE composite (original room + furniture, no

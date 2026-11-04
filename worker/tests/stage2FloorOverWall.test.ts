@@ -66,3 +66,16 @@ describe("floor over the real wall", () => {
     expect((await floorOverRealWall(original, staged, mask, w, h)).pctOfImage).toBe(0);
   }, 60000);
 });
+
+describe("checked blend: an object Gemini's blend invented or removed", () => {
+  const { blendHasObjectChange } = require("../src/pipeline/stage2Masked/core");
+  it("uses the app-built final when something appeared (job_b44e07ee: 9 patches, a ghost bedside table)", () => {
+    expect(blendHasObjectChange({ reasons: { appeared_or_gone: 9 }, largestRepairCluster: 14 })).toMatch(/appeared or vanished/);
+  });
+  it("uses the app-built final for one object-sized group of repairs", () => {
+    expect(blendHasObjectChange({ reasons: { appeared_or_gone: 0 }, largestRepairCluster: 24 })).toMatch(/object-sized/);
+  });
+  it("keeps the checked blend for small scattered repairs", () => {
+    expect(blendHasObjectChange({ reasons: { appeared_or_gone: 1 }, largestRepairCluster: 13 })).toBeNull();
+  });
+});

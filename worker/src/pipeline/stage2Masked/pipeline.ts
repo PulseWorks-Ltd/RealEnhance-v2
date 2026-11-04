@@ -100,6 +100,7 @@ import {
   compositeHarmonise,
   checkStructureRetained,
   checkBlend,
+  blendHasObjectChange,
   doorwayAppearsBlocked,
   askDoorAccess,
   type DoorOpening,
@@ -797,7 +798,9 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
       reasons: cb.reasons,
       furnitureRestyledAndRepaired: cb.furnitureChanged,
       usedAppBuiltInstead: cb.tooMuchChanged,
+      largestRepairCluster: cb.largestRepairCluster,
     };
+    const objectChange = blendHasObjectChange(cb);
     // Gemini's blend moved part of the room itself (a doorway or window edge
     // shifted). Patch repairs then mix moved and unmoved pieces, which shows
     // as broken lines (Bedroom 12's doorway), so the app-built final is used.
@@ -806,6 +809,11 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
     if (blendMovedRoom) {
       warn(ctx, `[${ctx.name}] checked blend: Gemini's blend moved part of the room (${row.harmonise.blendFraming.tilesChanged} wall/ceiling patch(es)) — using the app-built final instead`);
       row.checkedBlend.usedAppBuiltInstead = true;
+      checkedBlend = harmFinal;
+    } else if (objectChange) {
+      warn(ctx, `[${ctx.name}] checked blend: Gemini's blend added or removed an object (${objectChange}) — using the app-built final instead`);
+      row.checkedBlend.usedAppBuiltInstead = true;
+      row.checkedBlend.objectChange = objectChange;
       checkedBlend = harmFinal;
     } else if (cb.tooMuchChanged) {
       warn(ctx, `[${ctx.name}] checked blend: ${cb.repairPct}% of patches changed (limit ${BLEND_MAX_REPAIR_PCT}%) — using the app-built final instead`);
