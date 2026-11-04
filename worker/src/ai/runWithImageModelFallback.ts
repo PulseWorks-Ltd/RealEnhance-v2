@@ -165,6 +165,13 @@ function isTimeoutError(err: any): boolean {
   );
 }
 
+// Payment / quota errors: retrying the same model can't help.
+function isPaymentOrQuotaError(err: any): boolean {
+  if (parseErrorStatusCode(err) === 402) return true;
+  const msg = String((err as any)?.message ?? "").toLowerCase();
+  return msg.includes("payment_required") || msg.includes("lack sufficient credits") || msg.includes("quota");
+}
+
 function isRetryableModelError(err: any): boolean {
   const status = parseErrorStatusCode(err);
   if (status === 429) return true;
@@ -512,49 +519,73 @@ export async function runImageGenerationPrimaryThenFallbackViaRest({
     fallbackModel,
   });
 
+  // The primary (a 2K model) gets a second try before the fallback: the
+  // fallback (gemini-2.5-flash-image) only makes ~1 MP, which delivery then
+  // enlarges, so a passing hiccup (overload, timeout, no image) on the
+  // primary meant a visibly softer image (Nov 2026). Payment/quota errors
+  // skip the second try — it can't succeed. STAGE_PRIMARY_ATTEMPTS sets the
+  // number of tries (default 2; 1 = old behaviour).
+  const primaryAttempts = Math.max(1, Math.min(3, Number(process.env.STAGE_PRIMARY_ATTEMPTS || 2)));
   let primaryError: any = null;
   let primaryMissingImage = false;
   let shouldTryFallback = false;
-  try {
-    const requestStartedAt = Date.now();
-    const resp = await generateContentViaRest({ apiKey, model: primaryModel, body: baseRequestBody });
-    logGeminiUsage({
-      ctx: {
-        jobId: meta.jobId,
-        imageId: meta.imageId,
-        stage: meta.stage,
-        attempt: Number.isFinite(meta.attempt) ? Number(meta.attempt) : 1,
-      },
-      model: primaryModel,
-      callType: meta.callType || "image_generation",
-      response: resp,
-      latencyMs: Date.now() - requestStartedAt,
-    });
+  for (let primaryTry = 1; primaryTry <= primaryAttempts; primaryTry++) {
+    primaryError = null;
+    primaryMissingImage = false;
+    shouldTryFallback = false;
+    let canRetryPrimary = false;
+    try {
+      const requestStartedAt = Date.now();
+      const resp = await generateContentViaRest({ apiKey, model: primaryModel, body: baseRequestBody });
+      logGeminiUsage({
+        ctx: {
+          jobId: meta.jobId,
+          imageId: meta.imageId,
+          stage: meta.stage,
+          attempt: Number.isFinite(meta.attempt) ? Number(meta.attempt) : 1,
+        },
+        model: primaryModel,
+        callType: meta.callType || "image_generation",
+        response: resp,
+        latencyMs: Date.now() - requestStartedAt,
+      });
 
-    const validation = isValidImageResponse(resp);
-    const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-    console.info(`[GEMINI][${context}] Primary attempt (REST) with ${primaryModel} parts=${parts.length} responseHasInlineImage=${validation.valid}`);
+      const validation = isValidImageResponse(resp);
+      const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
+      console.info(`[GEMINI][${context}] Primary attempt (REST) with ${primaryModel} try=${primaryTry}/${primaryAttempts} parts=${parts.length} responseHasInlineImage=${validation.valid}`);
 
-    if (!validation.valid) {
-      logNoImageResponse(meta, stageLabel, primaryModel, parts);
-      primaryMissingImage = true;
-      shouldTryFallback = true;
-      primaryError = new Error(`Primary model ${primaryModel} ${validation.reason}`);
-      console.warn(`[stage${stageLabel}] Gemini primary (REST) failed: ${validation.reason} → falling back to ${fallbackModel}`);
-    } else {
-      console.info(`[GEMINI][${context}] Success with primary model ${primaryModel} (REST)`);
-      console.log(`[stage${stageLabel}] Completed using model: ${primaryModel} (REST)`);
-      return { resp, modelUsed: primaryModel };
+      if (!validation.valid) {
+        logNoImageResponse(meta, stageLabel, primaryModel, parts);
+        primaryMissingImage = true;
+        shouldTryFallback = true;
+        canRetryPrimary = true;
+        primaryError = new Error(`Primary model ${primaryModel} ${validation.reason}`);
+        console.warn(`[stage${stageLabel}] Gemini primary (REST) failed (try ${primaryTry}/${primaryAttempts}): ${validation.reason}`);
+      } else {
+        console.info(`[GEMINI][${context}] Success with primary model ${primaryModel} (REST)${primaryTry > 1 ? ` on try ${primaryTry}` : ""}`);
+        console.log(`[stage${stageLabel}] Completed using model: ${primaryModel} (REST)`);
+        return { resp, modelUsed: primaryModel };
+      }
+    } catch (err) {
+      primaryError = err;
+      logGeminiError(`${context}:${primaryModel}`, err);
+      shouldTryFallback = isRetryableModelError(err);
+      canRetryPrimary = shouldTryFallback && !isPaymentOrQuotaError(err);
+      if (shouldTryFallback) {
+        console.warn(`[stage${stageLabel}] Gemini primary (REST) failed with retryable error (try ${primaryTry}/${primaryAttempts}): ${(err as any)?.message || err}`);
+      } else {
+        console.error(`[stage${stageLabel}] Gemini primary (REST) failed with non-retryable error: ${(err as any)?.message || err} → not using fallback`);
+      }
     }
-  } catch (err) {
-    primaryError = err;
-    logGeminiError(`${context}:${primaryModel}`, err);
-    shouldTryFallback = isRetryableModelError(err);
-    if (shouldTryFallback) {
-      console.warn(`[stage${stageLabel}] Gemini primary (REST) failed with retryable error: ${(err as any)?.message || err} → falling back to ${fallbackModel}`);
-    } else {
-      console.error(`[stage${stageLabel}] Gemini primary (REST) failed with non-retryable error: ${(err as any)?.message || err} → not using fallback`);
-    }
+    if (!canRetryPrimary || primaryTry >= primaryAttempts) break;
+    const waitMs = parseErrorStatusCode(primaryError) === 429 ? 5000 : 2000;
+    console.warn(`[stage${stageLabel}] Retrying primary ${primaryModel} in ${waitMs}ms before falling back to ${fallbackModel}`);
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+
+  if (shouldTryFallback) {
+    // A clear marker: this image is about to be made at ~1 MP and enlarged.
+    console.warn(`[LOW_RES_FALLBACK] stage=${stageLabel} job=${meta.jobId || ""} image=${meta.imageId || ""} primary=${primaryModel} fallback=${fallbackModel} reason="${String(primaryError?.message || primaryError || "").slice(0, 200)}"`);
   }
 
   if (!shouldTryFallback) {
