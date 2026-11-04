@@ -30,8 +30,8 @@ import { Modal } from "./Modal";
 import { EditModal } from "./EditModal";
 import { CompareSlider } from "./CompareSlider";
 import { RegionEditor } from "./region-editor";
-import { AdjustWorkspace } from "./adjust/AdjustWorkspace";
-import { EditModeSwitch, type EditMode } from "./adjust/EditModeSwitch";
+import { ToastAction } from "@/components/ui/toast";
+import { ADJUST_TITLE } from "./adjust/AdjustPanel";
 import type { AdjustSaveResult } from "@/lib/adjust/api";
 import { RetryDialog } from "./retry-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -1567,8 +1567,26 @@ export default function BatchProcessor({
   // Preview/edit modal state
   const [previewImage, setPreviewImage] = useState<PreviewModalImage | null>(null);
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
-  // Edit modal opens on the free Adjust sliders; AI Edit is one click away.
-  const [editMode, setEditMode] = useState<EditMode>("adjust");
+  // When true, the Edit Image screen opens with "Adjust lighting & colour" showing
+  // (used by the "fine-tune" prompt after an edit finishes).
+  const [openAdjustOnEdit, setOpenAdjustOnEdit] = useState(false);
+  const editImageRef = useRef<(index: number, opts?: { adjust?: boolean }) => void>(() => {});
+  const announcedEditJobsRef = useRef<Set<string>>(new Set());
+  // After an edit finishes, offer the free lighting & colour fine-tune.
+  const announceEditComplete = (idx: number, jobId?: string | null) => {
+    const key = String(jobId || `idx-${idx}-${Date.now()}`);
+    if (announcedEditJobsRef.current.has(key)) return;
+    announcedEditJobsRef.current.add(key);
+    toast({
+      title: `Photo ${idx + 1} edited`,
+      description: "Want to brighten it or fine-tune the colour? It's free.",
+      action: (
+        <ToastAction altText={ADJUST_TITLE} onClick={() => editImageRef.current(idx, { adjust: true })}>
+          {ADJUST_TITLE}
+        </ToastAction>
+      ),
+    });
+  };
   const [activeEditSource, setActiveEditSource] = useState<{ sourceUrl: string; sourceStage: SourceStageLabel; sourceJobId: string; currentCardJobId: string | null; imageId: string | null } | null>(null);
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
@@ -4776,6 +4794,7 @@ export default function BatchProcessor({
                 return next;
               });
               setEditCompletedImages(prev => new Set(prev).add(idx));
+              announceEditComplete(idx, polledId);
               if (pendingEditStateForIndex.autoSwitchToEdited !== false) {
                 setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
               }
@@ -4850,6 +4869,9 @@ export default function BatchProcessor({
                 return next;
               });
               setEditCompletedImages(prev => new Set(prev).add(idx));
+              if (polledId && (regionEditJobIdsRef.current.has(polledId) || pendingEditStateForIndex?.jobId === polledId)) {
+                announceEditComplete(idx, polledId);
+              }
               if (hasFreshPendingEditArtifact || !!regionEditArtifactUrl) {
                 if (pendingEditStateForIndex?.autoSwitchToEdited !== false) {
                   setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
@@ -6320,7 +6342,7 @@ export default function BatchProcessor({
   }, [editingImages, getEditSourceForIndex, results, retryLoadingImages, retryingImages]);
 
   // Handle edit image - resolve URL before opening editor
-  const handleEditImage = (imageIndex: number) => {
+  const handleEditImage = (imageIndex: number, opts?: { adjust?: boolean }) => {
     const item = results[imageIndex];
     if (!item) {
       console.error('[EDIT][load_source] No result data for index:', imageIndex);
@@ -6458,7 +6480,7 @@ export default function BatchProcessor({
     }
 
     setActiveEditSource({ sourceUrl: imageUrl, sourceStage: urlSource, sourceJobId: sourceJobId, currentCardJobId, imageId });
-    setEditMode("adjust");
+    setOpenAdjustOnEdit(!!opts?.adjust);
     setEditingImageIndex(imageIndex);
     setRegionEditorOpen(true);
   };
@@ -6499,6 +6521,8 @@ export default function BatchProcessor({
     setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: url }));
     setProcessedImages(prev => Array.from(new Set([...prev, url])));
   };
+
+  editImageRef.current = handleEditImage;
 
   const closeEditModal = () => {
     setRegionEditorOpen(false);
@@ -9687,21 +9711,12 @@ export default function BatchProcessor({
       {/* RegionEditor Modal - all edit controls and enlarged image are inside the modal */}
       {regionEditorOpen && editingImageIndex !== null && activeEditSource && (
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); if (editingImageIndex !== null) { setEditingImages(prev => { const next = new Set(prev); next.delete(editingImageIndex); return next; }); } setEditingImageIndex(null); setActiveEditSource(null); }} maxWidth="full" contentClassName="w-screen h-screen max-w-none !p-0 !m-0 !rounded-none border-0 overflow-hidden" className="h-full w-full !p-0 !m-0 !space-y-0 bg-transparent">
-          {editMode === "adjust" ? (
-          <AdjustWorkspace
-            sourceUrl={activeEditSource.sourceUrl}
-            sourceImageId={activeEditSource.imageId}
-            sourceJobId={activeEditSource.sourceJobId}
-            onClose={closeEditModal}
-            onSwitchToAiEdit={() => setEditMode("ai")}
-            onSaved={(saved) => {
+          <RegionEditor
+            initialAdjustOpen={openAdjustOnEdit}
+            onAdjustSaved={(saved) => {
               handleAdjustSaved(editingImageIndex, saved);
               closeEditModal();
             }}
-          />
-          ) : (
-          <RegionEditor
-            headerSlot={<EditModeSwitch active="ai" onSelect={(m) => m === "adjust" && setEditMode("adjust")} />}
             source="batch"
             initialImageUrl={activeEditSource.sourceUrl}
             editSourceUrl={activeEditSource.sourceUrl}
@@ -10022,7 +10037,6 @@ export default function BatchProcessor({
               // The error toast is already shown by RegionEditor, so we don't duplicate it here
             }}
           />
-          )}
         </Modal>
       )}
 

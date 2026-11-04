@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { pool } from '../db/index.js';
+import { findByPublicUrlRedis, recordEnhancedImageRedis } from '@realenhance/shared';
 import { getJob } from './jobs.js';
 import { createEnhancedImage } from './enhancedImages.js';
 import { getS3ObjectBuffer, getS3SignedUrl, uploadOutputBufferToS3 } from '../utils/s3.js';
@@ -227,6 +228,10 @@ export async function saveAdjustedVersion(params: {
   });
   await pool.query(`UPDATE enhanced_images SET adjustments = $1::jsonb WHERE id = $2`, [JSON.stringify(adjustments), record.id]);
 
+  // Free-edit allowance: map the new file to the same image record as its
+  // source, so saving slider changes never hands out a fresh set of free edits.
+  await linkAdjustedUrlToSourceImage(params.user.id, params.query.url, full.url, full.key);
+
   console.log('[photo-adjust] saved', {
     imageId: record.id,
     parentImageId: source.parentImageId,
@@ -250,4 +255,47 @@ export async function saveAdjustedVersion(params: {
     parentImageId: source.parentImageId,
     adjustments,
   };
+}
+
+async function linkAdjustedUrlToSourceImage(userId: string, sourceUrl: string | null | undefined, newUrl: string, newKey: string) {
+  if (!sourceUrl) return;
+  try {
+    const found = await findByPublicUrlRedis(userId, sourceUrl);
+    if (!found?.imageId) return;
+    await recordEnhancedImageRedis({
+      userId,
+      imageId: found.imageId,
+      publicUrl: newUrl,
+      baseKey: newKey.split('/').pop() || newKey,
+      versionId: found.versionId || `adjust:${newKey}`,
+      stage: 'edit',
+    });
+  } catch (err) {
+    console.warn('[photo-adjust] could not link adjusted image to its source record (non-blocking)', err);
+  }
+}
+
+/**
+ * Which image's free-edit allowance an edit should count against. Adjusted
+ * versions share the allowance of the photo they were adjusted from.
+ */
+export async function resolveEditAllowanceImageId(imageId: string): Promise<string> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(imageId)) return imageId;
+  try {
+    const res = await pool.query(
+      `WITH RECURSIVE chain AS (
+         SELECT id, parent_image_id, source, 0 AS depth FROM enhanced_images WHERE id = $1
+         UNION ALL
+         SELECT p.id, p.parent_image_id, p.source, c.depth + 1
+           FROM chain c JOIN enhanced_images p ON p.id = c.parent_image_id
+          WHERE c.source = 'adjust' AND c.depth < 10
+       )
+       SELECT id FROM chain WHERE source IS DISTINCT FROM 'adjust' ORDER BY depth ASC LIMIT 1`,
+      [imageId]
+    );
+    return res.rows[0]?.id ? String(res.rows[0].id) : imageId;
+  } catch (err) {
+    console.warn('[photo-adjust] allowance lookup failed (non-blocking)', err);
+    return imageId;
+  }
 }

@@ -4,7 +4,7 @@
  * Displays previously enhanced/edited images grouped by property folder.
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -22,8 +22,8 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { ImageOff, Loader2, Info, Download, Pencil, Folder, X } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { RegionEditor } from '@/components/region-editor';
-import { AdjustWorkspace } from '@/components/adjust/AdjustWorkspace';
-import { EditModeSwitch, type EditMode } from '@/components/adjust/EditModeSwitch';
+import { ToastAction } from '@/components/ui/toast';
+import { ADJUST_TITLE } from '@/components/adjust/AdjustPanel';
 import type { SourceStageLabel } from '@/lib/edit-source';
 
 const GALLERY_FETCH_LIMIT = 5000;
@@ -87,7 +87,8 @@ export default function EnhancedHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<EnhancedImageListItem | null>(null);
   const [editingImage, setEditingImage] = useState<EnhancedImageListItem | null>(null);
-  const [editMode, setEditMode] = useState<EditMode>('adjust');
+  // Open the Edit Image screen with "Adjust lighting & colour" showing (post-edit prompt).
+  const [openAdjustOnEdit, setOpenAdjustOnEdit] = useState(false);
   const [editStatusByImageId, setEditStatusByImageId] = useState<Record<string, HistoryEditStatus>>({});
   const [deleteCandidate, setDeleteCandidate] = useState<EnhancedImageListItem | null>(null);
   const [deletingImageIds, setDeletingImageIds] = useState<Record<string, boolean>>({});
@@ -146,6 +147,18 @@ export default function EnhancedHistoryPage() {
     }
     return image.jobId;
   }, [allImages]);
+
+  // Post-edit prompt: open the new edited photo straight into the sliders.
+  const allImagesRef = useRef<EnhancedImageListItem[]>([]);
+  allImagesRef.current = allImages;
+  const openAdjustForUrl = useCallback((url: string, editedFrom: EnhancedImageListItem) => {
+    const path = (u?: string | null) => {
+      try { return new URL(String(u)).pathname; } catch { return String(u || '').split('?')[0]; }
+    };
+    const match = allImagesRef.current.find((i) => path(i.publicUrl) === path(url));
+    setOpenAdjustOnEdit(true);
+    setEditingImage(match || { ...editedFrom, id: '', publicUrl: url, source: 'region-edit' });
+  }, []);
 
   const editIndexByImageId = useMemo(() => {
     const imageById = new Map(allImages.map((image) => [String(image.id), image]));
@@ -267,7 +280,7 @@ export default function EnhancedHistoryPage() {
       return;
     }
 
-    setEditMode('adjust');
+    setOpenAdjustOnEdit(false);
     setEditingImage(image);
   }, [toast]);
 
@@ -642,21 +655,12 @@ export default function EnhancedHistoryPage() {
           contentClassName="w-screen h-screen max-w-none !p-0 !m-0 !rounded-none border-0 overflow-hidden"
           className="h-full w-full !p-0 !m-0 !space-y-0 bg-transparent"
         >
-          {editMode === 'adjust' ? (
-          <AdjustWorkspace
-            sourceUrl={editingImage.publicUrl}
-            sourceImageId={editingImage.id}
-            sourceJobId={editingImage.jobId}
-            onClose={() => setEditingImage(null)}
-            onSwitchToAiEdit={() => setEditMode('ai')}
-            onSaved={() => {
+          <RegionEditor
+            initialAdjustOpen={openAdjustOnEdit}
+            onAdjustSaved={() => {
               setEditingImage(null);
               void fetchImages();
             }}
-          />
-          ) : (
-          <RegionEditor
-            headerSlot={<EditModeSwitch active="ai" onSelect={(m) => m === 'adjust' && setEditMode('adjust')} />}
             source="history"
             initialImageUrl={editingImage.publicUrl}
             originalImageUrl={editingImage.originalUrl || undefined}
@@ -677,16 +681,27 @@ export default function EnhancedHistoryPage() {
                 [String(editingImage.id)]: 'failed',
               }));
             }}
-            onComplete={() => {
+            onComplete={(result) => {
+              const edited = editingImage;
               setEditStatusByImageId((current) => ({
                 ...current,
-                [String(editingImage.id)]: 'success',
+                [String(edited.id)]: 'success',
               }));
               setEditingImage(null);
               void fetchImages();
+              if (result?.imageUrl) {
+                toast({
+                  title: 'Photo edited',
+                  description: "Want to brighten it or fine-tune the colour? It's free.",
+                  action: (
+                    <ToastAction altText={ADJUST_TITLE} onClick={() => openAdjustForUrl(result.imageUrl, edited)}>
+                      {ADJUST_TITLE}
+                    </ToastAction>
+                  ),
+                });
+              }
             }}
           />
-          )}
         </Modal>
       )}
 

@@ -15,6 +15,9 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { AdjustControls, AdjustEntryCard, AdjustPreview } from "./adjust/AdjustPanel";
+import { useAdjustEditor } from "./adjust/useAdjustEditor";
+import type { AdjustSaveResult } from "@/lib/adjust/api";
 import { Brush, ZoomIn, ZoomOut, Move, RotateCcw, Sparkles, Loader2, Download } from "lucide-react";
 import { toPublicText } from "@/lib/publicText";
 
@@ -68,8 +71,10 @@ interface RegionEditorProps {
   initialSceneType?: "auto" | "interior" | "exterior";
   initialRoomType?: string;
   source?: "batch" | "history";
-  /** Optional content shown above the sidebar title (e.g. the Adjust / AI Edit switch). */
-  headerSlot?: React.ReactNode;
+  /** Open with the "Adjust lighting & colour" sliders already showing. */
+  initialAdjustOpen?: boolean;
+  /** Called after the slider adjustments are saved as a new version. */
+  onAdjustSaved?: (result: AdjustSaveResult) => void;
 }
 
 export function RegionEditor({
@@ -90,9 +95,11 @@ export function RegionEditor({
   initialSceneType,
   initialRoomType,
   source = "batch",
-  headerSlot,
+  initialAdjustOpen = false,
+  onAdjustSaved,
 }: RegionEditorProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [adjustOpen, setAdjustOpen] = useState<boolean>(initialAdjustOpen);
   const [previewUrl, setPreviewUrl] = useState<string | null>(
     initialImageUrl || null,
   );
@@ -1298,10 +1305,27 @@ export function RegionEditor({
     }
   }, [previewUrl, sourceImageId, sourceJobId, toast]);
 
+  // ---- Adjust lighting & colour (free slider edits, saved as a new version)
+  const adjustSourceUrl = editSourceUrl || initialImageUrl || "";
+  const adjustSourceRef = /^https?:\/\//i.test(adjustSourceUrl)
+    ? { sourceUrl: adjustSourceUrl, sourceImageId: sourceImageId || null, sourceJobId: sourceJobId || null }
+    : null;
+  const adjustEditor = useAdjustEditor(adjustSourceRef, adjustOpen);
+
+  const closeAdjust = () => {
+    if (adjustEditor.dirty && !window.confirm("Discard your lighting & colour changes?")) return;
+    adjustEditor.discard();
+    setAdjustOpen(false);
+  };
+
+  const handleSaveAdjustments = async () => {
+    const result = await adjustEditor.save();
+    if (result) onAdjustSaved?.(result);
+  };
+
   return (
     <div className="grid h-screen w-screen grid-cols-1 grid-rows-[minmax(0,1fr)_auto] bg-slate-50 rounded-none overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)_320px]">
       <aside className="h-full border-b border-slate-200 bg-white p-6 lg:border-b-0 lg:border-r lg:overflow-y-auto flex flex-col">
-        {headerSlot ? <div className="mb-4">{headerSlot}</div> : null}
         <div className="space-y-2">
           <h2 className="text-xl font-semibold text-slate-900">Edit Image</h2>
           <p className="text-sm text-slate-600">
@@ -1323,15 +1347,17 @@ export function RegionEditor({
           </div>
         )}
 
-        <div className="mt-6 min-h-[220px] rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Controls</p>
-          <p className="mt-2 text-sm text-slate-600">
-            Sidebar placeholder for advanced edit controls.
-          </p>
-        </div>
+        {adjustSourceRef && (
+          adjustOpen ? (
+            <AdjustControls editor={adjustEditor} onBack={closeAdjust} />
+          ) : (
+            <AdjustEntryCard onOpen={() => setAdjustOpen(true)} disabled={regionEditMutation.isPending} />
+          )
+        )}
       </aside>
 
       <section ref={workspaceRef} className="relative flex flex-1 items-center justify-center h-full w-full min-h-0 bg-[#f1f5f9] overflow-hidden lg:col-start-2">
+        {adjustOpen && <AdjustPreview editor={adjustEditor} />}
         <div className="flex h-full w-full items-center justify-center p-0">
           {previewUrl ? (
             <div className="relative flex flex-1 h-full w-full items-center justify-center overflow-hidden">
@@ -1459,7 +1485,12 @@ export function RegionEditor({
       </section>
 
       <aside className="h-full border-t border-slate-200 bg-white p-6 lg:col-start-3 lg:border-t-0 lg:border-l lg:overflow-y-auto flex flex-col">
-        <div className="space-y-2 flex-1">
+        <div className={`space-y-2 flex-1 ${adjustOpen ? "pointer-events-none opacity-50" : ""}`} aria-disabled={adjustOpen}>
+          {adjustOpen && (
+            <p className="rounded-md bg-slate-100 p-2 text-xs text-slate-600">
+              Go back to editing to describe a change. Lighting & colour changes are saved separately.
+            </p>
+          )}
           <Label htmlFor="instructions" className="text-sm font-medium text-slate-800">
             Describe what you want to add, remove, or replace
           </Label>
@@ -1467,6 +1498,7 @@ export function RegionEditor({
             id="instructions"
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
+            disabled={adjustOpen}
             placeholder="Describe what you want to add, remove, or replace..."
             data-testid="input-instructions"
             className={`min-h-[220px] w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-action-500 ${mode === "edit" && !instructions.trim() ? "border-red-200 focus-visible:ring-red-300" : "border-slate-300"}`}
@@ -1482,6 +1514,7 @@ export function RegionEditor({
               onClick={clearMask}
               variant="outline"
               size="sm"
+              disabled={adjustOpen}
               data-testid="button-clear-mask"
             >
               Clear Mask
@@ -1503,7 +1536,11 @@ export function RegionEditor({
         </div>
 
         <div className="px-4 py-2 text-xs text-slate-500 lg:px-6 lg:py-3 flex items-center justify-center">
-          <span>White areas will be edited. Alt/Ctrl + drag to pan, scroll to zoom.</span>
+          <span>
+            {adjustOpen
+              ? "Lighting & colour changes are free and saved as a new version."
+              : "White areas will be edited. Alt/Ctrl + drag to pan, scroll to zoom."}
+          </span>
         </div>
 
         <div className="px-4 py-2 lg:px-6 lg:py-3 flex items-center justify-end gap-3">
@@ -1511,6 +1548,7 @@ export function RegionEditor({
             type="button"
             variant="outline"
             onClick={() => {
+              if (adjustOpen && adjustEditor.dirty && !window.confirm("Discard your lighting & colour changes?")) return;
               pollingAbortRef.current.abort = true;
               onCancel?.();
             }}
@@ -1519,6 +1557,17 @@ export function RegionEditor({
             Cancel
           </Button>
 
+          {adjustOpen ? (
+            <Button
+              type="button"
+              onClick={handleSaveAdjustments}
+              disabled={!adjustEditor.canSave}
+              data-testid="button-save-adjustments"
+              className="bg-action-600 text-white hover:bg-action-700"
+            >
+              {adjustEditor.saving ? "Saving..." : "Save adjustments"}
+            </Button>
+          ) : (
           <Button
             type="button"
             onClick={handleSubmit}
@@ -1528,6 +1577,7 @@ export function RegionEditor({
           >
             {regionEditMutation.isPending ? "Applying edit..." : "Apply Edit"}
           </Button>
+          )}
         </div>
       </div>
     </div>

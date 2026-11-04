@@ -8,6 +8,7 @@ import { enqueueEditJob, enqueueRegionEditJob, getJob } from "../services/jobs.j
 import { computeFallbackVersionKey, getJobMetadata, recordEnhancedImageRedis, saveJobMetadata } from "@realenhance/shared/imageStore";
 import { getRedis } from "@realenhance/shared/redisClient.js"; // AUDIT FIX: idempotency guard
 import { findScopedEnhancedImageByUrl } from "../services/enhancedImages.js";
+import { resolveEditAllowanceImageId } from "../services/photoAdjust.js";
 import { consumeFreeEditCount } from "../services/usageLedger.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
@@ -526,9 +527,11 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       resolvedImageId: record.imageId || record.id || null,
     });
 
-    const editCounterJobId = `edit_counter:${record.imageId || record.id}`;
+    // Adjusted versions (free slider edits) share their source photo's allowance.
+    const allowanceImageId = await resolveEditAllowanceImageId(String(record.imageId || record.id));
+    const editCounterJobId = `edit_counter:${allowanceImageId}`;
     const editUse = await consumeFreeEditCount({
-      imageId: String(record.imageId || record.id),
+      imageId: allowanceImageId,
       userId: sessUser.id,
     });
     if (!editUse.allowed) {

@@ -6,6 +6,7 @@
 declare module '@realenhance/shared' {
   // Loosely typed – enough for TS to be happy, runtime uses the real implementation
   export function findByPublicUrlRedis(...args: any[]): Promise<any>;
+  export function recordEnhancedImageRedis(...args: any[]): Promise<void>;
 
   export type FairShareDecision = {
     canStart: boolean;
