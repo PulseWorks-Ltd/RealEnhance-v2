@@ -182,6 +182,44 @@ describe("bed fit and photo-edge rules", () => {
     expect(bed.placement).not.toMatch(/centered/);
     expect((brief as any).bedSpace.bedsideTables).toBe(1);
   });
+  it("wall runs off the photo but is long enough: the whole bed stays in the photo (job_12279efd)", () => {
+    const p = plan({ bed: "queen", bedsideTables: 1, wallRunsOffPhoto: true, wallMetres: 3.6 }, ["to the right of the bed, toward the far corner"]);
+    const { brief, changed } = makeBedPlanConservative(p, "bedroom");
+    const bed = brief.layout.find((l: any) => l.item === "Queen bed")!;
+    expect(changed.join(" ")).toMatch(/long enough/);
+    expect(bed.placement).toMatch(/headboard stays in place toward the far corner and is never cut off by the photo edge — only the foot of the bed may run off the photo/);
+    expect(bed.placement).not.toMatch(/may cut off the near side|whole bed/);
+  });
+  it("wall runs off the photo and is short: the photo edge may still cut the bed off", () => {
+    const p = plan({ bed: "queen", bedsideTables: 1, wallRunsOffPhoto: true, wallMetres: 2.1 }, ["far side"]);
+    const bed = makeBedPlanConservative(p, "bedroom").brief.layout.find((l: any) => l.item === "Queen bed")!;
+    expect(bed.placement).toMatch(/may cut off the near side or foot of the bed/);
+  });
+  it("a bed planned under a window gets the window's position in the staging prompt (job_12279efd)", () => {
+    const { bedFitsWall, windowAboveBed } = require("../src/pipeline/roomBrief");
+    const b: any = {
+      roomSummary: "An empty bedroom.", camera: "From the doorway.",
+      landmarks: [
+        { id: "L1", type: "window", description: "high horizontal strip window on the wall on the left of the photo", box: [0.142, 0.249, 0.477, 0.477] },
+        { id: "L2", type: "window", description: "large window overlooking greenery on the wall straight ahead", box: [0.589, 0.316, 0.84, 0.588] },
+      ],
+      walls: [], zones: [], relationships: [], avoid: [], keepUntouched: [],
+      bedSpace: { bed: "queen", bedsideTables: 1, wallMetres: 3.6 },
+      layout: [{ item: "Queen bed", placement: "against the wall on the left of the photo, beneath the high horizontal window" }],
+    };
+    expect(bedFitsWall(b)).toBe(true);
+    expect(windowAboveBed(b).description).toMatch(/high horizontal/);
+    const prompt = buildStage2PromptFromRoomBrief(b, { roomType: "bedroom" });
+    expect(prompt).toMatch(/BED POSITION — the bed's headboard is centred under the high horizontal strip window .* about 14–48% of the way across the photo/);
+    expect(prompt).toMatch(/Keep the bed at true queen size for this room; if it doesn't all fit in the photo, let the photo edge cut off the foot of the bed, never the headboard\./);
+    expect(prompt).not.toMatch(/whole bed stays inside/);
+    // The plan itself still has no coordinates (its checker would reject them).
+    expect(JSON.stringify(b.layout)).not.toMatch(/%/);
+  });
+  it("no BED POSITION when the bed isn't planned under a window", () => {
+    const b: any = { roomSummary: "", camera: "", landmarks: [{ id: "L1", type: "window", description: "window", box: [0.1, 0.2, 0.3, 0.4] }], walls: [], zones: [], relationships: [], avoid: [], keepUntouched: [], layout: [{ item: "Queen bed", placement: "against the plain right wall" }] };
+    expect(buildStage2PromptFromRoomBrief(b, { roomType: "bedroom" })).not.toMatch(/BED POSITION/);
+  });
   it("turns a single 'set of 2' bedside tables entry into one table (production Image 02 plan)", () => {
     const p = {
       bedSpace: { bed: "queen", bedsideTables: 2, wallRunsOffPhoto: true },

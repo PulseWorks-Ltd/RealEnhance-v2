@@ -411,6 +411,56 @@ function tidyToOneBedsideTable(brief: any): any {
   };
 }
 
+// Bed width by size (metres), for "does the wall hold it" sums.
+export function bedWidthMetres(bed: unknown): number {
+  const b = String(bed || "").toLowerCase();
+  if (/super ?king/.test(b)) return 2.0;
+  if (/king single/.test(b)) return 1.1;
+  if (/king/.test(b)) return 1.85;
+  if (/queen/.test(b)) return 1.55;
+  if (/double/.test(b)) return 1.4;
+  if (/single/.test(b)) return 0.95;
+  return 1.55;
+}
+
+/**
+ * Does the bed wall (as the planner measured it) hold the bed and its
+ * bedside tables with room to spare? Only then may the whole set-up be kept
+ * inside the photo; on a short wall the photo edge has to cut the bed off.
+ * Unknown length = not known to fit.
+ */
+export function bedFitsWall(brief: RoomBrief): boolean {
+  const bs: any = (brief as any)?.bedSpace || {};
+  const wall = Number(bs.wallMetres);
+  if (!Number.isFinite(wall) || wall <= 0) return false;
+  const tables = Math.max(0, Math.min(2, Number(bs.bedsideTables) || 0));
+  return wall >= bedWidthMetres(bs.bed) + tables * 0.5 + 0.4;
+}
+
+/**
+ * The window the plan puts the bed under, from the landmarks (best word match
+ * with the bed's placement), as its box [x1, y1, x2, y2] on 0-1. null = the
+ * bed isn't planned under a window, or which window is unclear.
+ */
+export function windowAboveBed(brief: RoomBrief): { description: string; box: number[] } | null {
+  const bed = (brief?.layout || []).find((it: any) => /\bbed\b/i.test(String(it?.item || "")) && !/bedside|side table|bed end|bench/i.test(String(it?.item || "")));
+  const placement = String((bed as any)?.placement || "");
+  if (!/\b(beneath|below|under(neath)?)\b[^.;]*\bwindow\b/i.test(placement)) return null;
+  const windows = (brief?.landmarks || []).filter((l: any) => l?.type === "window" && Array.isArray(l?.box) && l.box.length === 4);
+  if (!windows.length) return null;
+  const stop = new Set(["window", "windows", "wall", "the", "with", "photo", "this", "that", "from", "into", "onto", "large", "small", "beneath", "below", "under", "against"]);
+  const words = (t: string) => new Set(String(t || "").toLowerCase().match(/[a-z]{4,}/g)?.filter((w) => !stop.has(w)) || []);
+  const pw = words(placement);
+  let best: any = null, bestScore = -1, tie = false;
+  for (const w of windows) {
+    let score = 0;
+    for (const x of words((w as any).description)) if (pw.has(x)) score++;
+    if (score > bestScore) { best = w; bestScore = score; tie = false; } else if (score === bestScore) tie = true;
+  }
+  if (windows.length > 1 && (bestScore <= 0 || tie)) return null;
+  return { description: String(best.description || "the window"), box: best.box.map(Number) };
+}
+
 /**
  * Conservative bed plan (code, not AI judgement). The planner keeps judging
  * walls longer than they are (Oct 2026, production: "ample room for a queen
@@ -469,8 +519,22 @@ export function makeBedPlanConservative(brief: RoomBrief, roomType: string): { b
       layout = layout.filter((it: any) => it !== near);
       changed.push(`dropped the near bedside table "${String(near?.placement || "").slice(0, 80)}"`);
     }
+    // A wall long enough for the bed and one table: keep the whole bed in
+    // the photo. "The photo edge may cut off the near side" let Gemini slide
+    // the bed toward the camera and out of the photo instead of under the
+    // planned window (Nov 2026, job_12279efd: a 3.6 m wall, queen bed).
+    const fits = bedFitsWall({ ...brief, bedSpace: { ...(brief as any).bedSpace, bedsideTables: 1 } } as any);
     layout = layout.map((it: any) => {
       if (!isBed(it)) return it;
+      if (fits) {
+        // Pin the headboard, not the whole bed: "the whole bed stays inside
+        // the photo" invites Gemini to shrink the bed to fit the frame.
+        changed.push("bed headboard kept toward the far corner, only the foot may run off the photo (wall runs off the photo, but is long enough)");
+        return {
+          ...it,
+          placement: `${String(it.placement || "").replace(/\.\s*$/, "")} — toward the far corner of that wall, with its single bedside table on the far side; nothing stands beyond the point where the wall's skirting runs off the photo edge; the headboard stays in place toward the far corner and is never cut off by the photo edge — only the foot of the bed may run off the photo`,
+        };
+      }
       changed.push("bed pushed into the far corner (wall runs off the photo)");
       return {
         ...it,
@@ -869,6 +933,25 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     avoid.push("Do not add a second TV anywhere — the room already has its TV on the wall bracket. A TV unit, if any, goes directly beneath that TV, nowhere else.");
   }
   const zones = (brief.zones || []).filter((z) => z?.name && z?.description).map((z) => `${z.name}: ${asSentence(z.description)}`);
+  // Bed planned under a window: say where that window is in the picture, so
+  // the headboard lands under it (Nov 2026, job_12279efd: "beneath the high
+  // window" alone, and Gemini put the bed at the near end, cut off by the
+  // photo edge). Coordinates live only here, never in the plan itself.
+  const bedWindow = /bed/i.test(String(opts.roomType || "")) && !brief.tightShot ? windowAboveBed(brief) : null;
+  const bedPositionLines: string[] = [];
+  if (bedWindow) {
+    const [x1, , x2] = bedWindow.box;
+    const pct = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 100);
+    // True size stated, and only the foot may be cut off: asking for the
+    // whole bed inside the photo invites a shrunken bed (owner review).
+    const bedItem = (brief.layout || []).find((it: any) => /\bbed\b/i.test(String(it?.item || "")) && !/bedside|side table|bed end|bench/i.test(String(it?.item || "")));
+    const bedSize = (String((brief as any).bedSpace?.bed || "").match(/super ?king|king single|king|queen|double|single/i)?.[0]
+      || String((bedItem as any)?.item || "").match(/super ?king|king single|king|queen|double|single/i)?.[0]
+      || "real-world").toLowerCase();
+    bedPositionLines.push(
+      `BED POSITION — the bed's headboard is centred under the ${String(bedWindow.description).replace(/^(the|a|an)\s+/i, "").replace(/[.\s]+$/, "")}, which spans about ${pct(x1)}–${pct(x2)}% of the way across the photo. Keep the bed at true ${bedSize} size for this room; if it doesn't all fit in the photo, let the photo edge cut off the foot of the bed, never the headboard.`,
+    );
+  }
 
   return [
     `RULE 1 — THE CAMERA IS LOCKED. This outranks everything below, including the layout. The result must be this exact photo with furniture added: the same size, framing, zoom, viewpoint and perspective. Every wall edge, corner, window, door, the ceiling line and the edges of the floor stay at exactly the same place in the picture. If the furniture does not fit, change the furniture — make it smaller, move it slightly, let the edge of the photo cut it off, or leave it out. Never zoom in or out, crop, widen, rotate, tilt or move the viewpoint to make room for furniture.`,
@@ -883,6 +966,7 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
       ? [`LAYOUT — place these pieces exactly as described:`, ...layoutLines]
       : [`LAYOUT — add no large furniture in this room. Add only the small finishing touches described below.`]),
     ...(relationships.length ? [``, `How the pieces relate: ${relationships.join(" ")}`] : []),
+    ...(bedPositionLines.length ? [``, ...bedPositionLines] : []),
     ...(brief.tightShot
       ? [``, `TIGHT SHOT — this photo shows very little floor. Put furniture only on the floor that is visible. Let the bottom or side edge of the photo cut off the foot or near side of the bed or other large pieces, exactly as in a real photo taken from the doorway. Add no rug. The floor, skirting boards and walls stay exactly where they are — never raise the floor or push a wall back to make more room.`]
       : []),
