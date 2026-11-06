@@ -1,3 +1,4 @@
+import { GEMINI_STRONG_TEXT_MODEL, auditModelEnvVars } from "./ai/modelDefaults";
 import type { ComplianceVerdict } from "./ai/compliance";
 import { Worker, Job } from "bullmq";
 import { Queue, QueueEvents } from "bullmq";
@@ -186,7 +187,7 @@ function getDeliveryExportSharpenTuning() {
     preResizeDenoiseEnabled: String(process.env.DELIVERY_EXPORT_PRE_RESIZE_DENOISE_ENABLED ?? "true").toLowerCase() !== "false",
   };
 }
-const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
+const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || GEMINI_STRONG_TEXT_MODEL);
 // SINGLE-AUTHORITY: composite local validator always blocks
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" = "block";
 // This flag now governs ONLY the Stage 1B pre-flight use of
@@ -1768,7 +1769,7 @@ async function runStage1BFullFurnitureGeminiValidation(opts: {
   const existingModelSelection =
     process.env.GEMINI_STAGE1B_FULL_VALIDATOR_MODEL ||
     process.env.GEMINI_VALIDATOR_MODEL_STRONG ||
-    "gemini-2.5-pro";
+    GEMINI_STRONG_TEXT_MODEL;
   const model = opts.modelOverride || existingModelSelection;
   const stage1A = toBase64(opts.stage1APath).data;
   const stage1B = toBase64(opts.stage1BPath).data;
@@ -2235,7 +2236,7 @@ If layout has changed in any way → hardFail = true`
     .join("\n\n") || undefined;
 
   const modelToUse = layoutRisk
-    ? "gemini-2.5-pro"
+    ? GEMINI_STRONG_TEXT_MODEL
     : undefined;
 
   const geminiResult = await runStage1BFullFurnitureGeminiValidation({
@@ -15077,7 +15078,7 @@ All openings must remain identical in position and size to the original image.`;
                 imageId: payload.imageId,
                 attempt,
                 action: "run",
-                model: "gemini-2.5-pro",
+                model: GEMINI_STRONG_TEXT_MODEL,
                 refreshMode: isRefreshValidationFlow,
                 heuristicHintsSuppressed: isRefreshValidationBehavior,
                 advisoryCount: complianceAdvisorySignals.length,
@@ -15098,7 +15099,7 @@ All openings must remain identical in position and size to the original image.`;
                 jobId: payload.jobId,
                 imageId: payload.imageId,
                 attempt,
-                modelOverride: "gemini-2.5-pro",
+                modelOverride: GEMINI_STRONG_TEXT_MODEL,
               });
               emitValidatorBlockEnd(payload.jobId, "compliance", Date.now() - complianceBlockStartedAt);
 
@@ -16846,6 +16847,8 @@ if (process.env.DEBUG_INVARIANT_REPLAY === "true") {
 
 // Log validator configuration on startup
 logValidationModes();
+// Warn about Railway variables still naming a retiring Gemini model (Dec 2026).
+auditModelEnvVars((message) => nLog(message));
 nLog('\n'); // Force flush
 
 void logSceneOnnxStartupStatus((message) => nLog(message));

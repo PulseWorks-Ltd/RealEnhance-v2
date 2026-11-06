@@ -1,3 +1,4 @@
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { getGeminiClient, modelSupportsImageConfig, closestGeminiAspectRatio } from "../ai/gemini";
 import { generateContentViaRest } from "../ai/geminiRestClient";
 import { siblingOutPath, toBase64, writeImageDataUrl, logImageContentHash, normalizePortraitImageForGemini } from "../utils/images";
@@ -219,7 +220,7 @@ export async function runGeminiStructuralReviewPro(
 
   const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
-    model: "gemini-2.5-pro",
+    model: GEMINI_STRONG_TEXT_MODEL,
     contents: [
       {
         role: "user",
@@ -244,7 +245,7 @@ export async function runGeminiStructuralReviewPro(
       stage: "validator",
       attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
     },
-    model: "gemini-2.5-pro",
+    model: GEMINI_STRONG_TEXT_MODEL,
     callType: "validator",
     response,
     latencyMs: Date.now() - requestStartedAt,

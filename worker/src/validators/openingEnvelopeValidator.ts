@@ -45,6 +45,7 @@
 // bbox reveal and the flooring check's baseline material description
 // reveal don't: it's a targeted structural FACT to look for, not a content
 // description sitting next to a yes/no question for the model to echo.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { nLog } from "../logger";
 import { ISSUE_TYPES, classifyIssueTier } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
@@ -85,7 +86,7 @@ function buildStructuralHint(o: StructuralOpening): string | undefined {
   return undefined;
 }
 
-const OPENING_ENVELOPE_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro");
+const OPENING_ENVELOPE_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || GEMINI_STRONG_TEXT_MODEL);
 
 type Materiality = "material" | "low_materiality";
 type EnrichedOpeningResult = OcclusionCombinedResult & { materiality: Materiality; materialityReason: string; type: string; description: string };

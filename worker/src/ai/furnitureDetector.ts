@@ -1,5 +1,6 @@
 // server/ai/furnitureDetector.ts
 
+import { GEMINI_FAST_TEXT_MODEL, GEMINI_STRONG_TEXT_MODEL } from "./modelDefaults";
 import { GoogleGenAI } from '@google/genai';
 
 export interface DetectedItem {
@@ -344,7 +345,7 @@ function isMovableFurnitureItem(item: FurnitureItem): boolean {
 }
 
 export const FURNITURE_DETECTOR_PROVIDER = "google-genai" as const;
-export const FURNITURE_DETECTOR_RUNTIME_MODEL = "gemini-2.5-flash" as const;
+export const FURNITURE_DETECTOR_RUNTIME_MODEL: string = GEMINI_FAST_TEXT_MODEL;
 type FurnitureDetectorRuntimeModel = typeof FURNITURE_DETECTOR_RUNTIME_MODEL;
 
 export function resolveFurnitureDetectorModel(_sceneType?: "interior" | "exterior"): FurnitureDetectorRuntimeModel {
@@ -838,7 +839,7 @@ function isValidRoomStateResult(result: { state?: RoomState } | null | undefined
 async function callGeminiRoomState(
   ai: GoogleGenAI,
   imageBase64: string,
-  model: "gemini-2.0-flash" | "gemini-2.5-flash"
+  model: string
 ): Promise<{ state?: RoomState }> {
   const prompt = `You are classifying an interior real estate image for deterministic staging workflow routing.
 
@@ -887,9 +888,9 @@ export async function detectRoomStateWithRetry(
   ai: GoogleGenAI,
   imageBase64: string
 ): Promise<RoomStateDetectionResult> {
-  const models: Array<{ model: "gemini-2.0-flash" | "gemini-2.5-flash"; attempts: number }> = [
-    { model: "gemini-2.0-flash", attempts: 2 },
-    { model: "gemini-2.5-flash", attempts: 2 },
+  const models: Array<{ model: string; attempts: number }> = [
+    { model: GEMINI_FAST_TEXT_MODEL, attempts: 2 },
+    { model: GEMINI_STRONG_TEXT_MODEL, attempts: 2 },
   ];
 
   let globalAttemptIndex = 0;

@@ -1,3 +1,4 @@
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { nLog, vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { grokAnalyzeImages, grokVisionModel } from "../ai/grok";
@@ -299,7 +300,7 @@ Return JSON only:
 {"baseline_material":"carpet|wood|tile|stone|concrete|mixed|unknown","staged_material":"carpet|wood|tile|stone|concrete|mixed|unknown","baseline_material_visible":true|false,"staged_material_visible":true|false,"staged_floor_fully_covered_by_movable_items":true|false,"material_changed":true|false,"ok":true|false,"reason":"short explanation","confidence":0.0-1.0}`;
   logFloorPhaseEnd(options?.jobId, "prompt_build", Date.now() - promptBuildStartedAt);
 
-  const model = process.env.FLOOR_VALIDATOR_MODEL || "gemini-2.5-pro";
+  const model = process.env.FLOOR_VALIDATOR_MODEL || GEMINI_STRONG_TEXT_MODEL;
 
   try {
     let text: string;

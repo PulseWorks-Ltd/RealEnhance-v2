@@ -55,9 +55,10 @@
 // "true". It should be observed against real "Enhance Exterior Outlook" jobs
 // — specifically watched for false positives against the permitted sky/
 // weather change — before being trusted to alter job output.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { callValidatorModel } from "./validatorModelCall";
 
-const STAGE1A_EXTERIOR_HALLUCINATION_CHECK_MODEL = String(process.env.STAGE1A_EXTERIOR_HALLUCINATION_CHECK_MODEL || "gemini-2.5-flash");
+const STAGE1A_EXTERIOR_HALLUCINATION_CHECK_MODEL = String(process.env.STAGE1A_EXTERIOR_HALLUCINATION_CHECK_MODEL || GEMINI_STRONG_TEXT_MODEL);
 // A classification/audit call on two images, not image generation — kept on
 // the fast tier by default since this runs on every "Enhance Exterior
 // Outlook" job that actually reaches Gemini (see stage1A.ts's gating).

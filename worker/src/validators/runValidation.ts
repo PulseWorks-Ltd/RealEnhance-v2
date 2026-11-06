@@ -12,6 +12,7 @@
  * - Easy to enable blocking later with one-line change
  */
 
+import { GEMINI_FAST_TEXT_MODEL, GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { validateWindows } from "./windowValidator";
 import { runGlobalEdgeMetrics, runGlobalEdgeMetricsFromBuffers } from "./globalStructuralValidator";
 import { validateStage2Structural } from "./stage2StructuralValidator";
@@ -193,8 +194,8 @@ type GeminiConsensusResult = {
   finalModelUsed: string;
 };
 
-const PRIMARY_VALIDATOR_MODEL = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
-const ESCALATION_VALIDATOR_MODEL = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
+const PRIMARY_VALIDATOR_MODEL = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || GEMINI_FAST_TEXT_MODEL;
+const ESCALATION_VALIDATOR_MODEL = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || GEMINI_STRONG_TEXT_MODEL;
 const FLASH_ACCEPT_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_FLASH_ACCEPT_CONFIDENCE || 0.7);
 const PRO_MIN_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MIN_CONFIDENCE || 0.7);
 

@@ -1,9 +1,10 @@
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import type { GoogleGenAI } from "@google/genai";
 import type { LayoutPlan } from "./planner";
 
 async function callGeminiText(ai: GoogleGenAI, prompt: string): Promise<string> {
   const resp = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
+    model: GEMINI_FAST_TEXT_MODEL,
     contents: [{ role: "user", parts: [{ text: prompt }] }]
   });
   return resp.candidates?.[0]?.content?.parts?.map(p => p.text).join("") || "";

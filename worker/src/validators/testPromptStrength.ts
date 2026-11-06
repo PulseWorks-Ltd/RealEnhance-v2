@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL } from "../ai/modelDefaults";
 import { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import path from "path";
@@ -27,7 +28,7 @@ try {
 const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || detectedProject;
 const LOCATION = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
 // Using Gemini 2.0 as requested
-const MODEL = "gemini-2.0-flash"; 
+const MODEL = GEMINI_FAST_TEXT_MODEL; 
 
 // Replace this with path to local image you want to test
 const IMAGE_INPUT = "/workspaces/RealEnhance-v2/worker/test-data/Rental 03.jpg";

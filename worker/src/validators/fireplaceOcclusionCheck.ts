@@ -44,10 +44,11 @@
 // it can newly fail jobs that pass today under the existing tolerant check,
 // and it's the same class of unproven spatial-obstruction judgment those
 // other checks were gated for.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { callValidatorModel } from "./validatorModelCall";
 import type { AnchorFixture } from "./openingPreservationValidator";
 
-const FIREPLACE_OCCLUSION_CHECK_MODEL = String(process.env.FIREPLACE_OCCLUSION_CHECK_MODEL || "gemini-2.5-flash");
+const FIREPLACE_OCCLUSION_CHECK_MODEL = String(process.env.FIREPLACE_OCCLUSION_CHECK_MODEL || GEMINI_STRONG_TEXT_MODEL);
 const FIREPLACE_OCCLUSION_CHECK_TIMEOUT_MS = Math.max(0, Number(process.env.FIREPLACE_OCCLUSION_CHECK_TIMEOUT_MS || 45000));
 const FIREPLACE_OCCLUSION_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.FIREPLACE_OCCLUSION_MIN_CONFIDENCE ?? 0.7)));
 

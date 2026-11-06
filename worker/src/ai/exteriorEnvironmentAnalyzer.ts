@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import { getGeminiClient } from "./gemini";
 
 export type SceneType = "interior" | "exterior";
@@ -74,7 +75,7 @@ function finalizeLightingDecisionForEnvironment(
   });
 }
 
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = GEMINI_FAST_TEXT_MODEL;
 const GEMINI_CONFIDENCE_MIN = 0.7;
 const SCENE_CONFIDENCE_MIN = 0.65;
 const VALID_ENVIRONMENTS: ReadonlySet<EnvironmentType> = new Set([

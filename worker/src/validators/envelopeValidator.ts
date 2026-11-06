@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL, GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { nLog, vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { grokAnalyzeImages, grokVisionModel } from "../ai/grok";
@@ -27,8 +28,8 @@ function logEnvelopePhaseEnd(jobId: string | undefined, phase: string, durationM
   });
 }
 
-const ENVELOPE_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
-const ENVELOPE_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
+const ENVELOPE_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || GEMINI_FAST_TEXT_MODEL;
+const ENVELOPE_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || GEMINI_STRONG_TEXT_MODEL;
 const ENVELOPE_ESCALATION_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MIN_CONFIDENCE || 0.7);
 const ENVELOPE_HARD_FAIL_CONFIDENCE_THRESHOLD = ENVELOPE_ESCALATION_CONFIDENCE;
 

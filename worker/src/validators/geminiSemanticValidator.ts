@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL, GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
@@ -131,8 +132,8 @@ function hasStage1AOpeningSuspicion(evidence?: ValidationEvidence): boolean {
  * Model routing: LOW risk → fast model, MEDIUM/HIGH risk → strong model
  */
 function getModelForRisk(riskLevel?: RiskLevel): string {
-  const strongModel = process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-pro";
-  const fastModel = process.env.GEMINI_VALIDATOR_MODEL_FAST || "gemini-2.5-flash";
+  const strongModel = process.env.GEMINI_VALIDATOR_MODEL_STRONG || GEMINI_STRONG_TEXT_MODEL;
+  const fastModel = process.env.GEMINI_VALIDATOR_MODEL_FAST || GEMINI_FAST_TEXT_MODEL;
 
   if (!riskLevel || riskLevel === "LOW") return fastModel;
   return strongModel; // MEDIUM and HIGH → strong model
@@ -1461,7 +1462,7 @@ export async function validateStage1BStructure(
   const ai = getGeminiClient();
   const before = toBase64(beforeImage).data;
   const after = toBase64(afterImage).data;
-  const model = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
+  const model = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || GEMINI_FAST_TEXT_MODEL;
   const jobId = evidence?.jobId;
   const variant = getEvidenceGatingVariant(jobId);
   const gatingEnabled = isEvidenceGatingEnabledForJob(jobId);

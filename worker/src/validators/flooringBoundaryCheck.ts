@@ -50,6 +50,7 @@
 // openingPreservationValidator.ts) — always Gemini, independent of
 // STAGE2_VALIDATOR_MODEL, exactly like that existing baseline extraction is
 // always Gemini regardless of which model later validates the staged image.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { vDetailLog, nLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
@@ -58,7 +59,7 @@ import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSe
 import type { ValidatorOutcome } from "./validatorOutcome";
 import { HUMAN_EYE_FRAMING, isLikelyNegated, runOcclusionObservationCall, type ClassificationConfidence, type ClassifiedSignal } from "./occlusionVsRemovalCheck";
 
-const FLOORING_ZONE_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro");
+const FLOORING_ZONE_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || GEMINI_STRONG_TEXT_MODEL);
 
 // Broader than occlusionVsRemovalCheck.ts's default negation-cue pattern:
 // adds bare "no" (not just "no longer"), needed for constructions like "no

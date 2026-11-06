@@ -3,6 +3,7 @@
  * Validates images with both Gemini API and optionally Stability AI
  */
 
+import { GEMINI_FAST_TEXT_MODEL } from "../ai/modelDefaults";
 import { getGeminiClient } from '../ai/gemini';
 
 interface ValidationResult {
@@ -45,7 +46,7 @@ async function validateWithGemini(
     ];
 
     const response = await client.models.generateContent({
-      model: 'gemini-2.0-flash-exp',
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [{ role: 'user', parts }]
     });
 

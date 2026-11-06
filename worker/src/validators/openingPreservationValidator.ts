@@ -1,3 +1,4 @@
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { createHash } from "node:crypto";
 import { vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
@@ -741,7 +742,7 @@ function openingCountVariance(graphs: StructuralBaseline[]): { min: number; max:
 }
 
 const OPENING_VALIDATOR_MODEL = String(
-  process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro"
+  process.env.OPENING_PRESERVATION_MODEL || GEMINI_STRONG_TEXT_MODEL
 );
 const WINDOW_SILL_MAX_SHIFT = Number(process.env.OPENING_WINDOW_SILL_MAX_SHIFT || 0.1);
 const OPENING_APERTURE_EXPANSION_MAX = Number(process.env.OPENING_APERTURE_EXPANSION_MAX || 0.45);

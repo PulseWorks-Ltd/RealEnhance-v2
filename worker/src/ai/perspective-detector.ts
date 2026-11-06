@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import type { GoogleGenAI } from "@google/genai";
 
 interface PerspectiveCheck {
@@ -76,7 +77,7 @@ CRITICAL VALIDATION:
 CRITICAL: The camera viewpoint is locked. ANY change in camera position, angle, or viewing direction MUST be reported as "Perspective violation: ..." to ensure critical handling.`;
 
     const result = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [
         { inlineData: { mimeType: "image/png", data: originalB64 } },
         { inlineData: { mimeType: "image/png", data: editedB64 } },

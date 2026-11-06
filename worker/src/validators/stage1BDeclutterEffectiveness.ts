@@ -1,3 +1,4 @@
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
@@ -176,7 +177,7 @@ Return strict JSON only (no markdown, no extra text) with this exact schema:
 
 Confidence must be between 0 and 1.`;
 
-    const model = process.env.STAGE1B_DECLUTTER_EFFECTIVENESS_MODEL || "gemini-2.5-flash";
+    const model = process.env.STAGE1B_DECLUTTER_EFFECTIVENESS_MODEL || GEMINI_STRONG_TEXT_MODEL;
     const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
       model,
