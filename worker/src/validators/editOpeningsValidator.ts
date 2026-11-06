@@ -1,3 +1,4 @@
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import sharp from "sharp";
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
@@ -50,7 +51,7 @@ export type EditOpeningsValidationSummary = {
   };
 };
 
-const EDIT_OPENINGS_GEMINI_MODEL = String(process.env.EDIT_OPENINGS_GEMINI_MODEL || "gemini-2.5-flash");
+const EDIT_OPENINGS_GEMINI_MODEL = String(process.env.EDIT_OPENINGS_GEMINI_MODEL || GEMINI_STRONG_TEXT_MODEL);
 const MASK_MARGIN = Number(process.env.EDIT_OPENINGS_MASK_MARGIN || 0.06);
 const ROI_PADDING = Number(process.env.EDIT_OPENINGS_ROI_PADDING || 0.04);
 const log = console;

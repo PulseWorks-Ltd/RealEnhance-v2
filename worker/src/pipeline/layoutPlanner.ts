@@ -1,3 +1,4 @@
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import { focusLog } from "../utils/logFocus";
@@ -683,7 +684,7 @@ export async function planStage2Layout(
 
     const { data, mime } = toBase64(imagePath);
     const model = (ai as any).getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: GEMINI_STRONG_TEXT_MODEL,
       generationConfig: {
         temperature: 0.1,
         topP: 0.9,

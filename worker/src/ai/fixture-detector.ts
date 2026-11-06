@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import type { GoogleGenAI } from "@google/genai";
 
 interface FixtureCheck {
@@ -79,7 +80,7 @@ Compare the images and return JSON:
 CRITICAL INSTRUCTION: Carefully examine ALL fixed architectural elements listed above. Pay special attention to door/window shutters, light fixtures, and built-in components. Loose furniture and décor changes are allowed.`;
 
     const result = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [
         { inlineData: { mimeType: "image/png", data: originalB64 } },
         { inlineData: { mimeType: "image/png", data: editedB64 } },

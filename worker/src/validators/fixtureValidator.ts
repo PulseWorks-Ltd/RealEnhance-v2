@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL, GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { nLog, vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
@@ -432,8 +433,8 @@ This is NOT a stylistic check. It is a structural integrity check.`;
   logFixturePhaseEnd(jobId, "prompt_build", Date.now() - promptBuildStartedAt);
 
   const selectedModel = (occlusionRiskFinal || materialSignal.suspiciousMaterialChange)
-    ? "gemini-2.5-pro"
-    : "gemini-2.5-flash";
+    ? GEMINI_STRONG_TEXT_MODEL
+    : GEMINI_FAST_TEXT_MODEL;
 
   try {
     const requestStartedAt = Date.now();

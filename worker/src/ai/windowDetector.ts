@@ -1,4 +1,5 @@
 // server/ai/windowDetector.ts
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import type { GoogleGenAI } from "@google/genai";
 
 export interface WindowDetection {
@@ -14,7 +15,7 @@ export interface WindowDetection {
 export async function detectWindows(ai: GoogleGenAI, imageB64: string): Promise<WindowDetection> {
   try {
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [
         { inlineData: { mimeType: "image/png", data: imageB64 } },
         { 

@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import type { GoogleGenAI } from "@google/genai";
 
 /**
@@ -57,7 +58,7 @@ Return ONLY valid JSON in this exact format:
 
   try {
     const result = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [{
         role: 'user',
         parts: [

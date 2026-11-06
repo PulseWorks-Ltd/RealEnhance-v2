@@ -35,11 +35,12 @@
 // buildUniversalFeatureProtectionSection curtain-specific wording) or a
 // stricter comparison mechanism than one text-based yes/no question — not by
 // letting this specific check rescue itself.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import type { StructuralOpening } from "./openingPreservationValidator";
 import { buildSemanticReference, type PickedItem } from "./semanticItemRef";
 import { callValidatorModel } from "./validatorModelCall";
 
-const WINDOW_ARTWORK_CHECK_MODEL = String(process.env.WINDOW_ARTWORK_CHECK_MODEL || "gemini-2.5-pro");
+const WINDOW_ARTWORK_CHECK_MODEL = String(process.env.WINDOW_ARTWORK_CHECK_MODEL || GEMINI_STRONG_TEXT_MODEL);
 const WINDOW_ARTWORK_CHECK_TIMEOUT_MS = Math.max(0, Number(process.env.WINDOW_ARTWORK_CHECK_TIMEOUT_MS || 30000));
 
 export function isWindowArtworkCheckApplicable(itemType: string): boolean {

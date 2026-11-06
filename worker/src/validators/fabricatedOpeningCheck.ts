@@ -47,6 +47,7 @@
 // The combination of call 1 + call 2 into a verdict is deterministic,
 // code-side logic (see combineFabricatedOpeningCalls below) — neither call
 // is asked to render an overall pass/fail judgment itself.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { toBase64 } from "../utils/images";
 import { getGeminiClient } from "../ai/gemini";
 import { grokAnalyzeImages, grokVisionModel } from "../ai/grok";
@@ -56,7 +57,7 @@ import { ISSUE_TYPES, classifyIssueTier } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import type { StructuralBaseline } from "./openingPreservationValidator";
 
-const FABRICATED_OPENING_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro");
+const FABRICATED_OPENING_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || GEMINI_STRONG_TEXT_MODEL);
 
 function formatBbox(bbox: [number, number, number, number]): string {
   const [x1, y1, x2, y2] = bbox;

@@ -41,10 +41,11 @@
 // lights/art/decor/furniture/plants), UNIQUELY IDENTIFIABLE (no landmark
 // type that commonly recurs, e.g. "a downlight", unless unambiguously
 // distinguished).
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { buildSemanticReference, type PickedItem } from "./semanticItemRef";
 import { callValidatorModel } from "./validatorModelCall";
 
-const VANISHED_LANDMARK_CHECK_MODEL = String(process.env.VANISHED_LANDMARK_CHECK_MODEL || "gemini-2.5-pro");
+const VANISHED_LANDMARK_CHECK_MODEL = String(process.env.VANISHED_LANDMARK_CHECK_MODEL || GEMINI_STRONG_TEXT_MODEL);
 // 150s default, not the plan's original 90s estimate: live verification
 // against real Grok traffic (batch-vanish-b12-grok, openings_baseline_choice)
 // observed a genuine 93s round-trip on a small 2-item batched prompt —

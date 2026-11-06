@@ -1,4 +1,5 @@
 // server/ai/architectural-geometry-detector.ts
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import type { GoogleGenAI } from "@google/genai";
 
 export interface ArchitecturalGeometry {
@@ -34,7 +35,7 @@ export async function analyzeArchitecturalGeometry(
 ): Promise<ArchitecturalGeometry> {
   try {
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [
         { inlineData: { mimeType: "image/png", data: imageB64 } },
         { 

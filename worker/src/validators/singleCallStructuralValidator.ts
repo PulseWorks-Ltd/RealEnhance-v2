@@ -35,6 +35,7 @@
 // room-envelope/geometry-drift checking. See
 // buildSpecialistResultsFromSingleCallValidator() below for exactly how
 // this gap is surfaced to the caller rather than silently hidden.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import { logGeminiUsage } from "../ai/usageTelemetry";
@@ -42,7 +43,7 @@ import { ISSUE_TYPES, classifyIssueTier } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import type { StructuralBaseline } from "./openingPreservationValidator";
 
-const SINGLE_CALL_STRUCTURAL_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro");
+const SINGLE_CALL_STRUCTURAL_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || GEMINI_STRONG_TEXT_MODEL);
 const FRAME_EDGE_EPSILON = 0.02;
 
 export type Materiality = "material" | "low_materiality";

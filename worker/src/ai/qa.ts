@@ -1,4 +1,5 @@
 // server/ai/qa.ts
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import type { GoogleGenAI } from "@google/genai";
 
 export interface GeometryQA {
@@ -13,7 +14,7 @@ Compare two images of the same room. Decide if the edited image contains impossi
 
   try {
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [{
         role: "user",
         parts: [

@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL, withTextModelPolicy } from "./modelDefaults";
 import { GoogleGenAI } from "@google/genai";
 
 export type LayoutPlan = {
@@ -17,9 +18,9 @@ async function callGeminiText(prompt: string): Promise<string> {
     throw new Error("GEMINI_API_KEY not configured");
   }
   
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = withTextModelPolicy(new GoogleGenAI({ apiKey }));
   const resp = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
+    model: GEMINI_FAST_TEXT_MODEL,
     contents: [{ role: "user", parts: [{ text: prompt }] }]
   });
   return resp.candidates?.[0]?.content?.parts?.map(p => p.text).join("") || "";

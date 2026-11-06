@@ -38,6 +38,7 @@
 // null (caller uses the existing default prompt path). This module never
 // throws; every failure mode returns an explicit, logged fallback reason
 // instead.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import { focusLog } from "../utils/logFocus";
@@ -48,7 +49,7 @@ import {
 } from "../validators/openingPreservationValidator";
 import { checkFridgeCavityEligibility, type FridgeCavityEligibility } from "../validators/fridgeCavityCheck";
 
-const WALL_VISIBILITY_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro");
+const WALL_VISIBILITY_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || GEMINI_STRONG_TEXT_MODEL);
 
 // ── Category A: general structural locks — ALWAYS included in full,
 // regardless of room contents. Verbatim from STAGE2_PROMPT_NANO_BANANA
@@ -1510,7 +1511,7 @@ export type LivingDiningZone = {
 };
 type KitchenSignal = { present: boolean; openingId: string | null; confidence: number; evidence: string };
 
-const ZONING_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro");
+const ZONING_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || GEMINI_STRONG_TEXT_MODEL);
 
 // Multi-zone room-type expansion (2026-08-29): the zoning extraction was
 // hardcoded to a single room combination (living + dining). Generalized

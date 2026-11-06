@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import { getGeminiClient } from "./gemini";
 import { toBase64 } from "../utils/images";
 import { validatePerspectivePreservation } from "./perspective-detector";
@@ -797,7 +798,7 @@ Return ONLY the JSON, no explanatory text.`;
 
     const requestStartedAt = Date.now();
     const result = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [
         { inlineData: { mimeType: "image/png", data: originalB64 } },
         { inlineData: { mimeType: "image/png", data: editedB64 } },
@@ -811,7 +812,7 @@ Return ONLY the JSON, no explanatory text.`;
         stage: telemetry?.stage || "validator",
         attempt: Number.isFinite(telemetry?.attempt) ? Number(telemetry?.attempt) : 1,
       },
-      model: "gemini-2.0-flash",
+      model: GEMINI_FAST_TEXT_MODEL,
       callType: "validator",
       response: result,
       latencyMs: Date.now() - requestStartedAt,

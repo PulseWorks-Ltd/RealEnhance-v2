@@ -1,5 +1,6 @@
 // server/ai/spatialAnalyzer.ts
 
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import { GoogleGenAI } from '@google/genai';
 
 export type WallPosition = 'left' | 'right' | 'front' | 'back' | 'ceiling' | 'floor';
@@ -355,7 +356,7 @@ ONLY JSON. No extra text.`;
 
   try {
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [{
         role: "user",
         parts: [

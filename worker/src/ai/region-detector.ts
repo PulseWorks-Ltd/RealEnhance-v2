@@ -15,6 +15,7 @@ export interface StagingRegion {
   reasoning: string;
 }
 
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 import type { GoogleGenAI } from "@google/genai";
 
 /**
@@ -29,7 +30,7 @@ export async function detectStagingRegion(
 
   try {
     const result = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [{
         role: 'user',
         parts: [

@@ -20,6 +20,7 @@
 // not detection power, so the old validator is not called from this file
 // anymore. floorIntegrityValidator.ts itself is untouched and still backs
 // the original ("on") validator chain in runValidation.ts.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { ISSUE_TYPES, classifyIssueTier } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import type { StructuralBaseline, AnchorFixture } from "./openingPreservationValidator";
@@ -42,7 +43,7 @@ import {
   type OcclusionObservationRaw,
 } from "./occlusionVsRemovalCheck";
 
-const FIXTURE_FLOORING_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro");
+const FIXTURE_FLOORING_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || GEMINI_STRONG_TEXT_MODEL);
 
 type Materiality = "material" | "low_materiality";
 type EnrichedFixtureResult = OcclusionCombinedResult & { materiality: Materiality; materialityReason: string; type: string; description: string };

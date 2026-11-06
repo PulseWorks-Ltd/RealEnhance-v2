@@ -1,3 +1,4 @@
+import { GEMINI_STRONG_TEXT_MODEL } from "./modelDefaults";
 import { getGeminiClient } from "./gemini";
 import { toBase64 } from "../utils/images";
 import { focusLog } from "../utils/logFocus";
@@ -105,7 +106,7 @@ export async function buildLayoutContext(imageUrl: string): Promise<LayoutContex
 
     // Build request
     const model = (ai as any).getGenerativeModel({
-      model: "gemini-2.5-flash", // Low-cost model for analysis
+      model: GEMINI_STRONG_TEXT_MODEL, // planning quality matters; one call per job
       generationConfig: {
         temperature: 0.1, // Very low for deterministic output
         maxOutputTokens: 512, // Small output

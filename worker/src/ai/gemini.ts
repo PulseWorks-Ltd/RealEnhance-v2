@@ -272,6 +272,7 @@ ${(userPrompt || prompt).trim()}`.trim()
 
   return chosen.buf;
 }
+import { withTextModelPolicy } from "./modelDefaults";
 import type { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import path from "path";
@@ -373,7 +374,8 @@ export function getGeminiClient(): GoogleGenAI {
   }
   // The SDK exports types; instantiate via any to avoid type ctor mismatches
   const Ctor: any = require("@google/genai").GoogleGenAI;
-  return new Ctor({ apiKey }) as any;
+  // Swap retiring text models and give text/JSON answers enough room (see modelDefaults.ts).
+  return withTextModelPolicy(new Ctor({ apiKey })) as any;
 }
 
 function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; strictMode?: boolean }): string {

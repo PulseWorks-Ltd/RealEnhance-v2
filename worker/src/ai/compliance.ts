@@ -1,3 +1,4 @@
+import { GEMINI_STRONG_TEXT_MODEL } from "./modelDefaults";
 import type { GoogleGenAI } from "@google/genai";
 import type { Stage2ValidationMode } from "../validators/stage2ValidationMode";
 import { logGeminiUsage } from "./usageTelemetry";
@@ -53,7 +54,7 @@ async function ask(
   telemetry?: { jobId?: string; imageId?: string; attempt?: number },
   phasePrefix?: "structural" | "placement"
 ) {
-  const complianceModel = modelOverride || process.env.GEMINI_COMPLIANCE_MODEL || "gemini-2.5-flash";
+  const complianceModel = modelOverride || process.env.GEMINI_COMPLIANCE_MODEL || GEMINI_STRONG_TEXT_MODEL;
   const requestStartedAt = Date.now();
   const resp = await (ai as any).models.generateContent({
     model: complianceModel,

@@ -34,9 +34,10 @@
 // to insert one that was actually warranted — the same risk asymmetry
 // windowArtworkCheck.ts's own header documents for its stricter, one-sided
 // verdict.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import { callValidatorModel } from "./validatorModelCall";
 
-const FRIDGE_CAVITY_CHECK_MODEL = String(process.env.FRIDGE_CAVITY_CHECK_MODEL || "gemini-2.5-pro");
+const FRIDGE_CAVITY_CHECK_MODEL = String(process.env.FRIDGE_CAVITY_CHECK_MODEL || GEMINI_STRONG_TEXT_MODEL);
 const FRIDGE_CAVITY_CHECK_TIMEOUT_MS = Math.max(0, Number(process.env.FRIDGE_CAVITY_CHECK_TIMEOUT_MS || 30000));
 
 export type TriState = "yes" | "no" | "cannot_tell";

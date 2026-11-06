@@ -1,3 +1,4 @@
+import { GEMINI_FAST_TEXT_MODEL } from "./modelDefaults";
 // server/ai/analyze.ts
 // Returns "interior" | "exterior" | "unknown"
 export async function detectScene(opts: {
@@ -10,7 +11,7 @@ export async function detectScene(opts: {
     const imageB64 = opts.imageBuffer.toString("base64");
     
     const response = await opts.ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_FAST_TEXT_MODEL,
       contents: [
         { inlineData: { mimeType: opts.mimeType, data: imageB64 } },
         { text: "Is this an interior or exterior real estate photo? Reply with ONLY the word 'interior' or 'exterior'." }

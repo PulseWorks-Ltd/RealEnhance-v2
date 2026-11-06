@@ -21,11 +21,12 @@
 // baseline's own description, since a canvas hung directly over a mirror/
 // glass door could itself obscure the very surface a fresh look would need
 // to correctly classify) to indicate glass/mirror/sliding.
+import { GEMINI_STRONG_TEXT_MODEL } from "../ai/modelDefaults";
 import type { StructuralOpening } from "./openingPreservationValidator";
 import { buildSemanticReference, type PickedItem } from "./semanticItemRef";
 import { callValidatorModel } from "./validatorModelCall";
 
-const DOOR_ARTWORK_CHECK_MODEL = String(process.env.WINDOW_ARTWORK_CHECK_MODEL || "gemini-2.5-pro");
+const DOOR_ARTWORK_CHECK_MODEL = String(process.env.WINDOW_ARTWORK_CHECK_MODEL || GEMINI_STRONG_TEXT_MODEL);
 const DOOR_ARTWORK_CHECK_TIMEOUT_MS = Math.max(0, Number(process.env.WINDOW_ARTWORK_CHECK_TIMEOUT_MS || 30000));
 
 const DOOR_ARTWORK_TYPE_APPLICABLE = new Set(["door", "closet_door"]);
