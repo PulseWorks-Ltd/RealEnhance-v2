@@ -13,6 +13,7 @@
 //                    review of the final image: can people still walk through
 //                    the real doorways?
 
+import { RELIGHT_FINAL, compositeRelight } from "./relight";
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
@@ -198,6 +199,9 @@ function isSmallMissedUnder(m: any): boolean {
 // Largest gap (percent of photo height) under a "floating" piece that is
 // still published on the last attempt. STAGE2_FLOAT_ACCEPT_LAST_GAP_PCT=0 turns it off.
 const FLOAT_ACCEPT_LAST_GAP_PCT = Number(process.env.STAGE2_FLOAT_ACCEPT_LAST_GAP_PCT ?? 1.5);
+// Use the relit final (real room + blend lighting) even when Gemini's checked
+// blend passes. Off by default: photos that pass today keep their result.
+const FINAL_RELIT_ALWAYS = ["on", "1", "true", "yes"].includes(String(process.env.STAGE2_FINAL_RELIT_ALWAYS || "").trim().toLowerCase());
 // Floating furniture: try lining the pieces up with the real floor (see the
 // skirting line-up) before re-staging. STAGE2_FLOAT_LINE_UP=off turns it off.
 const FLOAT_LINE_UP = String(process.env.STAGE2_FLOAT_LINE_UP ?? "on").trim().toLowerCase() !== "off";
@@ -760,17 +764,34 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
         save(ctx, "9_floor_over_wall.png", noShadowPng);
       }
     }
-    const hm = await compositeHarmonise(sun.buffer, harmRaw!, tSolidPng, furnPng, hZonePng, noShadowPng);
-    harmFinal = hm.buffer;
-    Object.assign(row.harmonise, {
-      blendUsed: true,
-      colourGains: hm.colourGains,
-      shadowPctOfZone: hm.shadowPctOfZone,
-      strongestShadowPct: hm.strongestShadowPct,
-      furnitureDiffVsBlend: hm.furnitureDiffVsBlend,
-      furnitureLightingUsed: hm.furnitureLightingUsed,
-      furnitureLightingChangedPctOfImage: hm.furnitureLightingChangedPctOfImage,
-    });
+    if (RELIGHT_FINAL) {
+      // Real room + furniture, with only the blend's lighting laid on top
+      // (see relight.ts): lamp glow and shadows without any of Gemini's pixels.
+      const rl = await compositeRelight(sun.buffer, harmRaw!, tSolidPng, furnPng, hZonePng, noShadowPng);
+      harmFinal = rl.buffer;
+      Object.assign(row.harmonise, {
+        blendUsed: true,
+        relit: true,
+        colourGains: rl.colourGains,
+        strongestShadowPct: rl.strongestShadowPct,
+        strongestLightPct: rl.strongestLightPct,
+        lightingTakenPctOfZone: rl.lightingTakenPctOfZone,
+        furnitureDiffVsBlend: rl.furnitureDiffVsBlend,
+        furnitureLightingUsed: rl.furnitureLightingUsed,
+      });
+    } else {
+      const hm = await compositeHarmonise(sun.buffer, harmRaw!, tSolidPng, furnPng, hZonePng, noShadowPng);
+      harmFinal = hm.buffer;
+      Object.assign(row.harmonise, {
+        blendUsed: true,
+        colourGains: hm.colourGains,
+        shadowPctOfZone: hm.shadowPctOfZone,
+        strongestShadowPct: hm.strongestShadowPct,
+        furnitureDiffVsBlend: hm.furnitureDiffVsBlend,
+        furnitureLightingUsed: hm.furnitureLightingUsed,
+        furnitureLightingChangedPctOfImage: hm.furnitureLightingChangedPctOfImage,
+      });
+    }
   } else {
     harmFinal = safeFinal;
     row.harmonise.blendUsed = false;
@@ -810,7 +831,12 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
     // as broken lines (Bedroom 12's doorway), so the app-built final is used.
     const blendMovedRoom = (row.harmonise.blendFraming?.tilesChanged || 0) > 0;
     row.checkedBlend.blendMovedRoom = blendMovedRoom;
-    if (blendMovedRoom) {
+    if (RELIGHT_FINAL && FINAL_RELIT_ALWAYS) {
+      // Owner setting: never publish Gemini's own pixels, only its lighting.
+      row.checkedBlend.usedAppBuiltInstead = true;
+      row.checkedBlend.relitAlways = true;
+      checkedBlend = harmFinal;
+    } else if (blendMovedRoom) {
       warn(ctx, `[${ctx.name}] checked blend: Gemini's blend moved part of the room (${row.harmonise.blendFraming.tilesChanged} wall/ceiling patch(es)) — using the app-built final instead`);
       row.checkedBlend.usedAppBuiltInstead = true;
       checkedBlend = harmFinal;
