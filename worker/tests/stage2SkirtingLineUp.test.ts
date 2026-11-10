@@ -45,4 +45,22 @@ describe("skirting beside furniture: pull forward (Bedroom 05, Oct 2026)", () =>
     const empty = new Uint8Array(100 * 100);
     expect(planSkirtingLineUp([run], empty, 100, 100, realLine).ok).toBe(false);
   });
+
+  it("moves a piece whole when it reaches past the end of the wall (Nov 2026 test run, Bedroom_05: no torn duvet)", () => {
+    const m = room();
+    // The foot of the bed carries on past the corner, above the next wall's floor line.
+    for (let y = 45; y <= 60; y++) for (let x = 51; x <= 58; x++) m[y * 100 + x] = 1;
+    const plan = planSkirtingLineUp([run], m, 100, 100, realLine);
+    expect(plan.ok).toBe(true);
+    expect(plan.select![50 * 100 + 57]).toBe(1); // part of the bed beyond the wall's end moves with it
+    expect(plan.select![55 * 100 + 64]).toBe(0); // the plant still stays
+  });
+
+  it("refuses rather than tear a piece split between two walls", () => {
+    const m = new Uint8Array(100 * 100);
+    for (let y = 50; y <= 68; y++) for (let x = 40; x <= 66; x++) m[y * 100 + x] = 1; // sideboard across the corner
+    const plan = planSkirtingLineUp([{ x1Pct: 36, x2Pct: 41, widthPct: 5, dyPct: -3 }], m, 100, 100, realLine);
+    expect(plan.ok).toBe(false);
+    expect(plan.why).toMatch(/across two walls/);
+  });
 });

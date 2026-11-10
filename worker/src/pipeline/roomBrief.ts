@@ -469,6 +469,17 @@ export function windowAboveBed(brief: RoomBrief): { description: string; box: nu
  * (the one on the door side goes), and the bed is pushed to the end of the
  * wall away from the door, letting the photo edge cut it off.
  */
+/**
+ * Text with "no doors" style mentions removed. The planner often writes that
+ * the bed wall has NO door ("roughly 3.0 m wide with no doors"), which used
+ * to trip the near-a-door rule (Nov 2026 test run, Bedroom_14: the bed was
+ * pushed off-centre while another line said "centred under the window").
+ */
+export function withoutNegatedDoorMentions(text: string): string {
+  return String(text || "")
+    .replace(/\b(?:with no|has no|have no|had no|no|without(?: any| a| an)?|free of(?: any)?|(?:does|do|did)(?: not|n['’]t) (?:have|has)(?: any| a| an)?|not (?:have|has)(?: any| a| an)?|lacks?(?: any| a)?|zero)\s+(?:\w+\s+){0,2}?(?:doors?|doorways?)\b/gi, " ");
+}
+
 export function makeBedPlanConservative(brief: RoomBrief, roomType: string): { brief: RoomBrief; changed: string[] } {
   const changed: string[] = [];
   if (!/bed/i.test(String(roomType || "")) || !Array.isArray(brief?.layout)) return { brief, changed };
@@ -479,7 +490,7 @@ export function makeBedPlanConservative(brief: RoomBrief, roomType: string): { b
     String((brief as any).bedSpace?.reason || ""),
   ].join(" ");
   if (!brief.layout.some(isBed)) return { brief, changed };
-  const nearDoor = /door/i.test(bedSetupText);
+  const nearDoor = /door/i.test(withoutNegatedDoorMentions(bedSetupText));
   const offPhoto = !nearDoor && (brief as any).bedSpace?.wallRunsOffPhoto === true;
   if (!nearDoor && !offPhoto) return { brief, changed };
   // "Bedside tables (set of 2)" as ONE layout entry (production, client
@@ -948,8 +959,17 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     const bedSize = (String((brief as any).bedSpace?.bed || "").match(/super ?king|king single|king|queen|double|single/i)?.[0]
       || String((bedItem as any)?.item || "").match(/super ?king|king single|king|queen|double|single/i)?.[0]
       || "real-world").toLowerCase();
+    const windowName = String(bedWindow.description).replace(/^(the|a|an)\s+/i, "").replace(/[.\s]+$/, "");
+    const sizeLine = `Keep the bed at true ${bedSize} size for this room; if it doesn't all fit in the photo, let the photo edge cut off the foot of the bed, never the headboard.`;
+    // A code rule may have pushed the bed to one end of its wall ("must not be
+    // centred"). Saying "centred under the window" as well gave Gemini two
+    // opposite instructions (Nov 2026 test run, Bedroom_14: the bed ended up
+    // off to one side at an angle and undersized).
+    const pushedOffCentre = /must not be cent(?:red|ered)/i.test(String((bedItem as any)?.placement || ""));
     bedPositionLines.push(
-      `BED POSITION — the bed's headboard is centred under the ${String(bedWindow.description).replace(/^(the|a|an)\s+/i, "").replace(/[.\s]+$/, "")}, which spans about ${pct(x1)}–${pct(x2)}% of the way across the photo. Keep the bed at true ${bedSize} size for this room; if it doesn't all fit in the photo, let the photo edge cut off the foot of the bed, never the headboard.`,
+      pushedOffCentre
+        ? `BED POSITION — the bed's headboard goes against the same wall as the ${windowName} (which spans about ${pct(x1)}–${pct(x2)}% of the way across the photo), at the end of that wall given in the layout — not centred on the wall or under the window. The bed stands square to that wall, never at an angle. ${sizeLine}`
+        : `BED POSITION — the bed's headboard is centred under the ${windowName}, which spans about ${pct(x1)}–${pct(x2)}% of the way across the photo. ${sizeLine}`,
     );
   }
 
