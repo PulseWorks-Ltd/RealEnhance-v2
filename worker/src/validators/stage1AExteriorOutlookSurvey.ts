@@ -14,9 +14,15 @@
 //
 // Fails closed: an unclear answer, or an error on the retry too, means "not eligible".
 import { callValidatorModel } from "./validatorModelCall";
+import { GEMINI_FAST_TEXT_MODEL } from "../ai/modelDefaults";
 
 export const EXTERIOR_OUTLOOK_SURVEY_MODEL = String(process.env.STAGE1A_OUTLOOK_SURVEY_MODEL || "gemini-3.8-flash");
-const SURVEY_TIMEOUT_MS = Number(process.env.STAGE1A_OUTLOOK_SURVEY_TIMEOUT_MS || 30000);
+// Nov 2026 (test run, Bedroom_05): gemini-3.8-flash took over 30 s twice in
+// a row and the photo lost its outlook lift. The first try now gets 60 s, and
+// the retry goes to the fast model (answers in ~2 s) with its own limit.
+const SURVEY_TIMEOUT_MS = Number(process.env.STAGE1A_OUTLOOK_SURVEY_TIMEOUT_MS || 60000);
+export const EXTERIOR_OUTLOOK_SURVEY_RETRY_MODEL = String(process.env.STAGE1A_OUTLOOK_SURVEY_RETRY_MODEL || GEMINI_FAST_TEXT_MODEL);
+const SURVEY_RETRY_TIMEOUT_MS = Number(process.env.STAGE1A_OUTLOOK_SURVEY_RETRY_TIMEOUT_MS || 30000);
 // Tries per photo (a failed or timed-out call is retried; 1 = no retry).
 const SURVEY_ATTEMPTS = Math.max(1, Math.round(Number(process.env.STAGE1A_OUTLOOK_SURVEY_ATTEMPTS || 2)));
 // A view smaller than this share of the photo (box area, %) is too small to bother with.
@@ -99,9 +105,9 @@ export async function surveyExteriorOutlook(params: { imagePath: string; jobId: 
         images: [{ path: params.imagePath, label: "Photo:" }],
         systemInstruction: "You are a careful visual inspector of real-estate photos.",
         userPrompt: buildOutlookSurveyPrompt(),
-        model: EXTERIOR_OUTLOOK_SURVEY_MODEL,
+        model: attempt === 1 ? EXTERIOR_OUTLOOK_SURVEY_MODEL : EXTERIOR_OUTLOOK_SURVEY_RETRY_MODEL,
         reasonPrefix: "stage1a_outlook_survey",
-        timeoutMs: SURVEY_TIMEOUT_MS,
+        timeoutMs: attempt === 1 ? SURVEY_TIMEOUT_MS : SURVEY_RETRY_TIMEOUT_MS,
         ctx: { jobId: params.jobId, imageId: params.imageId, attempt, callLabel: "outlook_survey" },
       });
       return evaluateOutlookSurvey(raw);

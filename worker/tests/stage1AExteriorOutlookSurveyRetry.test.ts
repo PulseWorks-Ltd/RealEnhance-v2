@@ -16,6 +16,9 @@ describe("exterior outlook survey retry", () => {
     expect(call).toHaveBeenCalledTimes(2);
     expect(r.eligible).toBe(true);
     expect(r.skyToBlue).toBe(true);
+    // First try: the main model with 60 s; the retry: the fast model with 30 s.
+    expect(call.mock.calls[0][0]).toMatchObject({ model: "gemini-3.8-flash", timeoutMs: 60000 });
+    expect(call.mock.calls[1][0]).toMatchObject({ model: "gemini-3.5-flash-lite", timeoutMs: 30000 });
   });
 
   it("does not call again after a good answer", async () => {

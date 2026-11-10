@@ -3426,6 +3426,9 @@ export const SKIRTING_MIN_RUN_PCT = Number(process.env.STAGE2_SKIRTING_MIN_RUN_P
 export const SKIRTING_MAX_SHIFT_PCT = Number(process.env.STAGE2_SKIRTING_MAX_SHIFT_PCT || 8);    // never move furniture further
 
 export type SkirtingRun = { x1Pct: number; x2Pct: number; widthPct: number; dyPct: number };
+// Whole-piece rule for the line-up (share of a piece's pixels against the wall being lined up).
+export const SKIRTING_PIECE_MOVE_SHARE = Number(process.env.STAGE2_SKIRTING_PIECE_MOVE_SHARE || 0.6);
+export const SKIRTING_PIECE_STAY_SHARE = Number(process.env.STAGE2_SKIRTING_PIECE_STAY_SHARE || 0.15);
 // Where the horizon sits (fraction of the photo height from the top), for
 // "pulling" furniture forward in perspective. Real-estate photos are taken
 // about level, so it is close to the middle; small errors only change the
@@ -3538,6 +3541,29 @@ export function planSkirtingLineUp(runs: SkirtingRun[], furniture: Uint8Array, w
     let take = x >= wallX1 - margin && x <= wallX2 + margin;
     if (!take) { const f = at(x / w); take = f >= 0 && y >= f * h + floorGap; }
     if (take) { select[i] = 1; n++; if (x < sx1) sx1 = x; if (x > sx2) sx2 = x; if (y > sy2) sy2 = y; } else other++;
+  }
+  // Whole pieces only. Selecting pixel by pixel tore a bed that reached past
+  // the end of its wall: the foot of its duvet stayed while the rest moved
+  // (Nov 2026 test run, Bedroom_05). A piece mostly selected moves whole; a
+  // piece barely touched stays whole; a piece split between two walls can't
+  // be moved without tearing, so the line-up is refused.
+  for (const piece of labelComponents(furniture, w, h)) {
+    let s = 0;
+    for (const i of piece.pixels) if (select[i]) s++;
+    if (!s || s === piece.pixels.length) continue;
+    const share = s / piece.pixels.length;
+    if (share >= SKIRTING_PIECE_MOVE_SHARE) {
+      for (const i of piece.pixels) if (!select[i]) { select[i] = 1; n++; other--; }
+    } else if (share <= SKIRTING_PIECE_STAY_SHARE) {
+      for (const i of piece.pixels) if (select[i]) { select[i] = 0; n--; other++; }
+    } else {
+      return { ok: false, why: `a piece reaches across two walls (${Math.round(share * 100)}% against this one) — moving it would tear it`, run };
+    }
+  }
+  if (n) {
+    // Bounds after whole-piece changes.
+    sx1 = w; sx2 = 0; sy2 = 0;
+    for (let i = 0; i < w * h; i++) if (select[i]) { const x = i % w, y = (i - x) / w; if (x < sx1) sx1 = x; if (x > sx2) sx2 = x; if (y > sy2) sy2 = y; }
   }
   const rx1 = (run.x1Pct / 100) * w, rx2 = (run.x2Pct / 100) * w;
   if (!n || sx2 < rx1 - w * 0.03 || sx1 > rx2 + w * 0.03) return { ok: false, why: "no furniture beside the offset stretch", run };

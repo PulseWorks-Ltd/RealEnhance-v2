@@ -57,6 +57,7 @@ import {
   checkFraming,
   checkCameraAlignment,
   checkFloatingFurniture,
+  realFloorLine,
   checkFloorMoved,
   measureSkirtingOffsets,
   planSkirtingLineUp,
@@ -197,6 +198,9 @@ function isSmallMissedUnder(m: any): boolean {
 // Largest gap (percent of photo height) under a "floating" piece that is
 // still published on the last attempt. STAGE2_FLOAT_ACCEPT_LAST_GAP_PCT=0 turns it off.
 const FLOAT_ACCEPT_LAST_GAP_PCT = Number(process.env.STAGE2_FLOAT_ACCEPT_LAST_GAP_PCT ?? 1.5);
+// Floating furniture: try lining the pieces up with the real floor (see the
+// skirting line-up) before re-staging. STAGE2_FLOAT_LINE_UP=off turns it off.
+const FLOAT_LINE_UP = String(process.env.STAGE2_FLOAT_LINE_UP ?? "on").trim().toLowerCase() !== "off";
 const PUBLISH_CUT_ON_LAST_ATTEMPT = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_PUBLISH_CUT_ON_LAST_ATTEMPT || "").trim().toLowerCase());
 const CUT_UNDER_MAX_SHADOW_PCT = Number(process.env.CUT_UNDER_MAX_SHADOW_PCT || 80); // ...unless it is mostly the floor in shade
 const CLOSEUP_MAX_ADD_FACTOR = 3;     // may add at most 3x the flagged area...
@@ -1159,8 +1163,11 @@ export async function runMaskedStage2Job(p: {
         // with the real skirting when that is safe (no AI call); otherwise the
         // floor-moved check below re-stages.
         let skirtingLeft: SkirtingRun[] = [];
+        let realLineForLineUp: number[] = [];
+        let lineUpApplied = false;
         if (FLOOR_MOVED_CHECK) {
           const sk = await measureSkirtingOffsets(original, ctx.staged, layers.solid, w, h).catch((e: any) => ({ runs: [] as SkirtingRun[], checkedColsPct: 0, error: String(e?.message || e) }));
+          realLineForLineUp = (sk as any).realLine || [];
           row.skirtingBeside = { runs: sk.runs, checkedColsPct: sk.checkedColsPct }; // (not the floor line itself: it would bloat the logged report)
           skirtingLeft = sk.runs;
           if (sk.runs.length) {
@@ -1182,6 +1189,7 @@ export async function runMaskedStage2Job(p: {
                 core: ap.masks.core!,
                 solidPng: await maskToPng(solid, w, h),
               };
+              lineUpApplied = true;
               io.save?.("3b_skirting_lined_up.webp", await sharp(ctx.staged).webp({ quality: 90 }).toBuffer());
               const after = await measureSkirtingOffsets(original, ctx.staged, layers.solid, w, h).catch(() => ({ runs: [] as SkirtingRun[], checkedColsPct: 0 }));
               row.skirtingLineUp.after = after.runs;
@@ -1200,6 +1208,51 @@ export async function runMaskedStage2Job(p: {
             .catch((e: any) => ({ ok: false as const, patches: [], notes: [`plan error: ${String(e?.message || e)}`] }));
           row.floorPatch = { planned: floorPlan.ok, notes: floorPlan.notes };
           (floorPlan.ok ? p.log : p.warn)?.(`[${ctx.name}] floor patch ${floorPlan.ok ? "planned" : "not possible"}: ${floorPlan.notes.join("; ")}`);
+        }
+        // Floating furniture the skirting line-up couldn't see: the furniture
+        // itself hides the skirting beside it, so the offset was never measured
+        // there (Nov 2026 test run, Bedroom_05: the bedside table 3% above the
+        // floor, the only measured offset on an empty wall). The floating
+        // check's own gap is that offset: line the pieces on that wall up with
+        // the real floor (lower and bigger, no AI call). Kept only if the
+        // floating check then passes.
+        if (row.floatingCheck.floating && !floorPlan?.ok && SKIRTING_LINE_UP && FLOAT_LINE_UP && !lineUpApplied) {
+          const floatRuns: SkirtingRun[] = row.floatingCheck.runs.map((r: any) => ({ x1Pct: r.x1Pct, x2Pct: r.x2Pct, widthPct: +(r.x2Pct - r.x1Pct).toFixed(1), dyPct: -r.gapPct }));
+          if (!realLineForLineUp.length) {
+            const W = 800, H = Math.max(8, Math.round((W * h) / w));
+            const lo = await realFloorLine(await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer(), W, H).catch(() => null);
+            realLineForLineUp = lo ? Array.from(lo as Int32Array, (v: number) => (v < 0 ? -1 : v / H)) : [];
+          }
+          const plan: SkirtingLineUp = planSkirtingLineUp(floatRuns, layers.floor, w, h, realLineForLineUp);
+          if (plan.ok) {
+            const ap = await applySkirtingLineUp(ctx.staged, {
+              floor: layers.floor, tightFloor: layers.tightFloor, artRegion: layers.artRegion, solid: layers.solid, zone: layers.zone, core: layers.core,
+            }, layers.floor, plan, w, h);
+            const recheck = await checkFloatingFurniture(original, ap.masks.floor!, w, h).catch((e: any) => ({ floating: true, runs: [], error: String(e?.message || e) }));
+            row.floatingLineUp = { applied: !recheck.floating, wallPct: plan.wallPct, movedDownPct: plan.movedDownPct, growPct: plan.growPct, ...(recheck.floating ? { stillFloating: recheck.runs } : {}) };
+            if (!recheck.floating) {
+              ctx = { ...ctx, staged: ap.staged };
+              const solid = ap.masks.solid!;
+              layers = {
+                ...layers,
+                floor: ap.masks.floor!,
+                ...(layers.tightFloor ? { tightFloor: ap.masks.tightFloor! } : {}),
+                artRegion: ap.masks.artRegion!,
+                solid,
+                zone: ap.masks.zone!,
+                core: ap.masks.core!,
+                solidPng: await maskToPng(solid, w, h),
+              };
+              row.floatingCheck = { ...recheck, linedUpFrom: row.floatingCheck.runs };
+              io.save?.("3c_floating_lined_up.webp", await sharp(ctx.staged).webp({ quality: 90 }).toBuffer());
+              p.log?.(`[${ctx.name}] floating furniture lined up with the real floor: the pieces against that wall (x ${plan.wallPct![0]}-${plan.wallPct![1]}%) moved down ${plan.movedDownPct}% and ${plan.growPct}% bigger — no re-stage needed`);
+            } else {
+              p.warn?.(`[${ctx.name}] floating furniture line-up tried (down ${plan.movedDownPct}%, ${plan.growPct}% bigger) but still floating — not used`);
+            }
+          } else {
+            row.floatingLineUp = { applied: false, why: plan.why };
+            p.warn?.(`[${ctx.name}] floating furniture can't be lined up: ${plan.why}`);
+          }
         }
         // Floor moved: Gemini raised the floor / pushed a wall back to fit the
         // furniture (walls and windows unchanged, so the room check passes).

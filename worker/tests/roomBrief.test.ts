@@ -152,6 +152,52 @@ describe("conservative bed plan (code rule)", () => {
   });
 });
 
+describe("door mentions that say there is NO door (Nov 2026 test run, Bedroom_14)", () => {
+  const { makeBedPlanConservative, withoutNegatedDoorMentions } = require("../src/pipeline/roomBrief");
+  // Bedroom_14's plan as the planner wrote it (before any code rule).
+  const bedroom14: any = {
+    roomSummary: "An empty, carpeted bedroom with two windows fitted with dark curtains, and a doorway visible along the right edge.",
+    camera: "Near the entrance looking diagonally across the bedroom.",
+    landmarks: [
+      { id: "L1", type: "window", description: "large window with vertical blinds and dark curtains on the wall on the left of the photo", box: [0, 0.116, 0.382, 0.889] },
+      { id: "L2", type: "window", description: "elevated rectangular window with dark curtains on the wall straight ahead", box: [0.517, 0.206, 0.871, 0.715] },
+      { id: "L3", type: "doorway", description: "doorway frame at the far right edge of the photo", box: [0.974, 0.595, 1, 0.854] },
+    ],
+    walls: [], zones: [], relationships: [], avoid: [], keepUntouched: [],
+    bedSpace: { bed: "queen", bedsideTables: 1, wallMetres: 3, depthMetres: 3.5, wallRunsOffPhoto: false,
+      reason: "The wall straight ahead is roughly 3.0 m wide with no doors, allowing a queen bed (1.5 m) and two bedside tables (0.5 m each) to comfortably fit underneath the high window without obstructing either corner." },
+    layout: [
+      { item: "Queen bed", placement: "placed against the wall straight ahead with the elevated window, with the headboard positioned below the window sill between the dark curtains" },
+      { item: "Left bedside table", placement: "against the wall straight ahead with the elevated window, to the left of the queen bed" },
+      { item: "Table lamp", placement: "on the bedside table" },
+    ],
+  };
+  it("removes only the 'no door' phrases", () => {
+    expect(withoutNegatedDoorMentions("roughly 3.0 m wide with no doors, allowing a queen")).not.toMatch(/door/i);
+    expect(withoutNegatedDoorMentions("a plain wall without any doorways")).not.toMatch(/door/i);
+    expect(withoutNegatedDoorMentions("this wall doesn't have a door")).not.toMatch(/door/i);
+    expect(withoutNegatedDoorMentions("no interior doors on this wall")).not.toMatch(/door/i);
+    expect(withoutNegatedDoorMentions("well clear of the door swing")).toMatch(/door/);
+    expect(withoutNegatedDoorMentions("beside the open door")).toMatch(/door/);
+  });
+  it("a wall described as having no doors is not treated as next to a door", () => {
+    const { brief, changed } = makeBedPlanConservative(bedroom14, "bedroom");
+    expect(changed).toEqual([]);
+    expect(brief.layout[0].placement).not.toMatch(/furthest from the door|must not be centred/);
+    const prompt = buildStage2PromptFromRoomBrief(brief, { roomType: "bedroom" });
+    expect(prompt).toMatch(/BED POSITION — the bed's headboard is centred under the elevated rectangular window .* about 52–87% of the way across the photo/);
+    expect(prompt).not.toMatch(/must not be centred/);
+  });
+  it("a real door next to the bed still pushes it, and BED POSITION no longer says 'centred'", () => {
+    const nearDoor = { ...bedroom14, bedSpace: { ...bedroom14.bedSpace, reason: "the wall straight ahead has a door at its right end" } };
+    const { brief, changed } = makeBedPlanConservative(nearDoor, "bedroom");
+    expect(changed.join(" ")).toMatch(/pushed away from the door/);
+    const prompt = buildStage2PromptFromRoomBrief(brief, { roomType: "bedroom" });
+    expect(prompt).toMatch(/BED POSITION — the bed's headboard goes against the same wall as the elevated rectangular window .*52–87%.*at the end of that wall given in the layout — not centred on the wall or under the window\. The bed stands square to that wall, never at an angle\. Keep the bed at true queen size/);
+    expect(prompt).not.toMatch(/headboard is centred under/);
+  });
+});
+
 describe("bed fit and photo-edge rules", () => {
   const { makeBedPlanConservative } = require("../src/pipeline/roomBrief");
   const plan = (bedSpace: any, tables: string[]) => ({
