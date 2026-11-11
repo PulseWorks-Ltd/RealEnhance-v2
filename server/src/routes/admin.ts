@@ -5,6 +5,7 @@ import { Router, type Request, type Response } from "express";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import { pool } from "../db/index.js";
 import { getUserById } from "../services/users.js";
+import { AccountAdminError, changeUserLoginEmail, transferAgencyOwnership } from "../services/accountAdmin.js";
 import { PLAN_LIMITS } from "@realenhance/shared/plans.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
 import type { UserRecord } from "@realenhance/shared/types.js";
@@ -541,6 +542,38 @@ router.patch("/promo-codes/:promoCodeId", requireAuth, requireSiteAdmin, async (
   } catch (err) {
     console.error("[ADMIN DASHBOARD] promo code update error:", err);
     res.status(500).json({ error: "Failed to update promo code" });
+  }
+});
+
+/**
+ * POST /users/:userId/change-email  { newEmail }
+ * Site admin: move an account to a new login email (staff member left).
+ */
+router.post("/users/:userId/change-email", requireAuth, requireSiteAdmin, async (req: Request, res: Response) => {
+  try {
+    const actor = String(((req as any).user as UserRecord)?.email || "site-admin");
+    const result = await changeUserLoginEmail({ userId: String(req.params.userId), newEmail: String(req.body?.newEmail || ""), actor });
+    res.json({ ok: true, ...result });
+  } catch (err: any) {
+    if (err instanceof AccountAdminError) return res.status(err.status).json({ error: err.code, message: err.message });
+    console.error("[ADMIN DASHBOARD] change-email error:", err);
+    res.status(500).json({ error: "CHANGE_EMAIL_FAILED", message: "Couldn't change the email. Nothing may have changed; check the account." });
+  }
+});
+
+/**
+ * POST /agencies/:agencyId/transfer-ownership  { userId }
+ * Site admin: make another member the agency's owner.
+ */
+router.post("/agencies/:agencyId/transfer-ownership", requireAuth, requireSiteAdmin, async (req: Request, res: Response) => {
+  try {
+    const actor = String(((req as any).user as UserRecord)?.email || "site-admin");
+    const result = await transferAgencyOwnership({ agencyId: String(req.params.agencyId), newOwnerId: String(req.body?.userId || ""), actor });
+    res.json({ ok: true, ...result });
+  } catch (err: any) {
+    if (err instanceof AccountAdminError) return res.status(err.status).json({ error: err.code, message: err.message });
+    console.error("[ADMIN DASHBOARD] transfer-ownership error:", err);
+    res.status(500).json({ error: "TRANSFER_FAILED", message: "Couldn't transfer ownership." });
   }
 });
 

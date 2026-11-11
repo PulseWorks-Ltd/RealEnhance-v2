@@ -1,6 +1,7 @@
 // server/src/routes/agency.ts
 // Agency management routes (unlimited users per agency)
 
+import { AccountAdminError, transferAgencyOwnership } from "../services/accountAdmin.js";
 import { Router, type Request, type Response } from "express";
 import Stripe from "stripe";
 import {
@@ -825,6 +826,32 @@ router.post("/users/:userId/disable", requireAuth, requireAgencyAdmin, async (re
   } catch (err) {
     console.error("[AGENCY] Disable user error:", err);
     res.status(500).json({ error: "Failed to disable user" });
+  }
+});
+
+/**
+ * POST /api/agency/transfer-ownership  { userId }
+ * The agency owner hands the account to another active team member (e.g.
+ * before leaving). The previous owner becomes an admin.
+ */
+router.post("/transfer-ownership", requireAuth, requireAgencyAdmin, async (req: Request, res: Response) => {
+  try {
+    const currentUser = (req as any).user as UserRecord;
+    if (currentUser.role !== "owner") {
+      return res.status(403).json({ error: "OWNER_ONLY", message: "Only the account owner can transfer ownership." });
+    }
+    const result = await transferAgencyOwnership({
+      agencyId: String(currentUser.agencyId),
+      newOwnerId: String(req.body?.userId || ""),
+      actor: String(currentUser.email || currentUser.id),
+    });
+    // This session now belongs to an admin, not the owner.
+    if ((req.session as any)?.user) (req.session as any).user = { ...(req.session as any).user, role: "admin" };
+    res.json({ ok: true, ...result });
+  } catch (err: any) {
+    if (err instanceof AccountAdminError) return res.status(err.status).json({ error: err.code, message: err.message });
+    console.error("[AGENCY] Transfer ownership error:", err);
+    res.status(500).json({ error: "TRANSFER_FAILED", message: "Couldn't transfer ownership." });
   }
 });
 

@@ -20,12 +20,9 @@
  * The account keeps its agency, role, photos, credits and subscription.
  * Needs the server's Redis (REDIS_URL), e.g. run inside the Railway server service.
  */
-import crypto from "crypto";
-import { getUserByEmail, updateUser } from "@realenhance/shared/users.js";
-import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
-import { getRedis } from "@realenhance/shared/redisClient.js";
-import { hashPassword } from "../src/utils/password.js";
-import { invalidateSessionsForUser } from "../src/services/sessionStore.js";
+import { getUserByEmail } from "@realenhance/shared/users.js";
+import { getAgency } from "@realenhance/shared/agencies.js";
+import { changeUserLoginEmail } from "../src/services/accountAdmin.js";
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -68,29 +65,13 @@ async function main() {
     return;
   }
 
-  const randomPassword = crypto.randomBytes(32).toString("base64url");
-  await updateUser({
-    ...user,
-    email: to,
-    emailVerified: false,
-    passwordHash: await hashPassword(randomPassword),
-    googleId: undefined,
-    authProvider: "email",
-  });
-  // Belt and braces: the old lookup must be gone even on older code.
-  await getRedis().del(`user:email:${from}`);
-  const sessions = await invalidateSessionsForUser(user.id);
-  if (agency && billingMatches) {
-    await updateAgency({ ...agency, billingEmail: to });
-  }
-
-  const check = await getUserByEmail(from);
+  const result = await changeUserLoginEmail({ userId: user.id, newEmail: to, actor: "script:change-owner-email" });
   const now = await getUserByEmail(to);
   console.log("\nDone.");
-  console.log(`  old email finds an account: ${check ? "YES (problem!)" : "no"}`);
+  console.log(`  old email finds an account: ${result.oldEmailStillFindsAccount ? "YES (problem!)" : "no"}`);
   console.log(`  new email finds the account: ${now?.id === user.id ? "yes" : "NO (problem!)"}`);
-  console.log(`  sessions logged out: ${sessions}`);
-  console.log(`  agency billing email updated: ${billingMatches ? "yes" : "no (it wasn't the old email)"}`);
+  console.log(`  sessions logged out: ${result.sessionsLoggedOut}`);
+  console.log(`  agency billing email updated: ${result.billingEmailUpdated ? "yes" : "no (it wasn't the old email)"}`);
   console.log(`\nNext: the new owner goes to the login page, clicks "Forgot password" and enters ${to}.`);
 }
 

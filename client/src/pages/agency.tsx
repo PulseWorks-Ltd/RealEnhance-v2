@@ -376,6 +376,20 @@ export default function AgencyPage() {
     }
   };
 
+  const handleTransferOwnership = async (member: { id: string; email: string }) => {
+    if (!window.confirm(`Make ${member.email} the owner of this account? You will become an admin, and only the new owner can manage team members and transfer ownership.`)) return;
+    try {
+      await apiFetch("/api/agency/transfer-ownership", { method: "POST", body: JSON.stringify({ userId: member.id }) });
+      toast({ title: "Ownership transferred", description: `${member.email} is now the account owner.` });
+      await refreshUser?.();
+      loadAgencyData();
+    } catch (err: any) {
+      let message = "Please try again.";
+      try { message = JSON.parse(String(err?.body || "")).message || message; } catch { /* keep default */ }
+      toast({ title: "Couldn't transfer ownership", description: message, variant: "destructive" });
+    }
+  };
+
   const handleUpdateAgencyProfile = async () => {
     try {
       setSavingProfile(true);
@@ -1135,6 +1149,16 @@ export default function AgencyPage() {
                                 onClick={() => handleToggleUser(member.id, !member.isActive)}
                               >
                                 {member.isActive ? "Disable" : "Enable"}
+                              </Button>
+                            )}
+                            {member.role !== "owner" && member.isActive && agencyInfo.userRole === "owner" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleTransferOwnership(member)}
+                                data-testid={`make-owner-${member.id}`}
+                              >
+                                Make owner
                               </Button>
                             )}
                           </div>
