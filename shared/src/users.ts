@@ -252,6 +252,7 @@ export async function updateUser(user: UserRecord): Promise<void> {
       // Update in Redis
       const client = getRedis();
       const key = `user:${user.id}`;
+      const previousEmail = await client.hGet(key, "email");
 
       await client.hSet(key, {
         id: user.id,
@@ -278,6 +279,12 @@ export async function updateUser(user: UserRecord): Promise<void> {
 
       // Update email index
       await client.set(`user:email:${user.email.toLowerCase()}`, user.id);
+      // Email changed: the old address must no longer find this account
+      // (else the previous owner could still sign in with Google using it).
+      if (previousEmail && previousEmail.toLowerCase() !== user.email.toLowerCase()) {
+        const oldKey = `user:email:${previousEmail.toLowerCase()}`;
+        if ((await client.get(oldKey)) === user.id) await client.del(oldKey);
+      }
 
       console.log(`[USERS] Updated user ${user.id} in Redis`);
     } else {
