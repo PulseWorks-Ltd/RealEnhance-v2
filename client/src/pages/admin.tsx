@@ -22,7 +22,25 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+
+// Readable message from a failed admin API call.
+function apiErrorMessage(err: any, fallback: string): string {
+  try {
+    const body = JSON.parse(String(err?.body || ""));
+    return String(body?.message || body?.error || fallback);
+  } catch {
+    return fallback;
+  }
+}
 
 /* ── Types ─────────────────────────────────────────────── */
 interface PromoCodeRow {
@@ -154,6 +172,11 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [promoBusyId, setPromoBusyId] = useState<number | null>(null);
+  // Account actions in the agency detail: change login email, make owner.
+  const [emailTarget, setEmailTarget] = useState<{ id: string; email: string; role: string } | null>(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [confirmEmail, setConfirmEmail] = useState("");
+  const [accountBusy, setAccountBusy] = useState(false);
   const [creatingPromo, setCreatingPromo] = useState(false);
 
   const [newPromoCode, setNewPromoCode] = useState("");
@@ -314,6 +337,47 @@ export default function AdminDashboard() {
       setDetail(null);
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  const emailsMatch = newEmail.trim().length > 0 && newEmail.trim().toLowerCase() === confirmEmail.trim().toLowerCase();
+
+  async function handleChangeEmail() {
+    if (!emailTarget || !detail || !emailsMatch) return;
+    setAccountBusy(true);
+    try {
+      const res: any = await apiJson(`/api/admin/dashboard/users/${encodeURIComponent(emailTarget.id)}/change-email`, {
+        method: "POST",
+        body: JSON.stringify({ newEmail: newEmail.trim() }),
+      });
+      toast({
+        title: "Login email changed",
+        description: `${res.oldEmail} → ${res.newEmail}. They've been logged out everywhere. Ask the new person to use "Forgot password" with ${res.newEmail}${res.billingEmailUpdated ? " (billing email updated too)" : ""}. Also update the customer's email in Stripe.`,
+      });
+      setEmailTarget(null);
+      await openDetail(detail.agencyId);
+    } catch (err) {
+      toast({ title: "Couldn't change the email", description: apiErrorMessage(err, "Please try again."), variant: "destructive" });
+    } finally {
+      setAccountBusy(false);
+    }
+  }
+
+  async function handleMakeOwner(u: { id: string; email: string }) {
+    if (!detail) return;
+    if (!window.confirm(`Make ${u.email} the owner of ${detail.agencyName}? The current owner becomes an admin.`)) return;
+    setAccountBusy(true);
+    try {
+      await apiJson(`/api/admin/dashboard/agencies/${encodeURIComponent(detail.agencyId)}/transfer-ownership`, {
+        method: "POST",
+        body: JSON.stringify({ userId: u.id }),
+      });
+      toast({ title: "Ownership transferred", description: `${u.email} is now the owner of ${detail.agencyName}.` });
+      await openDetail(detail.agencyId);
+    } catch (err) {
+      toast({ title: "Couldn't transfer ownership", description: apiErrorMessage(err, "Please try again."), variant: "destructive" });
+    } finally {
+      setAccountBusy(false);
     }
   }
 
@@ -531,6 +595,39 @@ export default function AdminDashboard() {
       </Card>
 
       {/* Detail Drawer */}
+      <Dialog open={!!emailTarget} onOpenChange={(open) => { if (!open && !accountBusy) setEmailTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change login email</DialogTitle>
+            <DialogDescription>
+              For when the person who used this login has left. The account keeps its agency, role, photos and credits.
+            </DialogDescription>
+          </DialogHeader>
+          {emailTarget && (
+            <div className="space-y-3 text-sm">
+              <div className="rounded-md bg-muted p-3">
+                <div><span className="text-muted-foreground">Current email:</span> {emailTarget.email}</div>
+                <div><span className="text-muted-foreground">Role:</span> {emailTarget.role}{detail ? ` · ${detail.agencyName}` : ""}</div>
+              </div>
+              <Input type="email" placeholder="New email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} data-testid="admin-new-email" />
+              <Input type="email" placeholder="Type the new email again" value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)} data-testid="admin-confirm-email" />
+              {confirmEmail.length > 0 && !emailsMatch && <p className="text-xs text-red-600">The two emails don't match.</p>}
+              <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                <li>The current person is logged out everywhere and can no longer sign in (password replaced, Google unlinked).</li>
+                <li>The new person sets their own password with "Forgot password" on the login page.</li>
+                <li>Update the customer's email in Stripe too, so invoices go to the new address.</li>
+              </ul>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailTarget(null)} disabled={accountBusy}>Cancel</Button>
+            <Button onClick={handleChangeEmail} disabled={!emailsMatch || accountBusy} data-testid="admin-change-email-confirm">
+              {accountBusy ? "Changing..." : "Change email"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
         <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
           <SheetHeader>
@@ -580,6 +677,7 @@ export default function AdminDashboard() {
                       <TableRow>
                         <TableHead>Email</TableHead>
                         <TableHead>Role</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -587,6 +685,32 @@ export default function AdminDashboard() {
                         <TableRow key={u.id}>
                           <TableCell className="text-xs">{u.email}</TableCell>
                           <TableCell className="text-xs">{u.role}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs"
+                                disabled={accountBusy}
+                                onClick={() => { setEmailTarget(u); setNewEmail(""); setConfirmEmail(""); }}
+                                data-testid={`admin-change-email-${u.id}`}
+                              >
+                                Change login email
+                              </Button>
+                              {u.role !== "owner" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={accountBusy}
+                                  onClick={() => handleMakeOwner(u)}
+                                  data-testid={`admin-make-owner-${u.id}`}
+                                >
+                                  Make owner
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
