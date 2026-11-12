@@ -15,6 +15,7 @@
 
 import { RELIGHT_FINAL, compositeRelight } from "./relight";
 import { roomAllowsEmptyLayout } from "../roomBrief";
+import { NEAR_WALL_CROP_ENABLED, detectNearWallStrip, writeCroppedInput, remapBoxedItems, pasteBackIntoFullPhoto, type NearWallCrop } from "./nearWallStrip";
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
@@ -1022,8 +1023,10 @@ export async function runMaskedStage2Job(p: {
   doors: DoorOpening[] | null | (() => Promise<DoorOpening[] | null>);
   maxRestages: number;
   // Runs one Gemini staging and returns the staged image's path. Hints are
-  // the "keep this doorway clear" notes for a re-stage.
-  stage: (attempt: number, hints: string[]) => Promise<string>;
+  // the "keep this doorway clear" notes for a re-stage. `input` is the picture
+  // to stage when it isn't inputPath (a near-wall strip was cut off): stage
+  // that file, with window/door positions moved by input.crop.
+  stage: (attempt: number, hints: string[], input?: { path: string; crop: NearWallCrop }) => Promise<string>;
   outputPathFor: (attempt: number) => string;
   workDir: string;
   // Optional: called with each attempt's work folder (debug uploads).
@@ -1032,7 +1035,16 @@ export async function runMaskedStage2Job(p: {
   warn?: (msg: string) => void;
   // Offline replay for tests: saved Gemini outputs per attempt, no calls.
   replay?: (attempt: number, name: string) => Buffer | null;
+  // Internal: set on the inner run once the near-wall strip check is done.
+  nearWallChecked?: boolean;
 }): Promise<MaskedJobResult> {
+  if (NEAR_WALL_CROP_ENABLED && !p.replay && !p.nearWallChecked) {
+    const viaStrip = await runWithoutNearWallStrip(p).catch((e: any) => {
+      p.warn?.(`[${p.jobId}] near-wall strip check failed (${String(e?.message || e).slice(0, 160)}) — staging the whole photo`);
+      return null;
+    });
+    if (viaStrip) return viaStrip;
+  }
   const original = fs.readFileSync(p.inputPath);
   const meta = await sharp(original).metadata();
   const w = meta.width || 0, h = meta.height || 0;
@@ -1505,4 +1517,42 @@ export async function runMaskedStage2Job(p: {
         : []),
     ];
   }
+}
+
+// A near-wall strip (wall return / door frame close to the camera, running
+// out of the photo at the top and bottom — see nearWallStrip.ts): stage the
+// photo without it, then paste the result back next to the untouched strip.
+// Returns null when there is no strip (the caller stages the whole photo).
+async function runWithoutNearWallStrip(p: Parameters<typeof runMaskedStage2Job>[0]): Promise<MaskedJobResult | null> {
+  const det = await detectNearWallStrip(p.inputPath);
+  if (!det.crop) {
+    p.log?.(`[${p.jobId}] near-wall strip: none (${det.reason})`);
+    return null;
+  }
+  const crop = det.crop;
+  const workDir = path.join(p.workDir, "near_wall");
+  const cropPath = await writeCroppedInput(p.inputPath, crop, workDir);
+  p.log?.(`[${p.jobId}] near-wall strip on the ${crop.side} (${crop.stripPct}% of the width, edge at x=${crop.edge.topX}-${crop.edge.bottomX}px) — staging the photo without it and pasting it back unchanged`);
+  const inner = await runMaskedStage2Job({
+    ...p,
+    nearWallChecked: true,
+    inputPath: cropPath,
+    doors: typeof p.doors === "function"
+      ? async () => {
+          const d = await (p.doors as () => Promise<DoorOpening[] | null>)();
+          return d ? remapBoxedItems(d, crop) : d;
+        }
+      : p.doors ? remapBoxedItems(p.doors, crop) : p.doors,
+    stage: (attempt, hints) => p.stage(attempt, hints, { path: cropPath, crop }),
+    outputPathFor: (attempt) => path.join(workDir, `final_cropped_attempt${attempt}.webp`),
+    workDir,
+  });
+  const info = { side: crop.side, stripPct: crop.stripPct, keptX: [crop.left, crop.right], edge: crop.edge, score: crop.score };
+  for (const r of inner.reports) r.nearWallStrip = info;
+  if (!inner.ok) return inner;
+  const full = await pasteBackIntoFullPhoto(p.inputPath, fs.readFileSync(inner.outputPath), crop);
+  const outputPath = p.outputPathFor(inner.attempts);
+  await sharp(full).webp({ quality: 95 }).toFile(outputPath);
+  p.log?.(`[${p.jobId}] near-wall strip pasted back (${crop.side}, ${crop.stripPct}%)`);
+  return { ok: true, outputPath, attempts: inner.attempts, reports: inner.reports };
 }
