@@ -109,6 +109,7 @@ import {
   maskedStage2DebugUploadEnabled,
 } from "./pipeline/stage2Masked/pipeline";
 import { MAX_RESTAGES as MASKED_STAGE2_MAX_RESTAGES } from "./pipeline/stage2Masked/core";
+import { EXTRA_RESTAGES as MASKED_STAGE2_EXTRA_RESTAGES } from "./pipeline/stage2Masked/pipeline";
 import { downloadToTemp } from "./utils/remote";
 import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
 import { canMarkJobComplete, logCompletionGuard } from "./utils/completionGuard";
@@ -7324,7 +7325,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage2Result = {
           outputPath: maskedRetry.outputPath,
           attempts: maskedRetry.attempts,
-          maxAttempts: MASKED_STAGE2_MAX_RESTAGES + 1,
+          maxAttempts: MASKED_STAGE2_MAX_RESTAGES + 1 + MASKED_STAGE2_EXTRA_RESTAGES,
           validationRisk: false,
         };
       } else stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
@@ -11658,7 +11659,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           return {
             outputPath: result.outputPath,
             attempts: result.attempts,
-            maxAttempts: MASKED_STAGE2_MAX_RESTAGES + 1,
+            maxAttempts: MASKED_STAGE2_MAX_RESTAGES + 1 + MASKED_STAGE2_EXTRA_RESTAGES,
             validationRisk: false,
             fallbackUsed: false,
             localReasons: [] as string[],
