@@ -957,7 +957,7 @@ export function reshapeHint(cam: { scale?: number } | null | undefined): string 
     : Number.isFinite(scale) && scale <= 0.97
       ? `zoomed out by about ${pct}%, showing more of the room than the photo does`
       : "redrew the room from a different viewpoint, so the walls, corners and windows moved";
-  return `Your previous attempt ${what}, and it was rejected. The camera is locked: the result must have exactly the same framing, zoom, viewpoint and perspective as the input photo, with every wall edge, corner, window, door and the ceiling line in the same place. The furniture must fit the room, never the other way round — make pieces smaller, move them, let the edge of the photo cut them off, or leave pieces out. Do not crop, zoom, widen, rotate or redraw the room.`;
+  return `Your previous attempt ${what}, and it was rejected. The camera is locked: the result must have exactly the same framing, zoom, viewpoint and perspective as the input photo, with every wall edge, corner, window, door and the ceiling line in the same place. The furniture must fit the room, never the other way round — use a smaller kind of piece, move pieces, let the edge of the photo cut them off, or leave pieces out; every piece stays at its true real-world size. Do not crop, zoom, widen, rotate or redraw the room.`;
 }
 
 export type MaskedJobResult =

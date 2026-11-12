@@ -49,6 +49,17 @@ describe("room brief checks", () => {
     expect(p).toMatch(/1\. TV: Mounted on the black TV wall bracket/);
     expect(p).not.toMatch(/\[0\./);
   });
+  it("asks for true-size furniture and never tells Gemini to shrink pieces (owner review, Nov 2026)", () => {
+    const p = buildStage2PromptFromRoomBrief(good, { roomType: "kitchen_living_dining" });
+    expect(p).toMatch(/TRUE SIZE — draw every piece at its real-world size/);
+    expect(p).toMatch(/door is about 2 m tall/);
+    expect(p).not.toMatch(/make (it|pieces) smaller/i);
+    expect(p).not.toMatch(/only its size and how much of it shows may change/);
+    const empty = buildStage2PromptFromRoomBrief({ ...good, layout: [] } as any, { roomType: "bathroom" });
+    expect(empty).not.toMatch(/TRUE SIZE/);
+    expect(buildRoomBriefInstruction("living_room")).toMatch(/give the piece's real size in brackets/);
+    expect(buildRoomBriefInstruction("living_room")).not.toMatch(/choose the smaller one — a slightly small piece looks natural/);
+  });
   it("tidies model wording into clean sentences", () => {
     const b = {
       ...good,
