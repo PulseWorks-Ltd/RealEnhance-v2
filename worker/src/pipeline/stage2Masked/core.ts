@@ -122,6 +122,35 @@ export async function callGeminiImage(params: {
 }): Promise<{ image: Buffer; usage: any; text: string }> {
   const apiKey = process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
+  // Gemini sometimes returns no image for no real reason (IMAGE_RECITATION,
+  // OTHER). That failed a whole attempt (Nov 2026 test run, Bedroom_05: the
+  // re-staged picture's trace call). Such answers are retried; safety blocks
+  // are not.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await callGeminiImageOnce(params, apiKey);
+    } catch (e: any) {
+      const reason = String(e?.noImageReason || "");
+      if (!reason || attempt >= IMAGE_EMPTY_RETRIES || !isRetryableNoImage(reason)) throw e;
+      console.warn(`[GEMINI_IMAGE_EMPTY_RETRY] model=${params.model} reason=${reason} retry=${attempt + 1}/${IMAGE_EMPTY_RETRIES}`);
+    }
+  }
+}
+
+export const IMAGE_EMPTY_RETRIES = Math.max(0, Math.round(Number(process.env.STAGE2_IMAGE_EMPTY_RETRIES ?? 1)));
+/** A "no image" answer worth asking again for (not a safety/policy block). */
+export function isRetryableNoImage(reason: string): boolean {
+  const r = String(reason || "").toUpperCase();
+  if (/SAFETY|PROHIBITED|BLOCKLIST|SPII|CSAM/.test(r)) return false;
+  return /RECITATION|OTHER|NO IMAGE|MALFORMED|STOP|UNSPECIFIED/.test(r);
+}
+
+async function callGeminiImageOnce(params: {
+  model: string;
+  parts: any[];
+  imageSize: string;
+  aspectRatio: string;
+}, apiKey: string): Promise<{ image: Buffer; usage: any; text: string }> {
   const resp = await generateContentViaRest({
     apiKey,
     model: params.model,
@@ -140,7 +169,9 @@ export async function callGeminiImage(params: {
   const text = parts.filter((p) => typeof p?.text === "string").map((p) => p.text).join(" ").trim();
   if (!img) {
     const reason = resp?.candidates?.[0]?.finishReason || resp?.promptFeedback?.blockReason || "no image returned";
-    throw new Error(`${params.model} returned no image (${reason})${text ? `: ${text.slice(0, 200)}` : ""}`);
+    const err: any = new Error(`${params.model} returned no image (${reason})${text ? `: ${text.slice(0, 200)}` : ""}`);
+    err.noImageReason = String(reason);
+    throw err;
   }
   return { image: Buffer.from(img.inlineData.data, "base64"), usage: resp?.usageMetadata || null, text };
 }

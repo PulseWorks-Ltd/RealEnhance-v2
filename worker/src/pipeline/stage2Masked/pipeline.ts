@@ -199,6 +199,17 @@ function isSmallMissedUnder(m: any): boolean {
 // Largest gap (percent of photo height) under a "floating" piece that is
 // still published on the last attempt. STAGE2_FLOAT_ACCEPT_LAST_GAP_PCT=0 turns it off.
 const FLOAT_ACCEPT_LAST_GAP_PCT = Number(process.env.STAGE2_FLOAT_ACCEPT_LAST_GAP_PCT ?? 1.5);
+// Extra staging attempts after the normal re-stage budget, only when the last
+// attempt failed on how the furniture fitted the room or a processing error.
+export const EXTRA_RESTAGES = Math.max(0, Math.round(Number(process.env.STAGE2_MASKED_EXTRA_RESTAGES ?? 1)));
+export function isLayoutOrTransientFailure(reason: string): boolean {
+  const r = String(reason || "");
+  return r === "furniture cut off by the trace"
+    || r === "furniture floating"
+    || r === "room changed to fit the furniture"
+    || r === "room reshaped"
+    || r.startsWith("processing error:");
+}
 // Use the relit final (real room + blend lighting) even when Gemini's checked
 // blend passes. Off by default: photos that pass today keep their result.
 const FINAL_RELIT_ALWAYS = ["on", "1", "true", "yes"].includes(String(process.env.STAGE2_FINAL_RELIT_ALWAYS || "").trim().toLowerCase());
@@ -1000,6 +1011,7 @@ export async function runMaskedStage2Job(p: {
   const reflectiveP = REFLECTION_GATE && !p.replay
     ? askReflectiveSurfaces(p.inputPath, p.jobId).catch(() => null)
     : Promise.resolve(null);
+  let extraRestagesUsed = 0;
   for (let attempt = 1; ; attempt++) {
     const dir = path.join(p.workDir, `attempt${attempt}`);
     fs.mkdirSync(dir, { recursive: true });
@@ -1404,9 +1416,19 @@ export async function runMaskedStage2Job(p: {
       return { ok: true, outputPath, attempts: attempt, reports };
     }
     if (attempt > p.maxRestages) {
-      row.outcome = `FAILED after re-stage (${reasons.join(", ")})`;
-      await finishUploads();
-      return { ok: false, reasons, attempts: attempt, reports };
+      // One more staging when the last attempt failed only on how the
+      // furniture fitted the room (or a processing error): Gemini varies a lot
+      // between stagings, and these are usually fine on a fresh try (Nov 2026
+      // test run, Bedroom_05: 4 of 4 new stagings kept the wall Gemini had
+      // removed in both attempts). Any other reason fails as before.
+      const extraOk = extraRestagesUsed < EXTRA_RESTAGES && reasons.length > 0 && reasons.every(isLayoutOrTransientFailure);
+      if (!extraOk) {
+        row.outcome = `FAILED after re-stage (${reasons.join(", ")})`;
+        await finishUploads();
+        return { ok: false, reasons, attempts: attempt, reports };
+      }
+      extraRestagesUsed++;
+      row.extraRestage = true;
     }
     row.outcome = `re-stage (${reasons.join(", ")})`;
     p.warn?.(`[${p.jobId}] masked Stage 2: re-staging (attempt ${attempt + 1}): ${reasons.join(", ")}`);
