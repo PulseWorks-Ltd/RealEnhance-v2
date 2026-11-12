@@ -110,6 +110,7 @@ import {
 } from "./pipeline/stage2Masked/pipeline";
 import { MAX_RESTAGES as MASKED_STAGE2_MAX_RESTAGES } from "./pipeline/stage2Masked/core";
 import { EXTRA_RESTAGES as MASKED_STAGE2_EXTRA_RESTAGES } from "./pipeline/stage2Masked/pipeline";
+import { remapBaselineForCrop } from "./pipeline/stage2Masked/nearWallStrip";
 import { downloadToTemp } from "./utils/remote";
 import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
 import { canMarkJobComplete, logCompletionGuard } from "./utils/completionGuard";
@@ -7268,11 +7269,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           jobId: payload.jobId,
           doors: async () => doorsFromStructuralBaseline(stage2OnlyStructuralBaseline || await resolveStructuralBaselineForValidation("stage2_masked_door_check")),
           maxRestages: MASKED_STAGE2_MAX_RESTAGES,
-          stage: (attempt, hints) =>
-            runStage2GenerationAttempt(basePath, {
+          stage: (attempt, hints, input) =>
+            runStage2GenerationAttempt(input?.path ?? basePath, {
               roomType: retryRoomType,
               sceneType: "interior",
-              structuralBaseline: stage2OnlyStructuralBaseline,
+              structuralBaseline: input ? remapBaselineForCrop(stage2OnlyStructuralBaseline, input.crop) : stage2OnlyStructuralBaseline,
+              roomBriefSkipPrefetch: Boolean(input),
               stagingStyle: payload.options.stagingStyle || "standard_listing",
               sourceStage: stage2OnlyRouting.sourceStage,
               promptMode: stage2OnlyPromptMode,
@@ -7281,7 +7283,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               imageId: payload.imageId,
               outputPath: siblingOutPath(basePath, `-2-masked-staged${attempt}`, ".webp"),
               attempt,
-              layoutPlan: stage2OnlyLayoutPlan,
+              layoutPlan: input ? null : stage2OnlyLayoutPlan,
               retryType: (payload as any).retryType,
               retryInstructions: (payload as any).retryInstructions,
               retryCorrectionHints: hints.length ? hints : null,
@@ -11574,12 +11576,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             ? async () => doorsFromStructuralBaseline(await resolveStructuralBaselineForValidation("stage2_masked_door_check"))
             : doorsFromStructuralBaseline(stage2MainStructuralBaseline),
           maxRestages: MASKED_STAGE2_MAX_RESTAGES,
-          stage: (attempt, hints) =>
-            runStage2GenerationAttempt(stage2InputResolved, {
+          stage: (attempt, hints, input) =>
+            runStage2GenerationAttempt(input?.path ?? stage2InputResolved, {
               roomType: String(stage2MainRoomType),
               sceneType: "interior",
               profile,
-              structuralBaseline: stage2MainStructuralBaseline,
+              structuralBaseline: input ? remapBaselineForCrop(stage2MainStructuralBaseline, input.crop) : stage2MainStructuralBaseline,
+              roomBriefSkipPrefetch: Boolean(input),
               stagingStyle: stagingStyleNorm,
               sourceStage: stage2SourceStage,
               promptMode: stage2PromptMode,
@@ -11588,8 +11591,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               imageId: payload.imageId,
               outputPath: siblingOutPath(stage2InputResolved, `-2-masked-staged${attempt}`, ".webp"),
               attempt,
-              layoutPlan: stage2LayoutPlan,
-              layoutContext: maskedLayoutContext,
+              // Plans made on the full photo don't fit a photo without its near-wall strip.
+              layoutPlan: input ? null : stage2LayoutPlan,
+              layoutContext: input ? null : maskedLayoutContext,
               retryType: (payload as any).retryType,
               retryInstructions: (payload as any).retryInstructions,
               retryCorrectionHints: hints.length ? hints : null,

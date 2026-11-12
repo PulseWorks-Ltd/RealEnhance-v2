@@ -886,20 +886,23 @@ export function startRoomBriefPrefetch(params: { jobId: string; imagePath: strin
   }
 }
 
-export function getRoomBriefCached(params: { jobId: string; imagePath: string; roomType: string; styleDescription?: string }): Promise<RoomBriefResult> {
+// skipPrefetch: the early brief was planned on a different picture (the
+// near-wall strip was cut off before staging), so its positions don't fit.
+export function getRoomBriefCached(params: { jobId: string; imagePath: string; roomType: string; styleDescription?: string; skipPrefetch?: boolean }): Promise<RoomBriefResult> {
   const key = `${params.jobId}::${params.imagePath}::${params.roomType}`;
   const hit = briefCache.get(key);
   if (hit) return hit;
-  const early = prefetchedBriefs.get(prefetchKey(params.jobId, params.roomType));
+  const { skipPrefetch: _skip, ...briefParams } = params;
+  const early = params.skipPrefetch ? undefined : prefetchedBriefs.get(prefetchKey(params.jobId, params.roomType));
   // A failed early brief is not reused — Stage 2 builds one the normal way.
   const p = early
     ? early.then((r) => {
         console.log("[ROOM_BRIEF_PREFETCH_USED]", JSON.stringify({ jobId: params.jobId, ok: r.ok }));
         if (r.ok) return r;
         for (const u of r.usage) console.log("[ROOM_BRIEF_USAGE]", JSON.stringify({ jobId: params.jobId, prefetch: true, ...u }));
-        return buildRoomBriefSafe(params);
+        return buildRoomBriefSafe(briefParams);
       })
-    : buildRoomBriefSafe(params);
+    : buildRoomBriefSafe(briefParams);
   briefCache.set(key, p);
   while (briefCache.size > BRIEF_CACHE_MAX) {
     const oldest = briefCache.keys().next().value;

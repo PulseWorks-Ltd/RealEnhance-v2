@@ -661,6 +661,9 @@ export async function runStage2GenerationAttempt(
     imageId: string;
     outputPath: string;
     attempt?: number;
+    // The picture is the photo without a near-wall strip: don't reuse the
+    // room plan made early on the full photo.
+    roomBriefSkipPrefetch?: boolean;
     maxOutputTokens?: number;
     tightenLevel?: TightenLevel;
     legacyStrictPrompt?: boolean;
@@ -1003,6 +1006,7 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
       imagePath: basePath,
       roomType: canonicalRoomType,
       styleDescription: nanoRoomProgramGuidance.style,
+      skipPrefetch: Boolean(opts.roomBriefSkipPrefetch),
     });
     for (const u of briefRes.usage) {
       console.log("[ROOM_BRIEF_USAGE]", JSON.stringify({ jobId: opts.jobId, ...u }));
