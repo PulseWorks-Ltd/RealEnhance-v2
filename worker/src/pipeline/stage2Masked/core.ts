@@ -1645,8 +1645,8 @@ export function evaluateBedWall(raw: any) {
   const coversDoor = bed && yes(raw?.bedCoversDoor);
   const roomWidened = yes(raw?.roomWidened);
   const hints: string[] = [];
-  if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved, so furniture stood where the photo shows wall. The room is smaller than that layout needs. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller bed, fewer or no bedside tables, turn the bed so it runs along the room's longest direction (headboard against a shorter wall, below any window sill), or let the edge of the photo cut it off.");
-  if (coversDoor) hints.push("Your previous attempt placed the bed setup in front of a door: the bed, headboard or a bedside table overlapped the door, its frame or the space it swings through, so the door could not close. Every door, door leaf, doorway and wardrobe door must stay fully visible and clear. If the plain wall is too short, in this order: keep only the bedside table on the side away from the door; use a smaller bed; or slide the bed further from the door and let the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.");
+  if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved, so furniture stood where the photo shows wall. The room is smaller than that layout needs. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller bed type (still at its true size), fewer or no bedside tables, turn the bed so it runs along the room's longest direction (headboard against a shorter wall, below any window sill), or let the edge of the photo cut it off.");
+  if (coversDoor) hints.push("Your previous attempt placed the bed setup in front of a door: the bed, headboard or a bedside table overlapped the door, its frame or the space it swings through, so the door could not close. Every door, door leaf, doorway and wardrobe door must stay fully visible and clear. If the plain wall is too short, in this order: keep only the bedside table on the side away from the door; use a smaller bed type (still at its true size); or slide the bed further from the door and let the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.");
   if (doorWall) hints.push(`Your previous attempt put the bed's headboard against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the headboard against a plain wall that has no door, doorway or wardrobe door anywhere on it.`);
   if (window) hints.push("Your previous attempt hid too much of a window with the bed. The bed may stand under a window, but use a low headboard and low pillows so they cover only the bottom of the glass; keep most of the window, its frame and the curtains visible, and never paint or wall over a window.");
   return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, underWindowAccepted: bed && yes(raw?.headboardCoversWindow) && underWindowOk, coversDoor, roomWidened, failed: doorWall || window || coversDoor || roomWidened, restageHints: hints, answer: raw };
@@ -1746,11 +1746,11 @@ export function floorMovedHint(check: { atXPct?: number[] } | null | undefined, 
     const side = mid < 33 ? "on the left of the photo" : mid > 67 ? "on the right of the photo" : "in the middle of the photo";
     where = ` ${side} (about ${Math.round(Number(at[0]))}–${Math.round(Number(at[1]))}% of the way across)`;
   }
-  const base = `Your previous attempt changed the room to make the furniture fit: the line where the wall meets the floor${where} was moved, so the wall or floor no longer matches the input photo. Keep the same layout described above — the same pieces in the same places — but draw that wall, its skirting board and the floor edge exactly where the input photo shows them. If a piece then no longer fits, make it a little smaller or let the edge of the photo cut it off; never change the wall or floor to make room.`;
+  const base = `Your previous attempt changed the room to make the furniture fit: the line where the wall meets the floor${where} was moved, so the wall or floor no longer matches the input photo. Keep the same layout described above — the same pieces in the same places — but draw that wall, its skirting board and the floor edge exactly where the input photo shows them. If a piece then no longer fits, slide it so the edge of the photo cuts it off, or leave it out — never shrink it below its real size, and never change the wall or floor to make room.`;
   // Only for photos the room plan measured as tight shots (very little floor):
   // there the stronger "let it run off the edge, no rug" is right.
   return opts.tightShot
-    ? `${base} This photo shows very little floor: let the bed or other large pieces run off the bottom or side edge of the photo, use smaller pieces, and leave out the rug.`
+    ? `${base} This photo shows very little floor: let the bed or other large pieces run off the bottom or side edge of the photo (at their true size), use fewer pieces, and leave out the rug.`
     : base;
 }
 
@@ -1822,7 +1822,7 @@ export function livingDoorRestageHint(blockedWhatRaw: string, doors: DoorOpening
   const blockedWhat = doorsInWords(String(blockedWhatRaw || "a piece by a door").slice(0, 160), doors);
   const clear = "Every door, door leaf, doorway and the opening side of every sliding door — and the walking path through it — must stay fully visible and clear (furniture may stand in front of a fixed glass panel beside a sliding door's opening).";
   if (!plan) {
-    return `Your previous attempt placed furniture in front of a door: ${blockedWhat}. ${clear} Put the sofa with its back to a plain wall that has no door on it, keep the dining table and chairs clear of every doorway, use smaller pieces, leave out the armchair or sideboard, or slide a piece away from the door and let the edge of the photo cut it off.`;
+    return `Your previous attempt placed furniture in front of a door: ${blockedWhat}. ${clear} Put the sofa with its back to a plain wall that has no door on it, keep the dining table and chairs clear of every doorway, use a smaller kind of piece (at its true size), leave out the armchair or sideboard, or slide a piece away from the door and let the edge of the photo cut it off.`;
   }
   const pieces = piecesIn(blockedWhat, plan);
   const others = plan.items.filter((it) => !pieces.includes(it));
@@ -1831,12 +1831,12 @@ export function livingDoorRestageHint(blockedWhatRaw: string, doors: DoorOpening
     const list = pieces.join(" and ");
     parts.push(`Only the ${list} ${pieces.length > 1 ? "were" : "was"} the problem${others.length ? `: keep the ${others.join(", ")} exactly where the layout puts ${others.length > 1 ? "them" : "it"}` : ""}.`);
     for (const piece of pieces) {
-      if (SECONDARY_PIECE.test(piece)) parts.push(`Leave the ${piece} out — or, only if it fits well clear of every door, use a smaller ${piece} placed so no part of it reaches a door, door frame, doorway or the path through it.`);
-      else if (/dining/i.test(piece)) parts.push(`Use a smaller ${piece} with fewer chairs, placed so no table or chair reaches a doorway or the path through it.`);
-      else parts.push(`Use a smaller ${piece} and move it further into the open room, away from that door, so no part of it reaches a door, door frame, doorway or the path through it.`);
+      if (SECONDARY_PIECE.test(piece)) parts.push(`Leave the ${piece} out — or, only if it fits well clear of every door, use a more compact ${piece} (still at true real-world size) placed so no part of it reaches a door, door frame, doorway or the path through it.`);
+      else if (/dining/i.test(piece)) parts.push(`Use a ${piece} for fewer people (true size) with fewer chairs, placed so no table or chair reaches a doorway or the path through it.`);
+      else parts.push(`Use a more compact ${piece} (still at true real-world size) and move it further into the open room, away from that door, so no part of it reaches a door, door frame, doorway or the path through it.`);
     }
   } else {
-    parts.push("Keep the planned layout and change only the piece that was in front of the door: leave it out, or make it smaller and move it away from the door.");
+    parts.push("Keep the planned layout and change only the piece that was in front of the door: leave it out, or use a more compact piece at its true size and move it away from the door.");
   }
   parts.push(plan.usableWalls.length
     ? `If a large piece must stand against a wall, use only: ${plan.usableWalls.join(", ")}.`
@@ -1854,7 +1854,7 @@ export function evaluateLivingDoor(raw: any, doors: DoorOpening[] = [], plan: Li
   const blocksDoor = present && (access ? access === "blocked" : yes(raw?.blocksDoor));
   const roomWidened = yes(raw?.roomWidened);
   const hints: string[] = [];
-  if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller sofa or table, leave out the armchair, or let the edge of the photo cut a piece off.");
+  if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a 2-seat sofa or a smaller table (at their true size), leave out the armchair, or let the edge of the photo cut a piece off.");
   if (blocksDoor) hints.push(livingDoorRestageHint(String(raw?.blockedWhat || ""), doors, plan));
   return { furniturePresent: present, blocksDoor, roomWidened, failed: blocksDoor || roomWidened, restageHints: hints, answer: raw };
 }

@@ -117,10 +117,10 @@ DINING SPACE CHECK: first judge the open floor you can actually see. If a 4-seat
     return `BEDROOM: a bed with its headboard against a solid, clearly visible wall — not across a window or in front of a door or wardrobe — with a bedside table and lamp beside it.
 BED WALL CHOICE, in this order: (1) a plain wall with no door, doorway, wardrobe door or window anywhere along it; (2) only if there is no such wall, a wall with a window — the headboard and pillows may overlap the bottom of the glass, but most of the window stays visible and nothing hangs above the headboard; (3) never a wall with a door, doorway or wardrobe door on it, even beside the bed. Mark walls with a door, doorway or wardrobe door as "usableForLargeFurniture": false. Only if every visible wall has a door, doorway or wardrobe door, use the one with the longest plain stretch, with the whole bed and its bedside tables on that plain stretch, well clear of the door and its swing.
 DOOR SWING: every door must still be able to close. The open door leaf, its frame and the floor it sweeps when it closes stay completely clear — no bed, headboard, bedside table or lamp may touch, overlap or stand in front of them, even partly. Measure the plain wall available for the bed from the photo edge or room corner up to the door frame, minus the door's swing. If the bed with two bedside tables does not fit there, do this, in order, until it fits: (1) keep only the bedside table on the side away from the door; (2) choose a smaller bed; (3) slide the bed further away from the door, letting the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.
-MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide and 2 m tall. Photos make walls look longer than they are, so measure the plain stretch in door-widths before choosing: a queen bed with two bedside tables needs about 3.5 door-widths of plain wall (2.8 m), a queen with one table about 2.8, a double with one table about 2.4, a single with one table about 1.6 — plus one more door-width of clear wall between the setup and any door frame on the same wall. If unsure, go one size smaller.
+MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide and 2 m tall. Photos make walls look longer than they are, so measure the plain stretch in door-widths before choosing: a queen bed with two bedside tables needs about 3.5 door-widths of plain wall (2.8 m), a queen with one table about 2.8, a double with one table about 2.4, a single with one table about 1.6 — plus one more door-width of clear wall between the setup and any door frame on the same wall. If unsure, choose the next smaller bed type (drawn at its true size).
 CHECK THE DEPTH TOO, NOT JUST THE WALL: the bed sticks out from the headboard wall about 2.6 door-widths (2.1 m) for a queen or double, 2.4 for a single, and still needs about one door-width (0.8 m) of clear floor beyond its foot to walk past. Measure the visible floor from the chosen wall to the opposite wall, cupboard or photo edge in that direction. If it is not clearly deep enough, that wall is wrong for the bed even when it is the plain one: in a narrow room, turn the bed so it runs along the room's LONGEST direction, with the headboard against a shorter end wall — even one with a window (low headboard below the sill) — rather than across the narrow width. A bed that fits beats the plain-wall preference. Never plan furniture that only fits if the walls, skirting or floor are moved.
 FURNITURE NEEDS VISIBLE FLOOR UNDER IT: follow the headboard wall's skirting line. Where it runs off the bottom or side edge of the photo, the wall beyond that point has no visible floor in front of it — nothing can stand there (this is where a bedside table usually gets wrongly placed). The usable wall is only the stretch whose skirting AND the floor in front of it are both visible. Fit the bed and tables on that stretch, pushed toward the far corner, using one or no bedside table, and let the photo edge cut off the foot or near side of the bed if needed. If even that is too short, put the headboard against another wall (even a window wall, with a low headboard below the sill).
-NEVER CHANGE THE ROOM TO FIT THE FURNITURE: skirting lines, wall corners and the floor edge stay exactly where they are. If the furniture does not fit, use less or smaller furniture, or let the photo edge cut it off.
+NEVER CHANGE THE ROOM TO FIT THE FURNITURE: skirting lines, wall corners and the floor edge stay exactly where they are. If the furniture does not fit, use fewer pieces or a smaller kind of piece (always at its true size), or let the photo edge cut it off.
 SINGLE BEDS ARE NORMAL: many bedrooms, especially in older New Zealand houses, realistically take only a single bed. When a double would leave no clear walkway along at least one long side, or would need the bed pushed hard against two walls, plan a single bed (one bedside table or none), typically along the longest plain wall.
 BE CONSERVATIVE, NOT OPTIMISTIC: an under-furnished bedroom looks fine; a crowded one, or one with a blocked door, is a failure. Plan TWO bedside tables only when the plain wall is clearly long enough for them with room to spare. When space is at all tight, plan ONE bedside table (on the side away from any door), and NONE if even one would crowd a door, wardrobe or window. Choose the smaller bed whenever in doubt.
 WHEN THE BED WALL ENDS AT A DOOR: never centre the bed on that wall. Push the whole setup to the far end, away from the door — against the room corner or out to the edge of the photo, letting the photo edge cut off the far bedside table or the side of the bed — and describe it that way in "layout" (for example "pushed to the far left end of the left wall, partly cut off by the left edge of the photo, leaving a clear gap before the door").
@@ -168,7 +168,8 @@ Rules — these always apply:
 - Write "camera" as a full sentence starting "The camera…", and each "avoid" entry as a full sentence starting "Do not…".
 - Plan only the main furniture in "layout" (up to about 8 items, fewer in a small or tight space, and none where the room type above says the layout stays empty). Small decor is handled separately.
 - Every piece must fit in the floor space the photo really shows. Never plan furniture that would only fit if the room were bigger or the camera were moved. A wall that runs off the edge of the photo counts only for its visible length.
-- When in doubt between two sizes, choose the smaller one — a slightly small piece looks natural; a piece that is too big forces the room to change.
+- When in doubt between two kinds of piece, choose the smaller kind (a 2-seat sofa instead of a 3-seat, a double bed instead of a queen, a round 4-seat table instead of a 6-seat). Every piece is planned at its true real-world size — never plan a shrunken piece to squeeze it in; leave it out or let the photo edge cut it off instead.
+- In each "layout" item, give the piece's real size in brackets, for example "3-seat sofa (2.2 m long)", "Queen bed (1.5 m wide)", "Armchair (0.8 m wide)".
 
 Return ONLY a JSON object:
 {
@@ -619,7 +620,8 @@ export function makeTightShotPlan(brief: RoomBrief, roomType: string, floorPct: 
       changed.push(`${bs.bed} bed -> double`);
       out.bedSpace = { ...bs, bed: "double" };
     }
-    const downsize = (t: string) => String(t || "").replace(big, "double");
+    // A king/queen width written in the item ("Queen bed (1.5 m wide)") goes too.
+    const downsize = (t: string) => String(t || "").replace(big, "double").replace(/\((?:about\s*)?(?:1\.[5-9]|2(?:\.\d)?)\s*m wide\)/gi, "(1.4 m wide)");
     out.layout = out.layout.map((it: any) => ({ ...it, item: downsize(it.item), placement: downsize(it.placement) }));
     out.relationships = out.relationships.map(downsize);
     const isBed = (it: any) => /\bbed\b/i.test(String(it?.item || "")) && !/bedside|side table|bed end|bench/i.test(String(it?.item || ""));
@@ -931,6 +933,19 @@ function cameraSentence(s: string): string {
   return asSentence(`Camera position: ${t}`);
 }
 
+// Real-world sizes, measured against things every photo shows. Owner review
+// (Nov 2026): furniture was often drawn undersized — every earlier fix for
+// "room changed to fit the furniture" told Gemini to make pieces smaller, and
+// nothing gave it a ruler. Heights are the easiest thing to judge in a photo.
+export const TRUE_SIZE_LINES = [
+  `TRUE SIZE — draw every piece at its real-world size, judged against what the photo shows:`,
+  `- A door is about 2 m tall and 0.8 m wide; a window sill is usually about 0.9 m above the floor; a kitchen bench is 0.9 m tall; power sockets sit about 0.3 m above the floor.`,
+  `- Sofa and armchair seats, the top of a mattress and coffee tables are at knee height: about a quarter of a door's height (0.45–0.55 m). A bedside table top is level with the mattress top.`,
+  `- A sofa back reaches about 0.85 m and a headboard 1.0–1.3 m — roughly half a door's height.`,
+  `- A 3-seat sofa is about 2.2 m long (nearly three door-widths) and 0.9 m deep; a 2-seat about 1.7 m; an armchair about 0.8 m wide (one door-width); a coffee table about 1.2 m long; a TV unit about 1.6 m long and 0.5 m tall; a queen bed 1.5 m wide and 2.1 m long, a double 1.4 m wide, a single 0.9 m wide; a bedside table about 0.5 m wide; a dining table for six about 1.8 m long with chair seats at 0.45 m; a desk 1.2 m wide and 0.75 m tall.`,
+  `- Measure each piece against the door, window, bench or floor tiles right beside it, following the room's perspective (nearer pieces look bigger, further ones smaller). Never shrink a piece to make it fit: use a smaller kind of piece, leave it out, or let the photo edge cut it off.`,
+];
+
 export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomType: string; styleDescription?: string }): string {
   const label = roomLabelFor(opts.roomType);
   const style = opts.styleDescription ? ` in a ${opts.styleDescription} style` : "";
@@ -974,7 +989,7 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
   }
 
   return [
-    `RULE 1 — THE CAMERA IS LOCKED. This outranks everything below, including the layout. The result must be this exact photo with furniture added: the same size, framing, zoom, viewpoint and perspective. Every wall edge, corner, window, door, the ceiling line and the edges of the floor stay at exactly the same place in the picture. If the furniture does not fit, change the furniture — make it smaller, move it slightly, let the edge of the photo cut it off, or leave it out. Never zoom in or out, crop, widen, rotate, tilt or move the viewpoint to make room for furniture.`,
+    `RULE 1 — THE CAMERA IS LOCKED. This outranks everything below, including the layout. The result must be this exact photo with furniture added: the same size, framing, zoom, viewpoint and perspective. Every wall edge, corner, window, door, the ceiling line and the edges of the floor stay at exactly the same place in the picture. If the furniture does not fit, change the furniture — choose a smaller kind of piece (a 2-seat sofa instead of a 3-seat, a double bed instead of a queen), move it slightly, let the edge of the photo cut it off, or leave it out. Every piece is still drawn at its true real-world size. Never zoom in or out, crop, widen, rotate, tilt or move the viewpoint to make room for furniture.`,
     ``,
     `Stage this empty ${label} for a real-estate listing photo. Add realistic, correctly scaled furniture and decor${style}, with lighting, shadows and perspective that match the photo. The room itself and the camera framing stay exactly as they are.`,
     ``,
@@ -987,6 +1002,7 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
       : [`LAYOUT — add no large furniture in this room. Add only the small finishing touches described below.`]),
     ...(relationships.length ? [``, `How the pieces relate: ${relationships.join(" ")}`] : []),
     ...(bedPositionLines.length ? [``, ...bedPositionLines] : []),
+    ...(layoutLines.length ? [``, ...TRUE_SIZE_LINES] : []),
     ...(brief.tightShot
       ? [``, `TIGHT SHOT — this photo shows very little floor. Put furniture only on the floor that is visible. Let the bottom or side edge of the photo cut off the foot or near side of the bed or other large pieces, exactly as in a real photo taken from the doorway. Add no rug. The floor, skirting boards and walls stay exactly where they are — never raise the floor or push a wall back to make more room.`]
       : []),
@@ -998,8 +1014,8 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     `- Every wall, window, door, doorway, floor, ceiling, light fitting and fixed feature, exactly where and how it is. Use only the walls and floor visible in the photo — never extend, add or move a wall, and never mount anything on a wall that is not in the photo.`,
     `- Never draw a new wall, corner or wall return to stand furniture against — not even at the edge of the photo. Each piece stands against a wall the photo already shows, or in the open room.`,
     `- Keep every doorway and walking path clear.`,
-    `- If a piece does not fit in the floor space shown, make it smaller or leave it out — never change the room, the stairs, the cabinetry or the camera view to make room for it.`,
-    `- A piece may be partly cut off by the edge of the photo, or partly hidden behind a wall, doorframe, bench or other fixed feature, exactly as real furniture would be. Keep each piece in its planned spot — only its size and how much of it shows may change.`,
+    `- If a piece does not fit in the floor space shown, use a smaller kind of piece at its true size, or leave it out — never shrink furniture, and never change the room, the stairs, the cabinetry or the camera view to make room for it.`,
+    `- A piece may be partly cut off by the edge of the photo, or partly hidden behind a wall, doorframe, bench or other fixed feature, exactly as real furniture would be. Keep each piece in its planned spot — only how much of it shows may change, never its real-world size.`,
     ``,
     `FINISHING TOUCHES`,
     `You may add a few small finishing touches that suit this room: ${brief.tightShot ? finishingTouchesFor(opts.roomType).replace(/^a rug under the seating, bed or dining table, /, "") : finishingTouchesFor(opts.roomType)}. Do not add any other large furniture${brief.tightShot ? " and no rug" : ""}, and do not move the pieces listed above.`,
