@@ -1477,7 +1477,7 @@ async function runWithoutNearWallStrip(p: Parameters<typeof runMaskedStage2Job>[
   const crop = det.crop;
   const workDir = path.join(p.workDir, "near_wall");
   const cropPath = await writeCroppedInput(p.inputPath, crop, workDir);
-  p.log?.(`[${p.jobId}] near-wall strip on the ${crop.side} (${crop.stripPct}% of the width, edge at x=${crop.edge.topX}-${crop.edge.bottomX}px) — staging the photo without it and pasting it back unchanged`);
+  p.log?.(`[${p.jobId}] near-wall strip on the ${crop.side} (${crop.strips.map((s) => `${s.side} ${s.stripPct}%`).join(", ")}; staged x=${crop.left}-${crop.right}px) — staging the photo without it and pasting it back unchanged`);
   const inner = await runMaskedStage2Job({
     ...p,
     nearWallChecked: true,
@@ -1492,7 +1492,7 @@ async function runWithoutNearWallStrip(p: Parameters<typeof runMaskedStage2Job>[
     outputPathFor: (attempt) => path.join(workDir, `final_cropped_attempt${attempt}.webp`),
     workDir,
   });
-  const info = { side: crop.side, stripPct: crop.stripPct, keptX: [crop.left, crop.right], edge: crop.edge, score: crop.score };
+  const info = { side: crop.side, stripPct: crop.stripPct, keptX: [crop.left, crop.right], strips: crop.strips.map((s) => ({ side: s.side, stripPct: s.stripPct, score: s.score, busyPct: s.busyPct })) };
   for (const r of inner.reports) r.nearWallStrip = info;
   if (!inner.ok) return inner;
   const full = await pasteBackIntoFullPhoto(p.inputPath, fs.readFileSync(inner.outputPath), crop);

@@ -45,7 +45,7 @@ describe("near-wall strip detection (Bedroom_05 wall return)", () => {
 });
 
 describe("near-wall strip crop and paste-back", () => {
-  const crop: NearWallCrop = { side: "left", left: 200, right: 1000, W: 1000, H: 500, stripPct: 20, edge: { topX: 198, bottomX: 198 }, score: 1, texturedPct: 0 };
+  const crop: NearWallCrop = { side: "left", left: 200, right: 1000, W: 1000, H: 500, stripPct: 20, score: 1, strips: [{ side: "left", seam: [200, 200], stripPct: 20, score: 1, busyPct: 0 }] };
 
   it("moves window/door boxes into the cropped picture and drops ones inside the strip", () => {
     const moved = remapBox([0.6, 0.1, 1.0, 0.9], crop)!;
@@ -67,5 +67,20 @@ describe("near-wall strip crop and paste-back", () => {
     const at = (x: number) => Array.from(data.subarray((250 * 1000 + x) * info.channels, (250 * 1000 + x) * info.channels + 3));
     expect(at(150)).toEqual([10, 20, 30]); // strip unchanged
     expect(at(600)).toEqual([200, 100, 50]); // staged room
+  });
+
+  it("follows a leaning edge: the staged wedge of the strip is replaced by the real strip", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nws-"));
+    const full = path.join(dir, "full.png");
+    await sharp({ create: { width: 1000, height: 500, channels: 3, background: { r: 10, g: 20, b: 30 } } }).png().toFile(full);
+    // Edge leans from x=800 (top) to x=900 (bottom) on the right; staged box 0-900.
+    const lean: NearWallCrop = { side: "right", left: 0, right: 900, W: 1000, H: 500, stripPct: 20, score: 1, strips: [{ side: "right", seam: [800, 900], stripPct: 20, score: 1, busyPct: 0 }] };
+    const staged = await sharp({ create: { width: 900, height: 500, channels: 3, background: { r: 200, g: 100, b: 50 } } }).png().toBuffer();
+    const out = await pasteBackIntoFullPhoto(full, staged, lean);
+    const { data, info } = await sharp(out).raw().toBuffer({ resolveWithObject: true });
+    const at = (x: number, y: number) => Array.from(data.subarray((y * 1000 + x) * info.channels, (y * 1000 + x) * info.channels + 3));
+    expect(at(850, 10)).toEqual([10, 20, 30]); // top: past the edge -> real strip
+    expect(at(850, 490)).toEqual([200, 100, 50]); // bottom: edge is further right -> staged room
+    expect(at(950, 250)).toEqual([10, 20, 30]);
   });
 });
