@@ -149,8 +149,16 @@ describe("line-up fit at photo size (800 columns)", () => {
     expect(f.residualPct).toBeLessThan(0.6);
   });
 
-  it("reports a large leftover when Gemini tilted its floor line (Bedroom_02)", () => {
-    const f = fitLineUpScale(gemini(1.08, 0.04), real, [0, W - 1], [240, 560], W, H, vx, vy)!;
+  it("corrects a small tilt of Gemini's floor line (Bedroom_02): the move also tilts the furniture", () => {
+    const f = fitLineUpScale(gemini(1.08, 0.02), real, [0, W - 1], [240, 560], W, H, vx, vy)!;
+    expect(f.slantMeasured).toBe(true);
+    expect(Math.abs(f.s)).toBeGreaterThan(0.005);
+    expect(Math.abs(f.s)).toBeLessThanOrEqual(0.035);
+    expect(f.residualPct).toBeLessThan(0.6);
+  });
+
+  it("still reports a large leftover when the tilt is beyond the limit (about 2 deg)", () => {
+    const f = fitLineUpScale(gemini(1.08, 0.12), real, [0, W - 1], [240, 560], W, H, vx, vy)!;
     expect(f.slantMeasured).toBe(true);
     expect(f.residualPct).toBeGreaterThan(0.6);
   });
@@ -160,5 +168,28 @@ describe("line-up fit at photo size (800 columns)", () => {
     for (let c = 670; c <= 680; c++) off[c] = -9;
     const f = fitLineUpScale(off, real, [0, W - 1], [240, 560], W, H, vx, vy)!;
     expect(f.residualPct).toBeLessThan(0.6);
+  });
+});
+
+describe("tilting furniture keeps upright lines upright", () => {
+  it("a lamp stand (vertical bar) stays vertical; the bar's foot drops more on one side than the other", async () => {
+    const W = 200, H = 200;
+    const m = new Uint8Array(W * H);
+    for (let y = 60; y <= 150; y++) for (let x = 60; x <= 140; x++) m[y * W + x] = 1; // the piece
+    const px = Buffer.alloc(W * H * 3, 200);
+    for (let y = 70; y <= 140; y++) for (let x = 98; x <= 102; x++) px.fill(0, (y * W + x) * 3, (y * W + x) * 3 + 3); // black upright
+    const img = await sharp(px, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
+    const plan: any = { ok: true, select: m, k: 1, vx: 60, vy: 90, s: 0.05 };
+    const out = await applySkirtingLineUp(img, { floor: m }, m, plan, W, H);
+    const { data } = await sharp(out.staged).raw().toBuffer({ resolveWithObject: true });
+    const darkCols = (y: number) => { const c: number[] = []; for (let x = 0; x < W; x++) if (data[(y * W + x) * 3] < 60) c.push(x); return c; };
+    // Same columns on every row: no lean.
+    const top = darkCols(95), mid = darkCols(120);
+    expect(top.length).toBeGreaterThan(0);
+    expect(top).toEqual(mid);
+    // Shifted down by tilt * (x - vx) = 0.05 * 40 = 2 px at x=100.
+    let firstDark = -1;
+    for (let y = 0; y < H; y++) if (data[(y * W + 100) * 3] < 60) { firstDark = y; break; }
+    expect(firstDark).toBe(72);
   });
 });
