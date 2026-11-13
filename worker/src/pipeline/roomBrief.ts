@@ -117,7 +117,7 @@ DINING SPACE CHECK: first judge the open floor you can actually see. If a 4-seat
     return `BEDROOM: a bed with its headboard against a solid, clearly visible wall — not across a window or in front of a door or wardrobe — with a bedside table and lamp beside it.
 BED WALL CHOICE, in this order: (1) a plain wall with no door, doorway, wardrobe door or window anywhere along it; (2) only if there is no such wall, a wall with a window — the headboard and pillows may overlap the bottom of the glass, but most of the window stays visible and nothing hangs above the headboard; (3) never a wall with a door, doorway or wardrobe door on it, even beside the bed. Mark walls with a door, doorway or wardrobe door as "usableForLargeFurniture": false. Only if every visible wall has a door, doorway or wardrobe door, use the one with the longest plain stretch, with the whole bed and its bedside tables on that plain stretch, well clear of the door and its swing.
 DOOR SWING: every door must still be able to close. The open door leaf, its frame and the floor it sweeps when it closes stay completely clear — no bed, headboard, bedside table or lamp may touch, overlap or stand in front of them, even partly. Measure the plain wall available for the bed from the photo edge or room corner up to the door frame, minus the door's swing. If the bed with two bedside tables does not fit there, do this, in order, until it fits: (1) keep only the bedside table on the side away from the door; (2) choose a smaller bed; (3) slide the bed further away from the door, letting the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.
-MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide and 2 m tall. Photos make walls look longer than they are, so measure the plain stretch in door-widths before choosing: a queen bed with two bedside tables needs about 3.5 door-widths of plain wall (2.8 m), a queen with one table about 2.8, a double with one table about 2.4, a single with one table about 1.6 — plus one more door-width of clear wall between the setup and any door frame on the same wall. If unsure, choose the next smaller bed type (drawn at its true size).
+MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide and 2 m tall. Photos make walls look longer than they are — most of all a wall that runs toward the camera in a wide-angle photo, whose near end is squeezed into a short stretch of the picture — so measure the plain stretch in door-widths, using the door nearest it, before choosing: a queen bed with two bedside tables needs about 3.5 door-widths of plain wall (2.8 m), a queen with one table about 2.8, a double with one table about 2.4, a single with one table about 1.6 — plus one more door-width of clear wall between the setup and any door frame on the same wall. If unsure, choose the next smaller bed type (drawn at its true size).
 CHECK THE DEPTH TOO, NOT JUST THE WALL: the bed sticks out from the headboard wall about 2.6 door-widths (2.1 m) for a queen or double, 2.4 for a single, and still needs about one door-width (0.8 m) of clear floor beyond its foot to walk past. Measure the visible floor from the chosen wall to the opposite wall, cupboard or photo edge in that direction. If it is not clearly deep enough, that wall is wrong for the bed even when it is the plain one: in a narrow room, turn the bed so it runs along the room's LONGEST direction, with the headboard against a shorter end wall — even one with a window (low headboard below the sill) — rather than across the narrow width. A bed that fits beats the plain-wall preference. Never plan furniture that only fits if the walls, skirting or floor are moved.
 FURNITURE NEEDS VISIBLE FLOOR UNDER IT: follow the headboard wall's skirting line. Where it runs off the bottom or side edge of the photo, the wall beyond that point has no visible floor in front of it — nothing can stand there (this is where a bedside table usually gets wrongly placed). The usable wall is only the stretch whose skirting AND the floor in front of it are both visible. Fit the bed and tables on that stretch, pushed toward the far corner, using one or no bedside table, and let the photo edge cut off the foot or near side of the bed if needed. If even that is too short, put the headboard against another wall (even a window wall, with a low headboard below the sill).
 NEVER CHANGE THE ROOM TO FIT THE FURNITURE: skirting lines, wall corners and the floor edge stay exactly where they are. If the furniture does not fit, use fewer pieces or a smaller kind of piece (always at its true size), or let the photo edge cut it off.
@@ -165,6 +165,7 @@ Rules — these always apply:
 - Describe every position with words about visible landmarks and the room ("at the back of the room, in front of the kitchen bench", "against the plain wall on the left, between the sliding door and the window"). Never use coordinates, pixels, percentages or wall numbers in "layout", "relationships", "avoid" or "keepUntouched".
 - Write each placement so that someone looking at the same photo can find the exact spot. Only refer to features you listed in "landmarks".
 - Name every wall by where it is in the photo AND what is on it — never by a direction alone. Good: "the wall straight ahead with the high strip window", "the wall on the right of the photo with the large picture window", "the short wall at the left edge of the photo, next to the entry". Never write just "the left wall", "the right wall", "the far wall" or "the back wall": in a photo taken from a corner those are ambiguous, and the furniture ends up on the wrong wall. In "layout", "relationships" and "avoid", refer to walls using exactly the names you gave them in "walls".
+- A wall runs from corner to corner. A door, doorway or wardrobe door set into the same flat surface belongs to that wall, even when it is in the foreground at the edge of the photo — never split one flat wall into two walls at a door.
 - Write "camera" as a full sentence starting "The camera…", and each "avoid" entry as a full sentence starting "Do not…".
 - Plan only the main furniture in "layout" (up to about 8 items, fewer in a small or tight space, and none where the room type above says the layout stays empty). Small decor is handled separately.
 - Every piece must fit in the floor space the photo really shows. Never plan furniture that would only fit if the room were bigger or the camera were moved. A wall that runs off the edge of the photo counts only for its visible length.
@@ -499,6 +500,19 @@ export function withoutNegatedDoorMentions(text: string): string {
     .replace(/\b(?:with no|has no|have no|had no|no|without(?: any| a| an)?|free of(?: any)?|(?:does|do|did)(?: not|n['’]t) (?:have|has)(?: any| a| an)?|not (?:have|has)(?: any| a| an)?|lacks?(?: any| a)?|zero)\s+(?:\w+\s+){0,2}?(?:doors?|doorways?)\b/gi, " ");
 }
 
+/** "left" / "right" when the plan's landmarks put a door in the left or right quarter of the photo. */
+export function doorSideOfPhoto(brief: any): "left" | "right" | null {
+  const doors = (Array.isArray(brief?.landmarks) ? brief.landmarks : []).filter((l: any) => /^(door|doorway|sliding_door)$/i.test(String(l?.type || "")) && Array.isArray(l?.box) && l.box.length === 4);
+  for (const d of doors) {
+    // Boxes are [x1, y1, x2, y2] on 0-1 (normaliseLandmarkBoxes runs first).
+    const b = d.box.map(Number);
+    const cx = (b[0] + b[2]) / 2;
+    if (cx >= 0.75) return "right";
+    if (cx <= 0.25) return "left";
+  }
+  return null;
+}
+
 export function makeBedPlanConservative(brief: RoomBrief, roomType: string): { brief: RoomBrief; changed: string[] } {
   const changed: string[] = [];
   if (!/bed/i.test(String(roomType || "")) || !Array.isArray(brief?.layout)) return { brief, changed };
@@ -511,7 +525,31 @@ export function makeBedPlanConservative(brief: RoomBrief, roomType: string): { b
   if (!brief.layout.some(isBed)) return { brief, changed };
   const nearDoor = /door/i.test(withoutNegatedDoorMentions(bedSetupText));
   const offPhoto = !nearDoor && (brief as any).bedSpace?.wallRunsOffPhoto === true;
-  if (!nearDoor && !offPhoto) return { brief, changed };
+  // A door at the side the bed wall runs toward (Nov 2026, job_2575a584: the
+  // plan named the plain part of the wall and the part with the door as two
+  // walls, planned a centred queen with two tables on ~3 m, and the table by
+  // the door made Gemini flatten the wall on every attempt). With two tables,
+  // the visible wall must also leave a door-width before the door; otherwise
+  // the table nearest the door goes and the bed moves away from it.
+  if (!nearDoor && !offPhoto) {
+    const side = doorSideOfPhoto(brief);
+    const tables = brief.layout.filter(isTable);
+    const wall = Number((brief as any).bedSpace?.wallMetres);
+    const need = bedWidthMetres((brief as any).bedSpace?.bed) + 2 * 0.5 + 0.8;
+    if (side && tables.length >= 2 && !(wall >= need)) {
+      const sideWord = new RegExp(`\\b${side}\\b`, "i");
+      const doorTable = tables.find((it: any) => sideWord.test(String(it?.placement || ""))) || tables[tables.length - 1];
+      let layout = brief.layout.filter((it: any) => it !== doorTable);
+      layout = layout.map((it: any) => isBed(it)
+        ? { ...it, placement: `${String(it.placement || "").replace(/\bcente?red\b/gi, "placed").replace(/\.\s*$/, "")} — pushed toward the end of that wall furthest from the door on the ${side} of the photo, leaving at least one door-width of clear wall before the door, with its single bedside table on the side away from the door; it must not be centred on the wall` }
+        : it);
+      changed.push(`dropped the bedside table on the door side (${side}) and moved the bed away from the door: ${wall || "?"} m of wall is less than the ${need.toFixed(1)} m a bed, two tables and a door-width need`);
+      const out: any = tidyToOneBedsideTable({ ...brief, layout });
+      out.bedSpace = { ...(brief as any).bedSpace, bedsideTables: 1 };
+      return { brief: out, changed };
+    }
+    return { brief, changed };
+  }
   // Wall runs off the photo but its VISIBLE part is long enough for the bed,
   // two tables and a spare door-width: keep both tables (Nov 2026, Bedroom_05
   // with the near-wall strip cut off: 3.6 m of visible wall, a queen bed, and
