@@ -27,6 +27,7 @@ import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
+import { realFloorLine } from "./stage2Masked/floorLine";
 import { roomBriefEnabled, getRoomBriefCached, buildStage2PromptFromRoomBrief, canonicalRoomTypeForBrief, type RoomBrief } from "./roomBrief";
 import { buildAnchorLockedStage2Prompt, buildGrokSkillStage2Prompt, splitAnchorLockedPlanningSection, COMPACT_STRUCTURAL_LOCKS, buildUniversalFeatureProtectionSection, shouldUseAnchorLockedLayoutPlanning } from "./anchorLockedStaging";
 import type { StructuralBaseline } from "../validators/openingPreservationValidator";
@@ -1322,6 +1323,24 @@ Do not add blinds, rods, tracks, or new window coverings.
   if (process.env.STAGE2_DEBUG_DUMP_PROMPT === "1") {
     require("fs").writeFileSync("/tmp/stage2_debug_prompt.txt", textPrompt);
   }
+  // Floor-line guide (Nov 2026, job_2575a584): Gemini redrew a wide-angle
+  // room's wall at a flatter angle on every attempt, raising the floor ~7% by
+  // the door. A second picture shows it the real floor line, marked in
+  // magenta. STAGE2_FLOOR_GUIDE=off turns it off.
+  let floorGuide: Buffer | null = null;
+  if (FLOOR_GUIDE_ENABLED && roomBriefUsed && scene !== "exterior") {
+    floorGuide = await buildFloorGuideImage(basePath).catch((e) => {
+      console.warn("[STAGE2_FLOOR_GUIDE_FAILED]", { jobId: opts.jobId, error: String(e?.message || e) });
+      return null;
+    });
+    if (floorGuide) {
+      textPrompt += `
+
+FLOOR LINE GUIDE — the SECOND picture is the same photo with the real line where each wall meets the floor (the bottom edge of the skirting boards) marked in magenta. It is a guide only: never draw the magenta line in your result. Every wall's floor line stays exactly on that marked line, at the same height and the same angle. Every piece that stands against a wall has its base on that line — choose a smaller kind of piece, move it, or leave it out rather than drawing the floor higher or the wall at a different angle.`;
+      if (opts.outputPath) { try { require("fs").writeFileSync(`${opts.outputPath}.floor-guide.jpg`, floorGuide); } catch {} }
+    }
+  }
+
   // Save the exact prompt (and room brief, if used) next to the output, so
   // the masked pipeline can upload it with the debug images
   // (STAGE2_SAVE_PROMPT=0 turns it off).
@@ -1336,6 +1355,7 @@ Do not add blinds, rods, tracks, or new window coverings.
   // Preferred ordering: text prompt first, then base image(s), then explicit mask (if available)
   requestParts.push({ text: textPrompt });
   requestParts.push({ inlineData: { mimeType: mime, data } });
+  if (floorGuide) requestParts.push({ inlineData: { mimeType: "image/jpeg", data: floorGuide.toString("base64") } });
   if (geminiReferencePath) {
     const ref = toBase64(geminiReferencePath);
     requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
@@ -1687,4 +1707,47 @@ export async function runStage2(
       throw secondErr;
     }
   }
+}
+
+
+// Off by default: tested Nov 2026 on job_2575a584's room (3 stagings with,
+// 3 without) — Gemini still raised the floor 5-6% by the door with the guide
+// (4-7% without), and its layouts became less predictable (one bed under the
+// window, one turned around). Kept for experiments: STAGE2_FLOOR_GUIDE=on.
+export const FLOOR_GUIDE_ENABLED = ["1", "on", "true", "yes"].includes(String(process.env.STAGE2_FLOOR_GUIDE ?? "off").trim().toLowerCase());
+
+/**
+ * The photo with its real floor line (bottom of the skirting) drawn in
+ * magenta, for the staging request. Pieces of line only where it is found;
+ * a jump of more than 3% of the height starts a new piece (a door, a corner).
+ */
+export async function buildFloorGuideImage(imagePath: string): Promise<Buffer | null> {
+  const meta = await sharp(imagePath).metadata();
+  const w = meta.width || 0, h = meta.height || 0;
+  if (!w || !h) return null;
+  const W = 800, H = Math.max(8, Math.round((W * h) / w));
+  const small = await sharp(imagePath).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer();
+  const line = await realFloorLine(small, W, H);
+  const sx = w / W, sy = h / H;
+  const segs: string[] = [];
+  let cur: string[] = [];
+  let last = -1;
+  for (let x = 0; x < W; x += 2) {
+    const y = line[x];
+    if (y < 0 || y >= H - 2 || (last >= 0 && Math.abs(y - last) > H * 0.03)) {
+      if (cur.length >= 8) segs.push(cur.join(" ")); // at least 2% of the width
+      cur = [];
+      last = y < 0 || y >= H - 2 ? -1 : y;
+      if (last < 0) continue;
+    }
+    cur.push(`${(x * sx).toFixed(1)},${(y * sy).toFixed(1)}`);
+    last = y;
+  }
+  if (cur.length >= 8) segs.push(cur.join(" ")); // at least 2% of the width
+  if (!segs.length) return null;
+  const stroke = Math.max(3, Math.round(h * 0.005));
+  const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">${segs.map((p) => `<polyline points="${p}" fill="none" stroke="#ff00ff" stroke-width="${stroke}" stroke-linejoin="round" stroke-linecap="round"/>`).join("")}</svg>`;
+  const base = await sharp(imagePath).removeAlpha().png().toBuffer();
+  const drawn = await sharp(base).composite([{ input: Buffer.from(svg) }]).png().toBuffer();
+  return sharp(drawn).resize({ width: Math.min(w, 1600), withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
 }
