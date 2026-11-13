@@ -247,6 +247,18 @@ describe("bed fit and photo-edge rules", () => {
     expect(bed.placement).toMatch(/headboard stays in place toward the far corner and is never cut off by the photo edge — only the foot of the bed may run off the photo/);
     expect(bed.placement).not.toMatch(/may cut off the near side|whole bed/);
   });
+  it("wall runs off the photo but is long enough for two tables: keeps both (Bedroom_05, near-wall strip cut off)", () => {
+    const p = plan({ bed: "queen", bedsideTables: 2, wallRunsOffPhoto: true, wallMetres: 3.6 }, ["to the left of the bed", "to the right of the bed, toward the far corner"]);
+    const { brief, changed } = makeBedPlanConservative(p, "bedroom");
+    const tables = brief.layout.filter((l: any) => /bedside/i.test(l.item));
+    expect(tables).toHaveLength(2);
+    expect(tables[0].placement).toMatch(/visible in the photo/);
+    expect((brief as any).bedSpace.bedsideTables).toBe(2);
+    expect(changed.join(" ")).toMatch(/kept two bedside tables/);
+    // A shorter visible wall still drops to one.
+    const short = makeBedPlanConservative(plan({ bed: "queen", bedsideTables: 2, wallRunsOffPhoto: true, wallMetres: 3.0 }, ["a", "b"]), "bedroom").brief;
+    expect(short.layout.filter((l: any) => /bedside/i.test(l.item))).toHaveLength(1);
+  });
   it("wall runs off the photo and is short: the photo edge may still cut the bed off", () => {
     const p = plan({ bed: "queen", bedsideTables: 1, wallRunsOffPhoto: true, wallMetres: 2.1 }, ["far side"]);
     const bed = makeBedPlanConservative(p, "bedroom").brief.layout.find((l: any) => l.item === "Queen bed")!;
