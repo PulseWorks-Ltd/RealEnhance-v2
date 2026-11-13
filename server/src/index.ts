@@ -44,6 +44,7 @@ import { startMonthlyPromoTopupScheduler } from "./services/monthlyPromoTopup.js
 import { imageVersionsRouter } from "./routes/imageVersions.js";
 import adminResetRouter from "./routes/adminReset.js";
 import adminDashboardRouter from "./routes/admin.js";
+import adminReviewRouter from "./routes/adminReview.js";
 import adminMarketingRouter from "./routes/adminMarketing.js";
 import trialRouter from "./routes/trial.js";
 import batchSubmitRouter from "./routes/batch-submit.js";
@@ -544,6 +545,7 @@ async function main() {
   app.use("/api/admin/usage", adminUsageRouter);
   // Admin dashboard (agencies, usage, billing overview)
   app.use("/api/admin/dashboard", adminDashboardRouter);
+  app.use("/api/admin/review", adminReviewRouter);
   // Internal system-user setup endpoint
   app.use("/internal", createSystemUserRouter);
   // Temporary internal route to read an existing valid internal API user id

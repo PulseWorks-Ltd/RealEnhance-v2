@@ -402,7 +402,10 @@ export default function AdminDashboard() {
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-6">
-      <h1 className="text-2xl font-semibold">Admin Dashboard</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Admin Dashboard</h1>
+        <Button variant="outline" onClick={() => navigate("/admin/review")}>Image review</Button>
+      </div>
 
       {/* Summary Cards */}
       {summary && (

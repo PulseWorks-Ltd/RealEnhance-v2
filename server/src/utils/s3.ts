@@ -416,3 +416,14 @@ export async function purgeS3Prefix(prefixInput: string): Promise<{ deleted: num
 
   return { deleted };
 }
+
+
+/**
+ * A short-lived link to read one object (admin review page). Never logged:
+ * the link is created on request, for a signed-in site admin only.
+ */
+export async function createPresignedGetUrl(key: string, expiresInSeconds = 300): Promise<string> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) throw new Error("S3_BUCKET not configured");
+  return getSignedUrl(getClient() as any, new GetObjectCommand({ Bucket: bucket, Key: key }) as any, { expiresIn: expiresInSeconds });
+}

@@ -14,7 +14,7 @@ const router = Router();
 
 /* ── Middleware ─────────────────────────────────────────── */
 
-async function requireAuth(req: Request, res: Response, next: Function) {
+export async function requireAuth(req: Request, res: Response, next: Function) {
   const sessUser = (req.session as any)?.user;
   if (!sessUser) return res.status(401).json({ error: "Authentication required" });
   const fullUser = await getUserById(sessUser.id);
@@ -23,7 +23,7 @@ async function requireAuth(req: Request, res: Response, next: Function) {
   next();
 }
 
-function requireSiteAdmin(req: Request, res: Response, next: Function) {
+export function requireSiteAdmin(req: Request, res: Response, next: Function) {
   const user = (req as any).user as UserRecord | undefined;
   if (!user?.email) return res.status(401).json({ error: "Authentication required" });
 
