@@ -3892,6 +3892,15 @@ export type FloorPatch = {
   right: "piece in front" | "wall corner" | "photo edge";
 };
 const FLOOR_PATCH_REACH = 0.12; // look this far (fraction of width) for an edge
+// A gap bigger than a skirting board (% of the photo height) means Gemini's
+// floor under the piece is a raised floor over the real wall. Then the patch
+// may reach only a little past the piece (% of the width), staying hidden
+// behind it and a nearby edge: Bedroom_05's 4% patch reached 3.6% past its
+// bedside table, between a pillar and the bed (fine); the Harcourts photo 07
+// retry (Nov 2026) reached 13% past the table to the photo edge, and the bed
+// and table ended up standing on the wall. Refused -> line-up or re-stage.
+export const FLOOR_PATCH_MAX_GAP_PCT = Number(process.env.STAGE2_FLOOR_PATCH_MAX_GAP_PCT || 2.5);
+export const FLOOR_PATCH_MAX_OPEN_PCT = Number(process.env.STAGE2_FLOOR_PATCH_MAX_OPEN_PCT || 5);
 
 // Is Gemini's floor under the patch the same material as the real floor
 // (carpet vs boards vs tiles)? Compares colour, brightness and texture of the
@@ -4013,6 +4022,11 @@ export async function planFloorPatches(original: Buffer, staged: Buffer, floorMa
       x >= L.at && x <= R.at && y <= bot && line[x] >= 0 && y >= line[x] + h * 0.01 && !floorMask[y * w + x], w, h);
     if (!floor.same) {
       notes.push(`${where}: ${floor.why} (colour ${floor.chromaDiff}, brightness x${floor.brightRatio}, texture x${floor.textureRatio}, grain x${floor.grainRatio})`);
+      return { ok: false as const, patches: [], notes };
+    }
+    const openPct = +((((R.at - L.at) - (xb - xa)) / w) * 100).toFixed(1);
+    if (r.gapPct > FLOOR_PATCH_MAX_GAP_PCT && openPct > FLOOR_PATCH_MAX_OPEN_PCT) {
+      notes.push(`${where}: gap ${r.gapPct}% (more than a skirting board) and the patch would reach ${openPct}% past the piece — Gemini's raised floor would show over the real wall`);
       return { ok: false as const, patches: [], notes };
     }
     patches.push({ x1: L.at, x2: R.at, top, bottom: bot, floorTop, runTop, leftOccluder: L.occluder, rightOccluder: R.occluder, runX1: xa, runX2: xb, runBottom, left: L.why, right: R.why, floor });
