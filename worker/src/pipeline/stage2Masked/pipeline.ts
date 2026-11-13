@@ -30,6 +30,8 @@ import {
   HARMONISE_IMAGE_SIZE,
   HARM_ZONE_GROW_PCT,
   HARM_ZONE_DOWN_PCT,
+  WALL_SHADOW_REACH_PCT,
+  trimWallShadowZone,
   BLEND_MAX_REPAIR_PCT,
   DOOR_CHECK,
   callGeminiImage,
@@ -741,10 +743,23 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
   let hZone = dilate(tightFloor, w, h, Math.round((w * HARM_ZONE_GROW_PCT) / 100));
   hZone = growDown(hZone, w, h, Math.round((h * HARM_ZONE_DOWN_PCT) / 100));
   for (let i = 0; i < hZone.length; i++) if (tSolid[i]) hZone[i] = 0;
+  // Walls: shadows only right beside a kept piece (see WALL_SHADOW_REACH_PCT).
+  let wallShadowTrimmedPct = 0;
+  if (WALL_SHADOW_REACH_PCT > 0) {
+    const FW = Math.min(800, w), FH = Math.max(8, Math.round((FW * h) / w));
+    const lo = await realFloorLine(await sharp(original).removeAlpha().resize(FW, FH, { fit: "fill" }).png().toBuffer(), FW, FH).catch(() => null);
+    if (lo) {
+      const floorY = new Int32Array(w);
+      for (let x = 0; x < w; x++) { const v = lo[Math.min(FW - 1, Math.round((x / w) * (FW - 1)))]; floorY[x] = v < 0 ? -1 : Math.round((v / FH) * h); }
+      const t = trimWallShadowZone(hZone, tightFloor, floorY, w, h, Math.round((w * WALL_SHADOW_REACH_PCT) / 100));
+      hZone = t.zone;
+      wallShadowTrimmedPct = t.trimmedPct;
+    }
+  }
   const affected = new Uint8Array(w * h);
   for (let i = 0; i < affected.length; i++) affected[i] = tSolid[i] | hZone[i];
   save(ctx, "3_mask_harmonise_shadow_zone.png", await maskToPng(hZone, w, h));
-  row.harmonise = { tightFurniturePct: +(ratioOf(tightFloor) * 100).toFixed(1), shadowZonePct: +(ratioOf(hZone) * 100).toFixed(1), edgeMattePctOfBand, thinPartsPctOfImage: thinPct, bandLegsPctOfImage: bandLegPct };
+  row.harmonise = { tightFurniturePct: +(ratioOf(tightFloor) * 100).toFixed(1), shadowZonePct: +(ratioOf(hZone) * 100).toFixed(1), wallShadowTrimmedPctOfZone: wallShadowTrimmedPct, edgeMattePctOfBand, thinPartsPctOfImage: thinPct, bandLegsPctOfImage: bandLegPct };
   let blendUsable = !!harmRaw;
   if (harmRaw) {
     // Did Gemini keep the room's framing in its blend? If not, its shadows

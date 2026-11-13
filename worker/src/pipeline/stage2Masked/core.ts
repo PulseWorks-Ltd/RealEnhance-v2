@@ -56,6 +56,50 @@ export const HARMONISE_IMAGE_SIZE = (process.env.HARMONISE_IMAGE_SIZE || "2K").t
 export const HARM_ZONE_GROW_PCT = Number(process.env.HARM_ZONE_GROW_PCT || 8);
 export const HARM_ZONE_DOWN_PCT = Number(process.env.HARM_ZONE_DOWN_PCT || 10);
 export const HARM_MAX_SHADOW = Number(process.env.HARM_MAX_SHADOW || 0.65);
+// Shadows on WALLS only this close to a kept piece (% of width, sideways).
+// The zone reaches 8% all round, and Gemini's blend can carry the shadow of
+// a piece that wasn't kept — a dark patch on the wall beside the bed
+// (Nov 2026, Harcourts batch, photo 08). Floors keep the full zone.
+export const WALL_SHADOW_REACH_PCT = Number(process.env.STAGE2_WALL_SHADOW_REACH_PCT ?? 2.5);
+
+/**
+ * Trims the shadow zone on walls: pixels above the real floor line (with a
+ * small margin for the skirting) that are further sideways than `reachPx`
+ * from any kept piece are dropped. The wall straight above a piece keeps its
+ * zone (headboard shadow, lamp glow). floorY: the real floor line per column
+ * in pixels (-1 = unknown; such columns are left as they are).
+ */
+export function trimWallShadowZone(zone: Uint8Array, furniture: Uint8Array, floorY: Int32Array | number[], w: number, h: number, reachPx: number): { zone: Mask; trimmedPct: number } {
+  const near = new Uint8Array(w * h);
+  // Sideways reach, row by row.
+  for (let y = 0; y < h; y++) {
+    let last = -1e9;
+    for (let x = 0; x < w; x++) { if (furniture[y * w + x]) last = x; if (x - last <= reachPx) near[y * w + x] = 1; }
+    last = 1e9;
+    for (let x = w - 1; x >= 0; x--) { if (furniture[y * w + x]) last = x; if (last - x <= reachPx) near[y * w + x] = 1; }
+  }
+  // Straight above a piece (and its reach) counts as near too.
+  for (let x = 0; x < w; x++) {
+    let seen = false;
+    for (let y = h - 1; y >= 0; y--) { if (furniture[y * w + x]) seen = true; if (seen) near[y * w + x] = 1; }
+  }
+  const out: Mask = new Uint8Array(zone.length);
+  out.set(zone);
+  const margin = Math.round(h * 0.01);
+  let trimmed = 0, total = 0;
+  for (let x = 0; x < w; x++) {
+    const fy = Number(floorY[x]);
+    for (let y = 0; y < h; y++) {
+      const i = y * w + x;
+      if (!zone[i]) continue;
+      total++;
+      if (fy < 0 || y >= fy - margin || near[i]) continue;
+      out[i] = 0;
+      trimmed++;
+    }
+  }
+  return { zone: out, trimmedPct: total ? +((trimmed / total) * 100).toFixed(1) : 0 };
+}
 // Wall-art safety checks, calibrated on the failed-pair and fresh-staging test
 // images: bare wall scores 0 on the busiest patch, while windows, doors, a
 // fireplace corbel, switches/power points and wall corners score 33-96; the
