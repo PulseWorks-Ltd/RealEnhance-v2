@@ -167,6 +167,25 @@ export async function compositeRelight(safe: Buffer, blend: Buffer, solidPng: Bu
     for (let i = 0; i < n; i++) filled[i] = den[i] > 0.05 ? num[i] / den[i] : 1;
     bg.push(guidedFilter(guide, filled, lw, lh, r3, 0.002));
   }
+  // 4b. Where Gemini's floor covered the real wall (no-borrow area) nothing is
+  //    taken from the blend, but the lighting around it carries on across it
+  //    — a wide fill from the valid surroundings. Without this the area kept
+  //    no shadow at all and showed as a bright block next to the furniture
+  //    (Nov 2026, Bedroom_02: a pale rectangle beside the bed).
+  let bgNo: Float32Array[] | null = null;
+  if (noSh) {
+    const rW = Math.max(r2 * 3, Math.round(lw * 0.04));
+    const denW = boxMean(valid, lw, lh, rW);
+    bgNo = [];
+    for (let c = 0; c < 3; c++) {
+      const pv = new Float32Array(n);
+      for (let i = 0; i < n; i++) pv[i] = pc[c][i] * valid[i];
+      const num = boxMean(pv, lw, lh, rW);
+      const filled = new Float32Array(n);
+      for (let i = 0; i < n; i++) filled[i] = denW[i] > 0.02 ? num[i] / denW[i] : 1;
+      bgNo.push(guidedFilter(guide, filled, lw, lh, r3, 0.002));
+    }
+  }
   // Furniture: its own gentle lighting, from its own pixels only.
   const fur: Float32Array[] = [];
   if (furnitureKept) {
@@ -186,7 +205,7 @@ export async function compositeRelight(safe: Buffer, blend: Buffer, solidPng: Bu
 
   // 5. Where it applies: the furniture and its zone, soft-edged.
   const whereRaw = new Float32Array(n);
-  for (let i = 0; i < n; i++) whereRaw[i] = Math.max(zone[i], solid[i]) > 127 ? 1 : 0;
+  for (let i = 0; i < n; i++) whereRaw[i] = Math.max(zone[i], solid[i], noSh ? noSh[i] : 0) > 127 ? 1 : 0;
   const where = boxMean(boxMean(whereRaw, lw, lh, r2), lw, lh, r2);
   const noShSoft = noSh ? boxMean(Float32Array.from(noSh, (v) => (v > 127 ? 1 : 0)), lw, lh, r1) : null;
 
@@ -197,11 +216,14 @@ export async function compositeRelight(safe: Buffer, blend: Buffer, solidPng: Bu
   let maxDark = 0, maxLight = 0;
   for (let i = 0; i < n; i++) {
     const ca = core[i] / 255;
-    const lumF = (bg[0][i] + bg[1][i] + bg[2][i]) / 3;
-    const lumC = Math.min(lightMax, Math.max(lightMin, lumF));
-    const wgt = where[i] * (noShSoft ? 1 - noShSoft[i] : 1);
+    // In the no-borrow area: the surroundings' lighting, shadows only.
+    const ns = noShSoft && bgNo ? noShSoft[i] : 0;
+    const bgc = [0, 1, 2].map((c) => (ns > 0 ? bg[c][i] * (1 - ns) + bgNo![c][i] * ns : bg[c][i]));
+    const lumF = (bgc[0] + bgc[1] + bgc[2]) / 3;
+    const lumC = Math.min(ns > 0.5 ? 1 : lightMax, Math.max(lightMin, lumF));
+    const wgt = where[i];
     for (let c = 0; c < 3; c++) {
-      let f = Math.min(lumC * 1.06, Math.max(lumC * 0.94, bg[c][i] * (lumC / Math.max(0.01, lumF))));
+      let f = Math.min(lumC * 1.06, Math.max(lumC * 0.94, bgc[c] * (lumC / Math.max(0.01, lumF))));
       f = 1 + (f - 1) * wgt;
       if (furnitureKept) f = f * (1 - ca) + fur[c][i] * ca; else f = f * (1 - ca) + ca;
       factorImg[i * 3 + c] = Math.round(((Math.min(FMAX, Math.max(FMIN, f)) - FMIN) / (FMAX - FMIN)) * 255);

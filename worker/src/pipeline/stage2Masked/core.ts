@@ -3600,10 +3600,14 @@ export async function applySkirtingLineUp(
   const { select, k, vx, vy } = plan as Required<SkirtingLineUp>;
   // Region that travels with the furniture: the pieces plus their shadow area,
   // minus any piece that stays.
+  // Wall art stays where it hangs: the margin around a headboard reached the
+  // picture above it, and the bottom of its frame was moved down and enlarged
+  // with the bed (Nov 2026, Bedroom_02: a black bar under the artwork).
+  const art = masks.artRegion || null;
   let region: Mask = dilate(select, w, h, Math.max(2, Math.round(w * 0.02)));
   region = growDown(region, w, h, Math.round(h * 0.03));
-  for (let i = 0; i < region.length; i++) if (furniture[i] && !select[i]) region[i] = 0;
-  const keep = (i: number) => furniture[i] && !select[i];
+  for (let i = 0; i < region.length; i++) if ((furniture[i] && !select[i]) || (art && art[i])) region[i] = 0;
+  const keep = (i: number) => (furniture[i] && !select[i]) || Boolean(art && art[i]);
   const { data } = await sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer({ resolveWithObject: true });
   const out = Buffer.from(data);
   const dst = new Uint8Array(w * h); // destination pixels written from the region

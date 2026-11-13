@@ -39,6 +39,27 @@ describe("skirting beside furniture: pull forward (Bedroom 05, Oct 2026)", () =>
     for (let y = 50; y <= 68; y++) for (let x = 62; x <= 66; x++) expect(out.masks.floor![y * 100 + x]).toBe(1);
   });
 
+  it("leaves wall art above the headboard exactly where it hangs (Nov 2026, Bedroom_02: black bar under the art)", async () => {
+    const m = room();
+    const plan = planSkirtingLineUp([run], m, 100, 100, realLine);
+    expect(plan.ok).toBe(true);
+    // Grey wall, a black picture frame just above the bed (inside the margin that moves with it).
+    const px = Buffer.alloc(100 * 100 * 3, 128);
+    const art = new Uint8Array(100 * 100);
+    for (let y = 30; y <= 44; y++) for (let x = 28; x <= 44; x++) { art[y * 100 + x] = 1; px.fill(0, (y * 100 + x) * 3, (y * 100 + x) * 3 + 3); }
+    const img = await sharp(px, { raw: { width: 100, height: 100, channels: 3 } }).png().toBuffer();
+    const out = await applySkirtingLineUp(img, { floor: m, artRegion: art }, m, plan, 100, 100);
+    const { data } = await sharp(out.staged).raw().toBuffer({ resolveWithObject: true });
+    for (let y = 30; y <= 44; y++) for (let x = 28; x <= 44; x++) {
+      expect(out.masks.artRegion![y * 100 + x]).toBe(1);
+      expect(data[(y * 100 + x) * 3]).toBe(0);
+    }
+    // ...and no copy of the frame appears below it.
+    let darkBelow = 0;
+    for (let y = 45; y <= 60; y++) for (let x = 20; x <= 52; x++) if (data[(y * 100 + x) * 3] < 60) darkBelow++;
+    expect(darkBelow).toBe(0);
+  });
+
   it("refuses when offsets point both ways, an offset is too large, or nothing stands beside it", () => {
     expect(planSkirtingLineUp([run, { x1Pct: 70, x2Pct: 74, widthPct: 4, dyPct: 3 }], room(), 100, 100, realLine).ok).toBe(false);
     expect(planSkirtingLineUp([{ ...run, dyPct: -12 }], room(), 100, 100, realLine).ok).toBe(false);
