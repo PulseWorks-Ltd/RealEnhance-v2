@@ -1687,7 +1687,26 @@ async function askDoorAccessOnce(emptyPath: string, finalImage: Buffer, doors: D
 export const BED_UNDER_WINDOW_OK = String(process.env.STAGE2_BED_UNDER_WINDOW_OK ?? "on").trim().toLowerCase() !== "off";
 export const BED_WALL_CHECK = String(process.env.STAGE2_BED_WALL_CHECK ?? "on").trim().toLowerCase() !== "off";
 
-export function buildBedWallPrompt(doors: DoorOpening[]): string {
+/**
+ * The wall the room plan put the bed's headboard against, in the plan's own
+ * words (one of its named walls when the bed's placement names one).
+ * Nov 2026, job_37bb979a: the plan chose the plain right-hand wall; attempt 2
+ * put the bed against the back wall with the doorway and ran it past the
+ * corner — and passed, because nothing compared it with the plan.
+ */
+export function plannedBedWallFromBrief(brief: any): string | null {
+  const layout: any[] = Array.isArray(brief?.layout) ? brief.layout : [];
+  const bed = layout.find((it) => /\bbed\b/i.test(String(it?.item || "")) && !/bedside|side table|bed end|bench/i.test(String(it?.item || "")));
+  if (!bed) return null;
+  const placement = String(bed.placement || "");
+  const names: string[] = (Array.isArray(brief?.walls) ? brief.walls : []).map((w: any) => String(w?.name || "").trim()).filter(Boolean);
+  const named = names.filter((n) => placement.toLowerCase().includes(n.toLowerCase())).sort((a, b) => b.length - a.length)[0];
+  if (named) return named;
+  const first = placement.split(/ — |;/)[0].trim();
+  return first ? first.slice(0, 200) : null;
+}
+
+export function buildBedWallPrompt(doors: DoorOpening[], plannedWall: string | null = null): string {
   const list = doors.length
     ? doors.map((d) => `- ${d.id}: ${d.description} (${d.type}), box [${d.bbox.map((v) => v.toFixed(2)).join(", ")}]`).join("\n")
     : "- none found by the survey (still check the photo yourself)";
@@ -1703,13 +1722,15 @@ Look at the bed in Image 2 and the walls in Image 1, and answer:
 5. headboardCoversWindow: does the bed or its headboard cover any part of a window's glass?
 5b. windowCoverage: if the bed, headboard, pillows or a bedside lamp cover window glass, how much? "bottom" = only the lower part of the glass, with most of the window (more than half its height) still clearly visible; "most" = half or more of the window hidden, or the window painted or walled over; "none" = no glass covered.
 6. bedCoversDoor: does the bed, its headboard, a bedside table or a lamp stand in front of, touch, cover or hide any part of a door, an open door leaf, a door frame, a doorway, an opening or a wardrobe door that Image 1 shows (including one that is missing from Image 2 because it was painted over)? Also answer "yes" if any of them stands on the floor an open door sweeps when it closes, so the door could no longer close.
-7. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that the bed, a bedside table or any other piece stands where Image 1 shows wall or skirting board? Answer "yes" only for a real change to the room, not for shadows or furniture covering things.
-Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "windowCoverage": "none" | "bottom" | "most", "bedCoversDoor": "yes" | "no", "roomWidened": "yes" | "no", "reason": string }`;
+7. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that the bed, a bedside table or any other piece stands where Image 1 shows wall or skirting board? Also answer "yes" if a piece runs past a corner of the room, into the space where Image 1 shows another wall (a wall that Image 2 no longer shows). Answer "yes" only for a real change to the room, not for shadows or furniture covering things.${plannedWall ? `
+8. onPlannedWall: the staging plan put the bed's headboard against "${plannedWall.replace(/"/g, "'")}". Is the headboard in Image 2 against that same wall? "yes", or "no" if it is against a different wall.` : ""}
+Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "windowCoverage": "none" | "bottom" | "most", "bedCoversDoor": "yes" | "no", "roomWidened": "yes" | "no", ${plannedWall ? `"onPlannedWall": "yes" | "no", ` : ""}"reason": string }`;
 }
 
-export function evaluateBedWall(raw: any) {
+export function evaluateBedWall(raw: any, plannedWall: string | null = null) {
   const yes = (v: any) => String(v || "").trim().toLowerCase() === "yes";
   const bed = yes(raw?.bedPresent);
+  const wrongWall = bed && !!plannedWall && String(raw?.onPlannedWall || "").trim().toLowerCase() === "no";
   const doorWall = bed && yes(raw?.doorOnHeadboardWall) && yes(raw?.otherPlainWallAvailable);
   // Covering the bottom of a window is fine; hiding most of it, or painting
   // or walling it over, is not (owner rule, Oct 2026 — first for 33 Golf Rd
@@ -1723,8 +1744,9 @@ export function evaluateBedWall(raw: any) {
   if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved, so furniture stood where the photo shows wall. The room is smaller than that layout needs. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller bed type (still at its true size), fewer or no bedside tables, turn the bed so it runs along the room's longest direction (headboard against a shorter wall, below any window sill), or let the edge of the photo cut it off.");
   if (coversDoor) hints.push("Your previous attempt placed the bed setup in front of a door: the bed, headboard or a bedside table overlapped the door, its frame or the space it swings through, so the door could not close. Every door, door leaf, doorway and wardrobe door must stay fully visible and clear. If the plain wall is too short, in this order: keep only the bedside table on the side away from the door; use a smaller bed type (still at its true size); or slide the bed further from the door and let the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.");
   if (doorWall) hints.push(`Your previous attempt put the bed's headboard against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the headboard against a plain wall that has no door, doorway or wardrobe door anywhere on it.`);
+  if (wrongWall) hints.push(`Your previous attempt put the bed against the wrong wall. Follow the layout: the bed's headboard goes against ${plannedWall}, and no part of the bed or bedside tables may reach past a corner of the room into another wall.`);
   if (window) hints.push("Your previous attempt hid too much of a window with the bed. The bed may stand under a window, but use a low headboard and low pillows so they cover only the bottom of the glass; keep most of the window, its frame and the curtains visible, and never paint or wall over a window.");
-  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, underWindowAccepted: bed && yes(raw?.headboardCoversWindow) && underWindowOk, coversDoor, roomWidened, failed: doorWall || window || coversDoor || roomWidened, restageHints: hints, answer: raw };
+  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, underWindowAccepted: bed && yes(raw?.headboardCoversWindow) && underWindowOk, coversDoor, roomWidened, wrongWall, failed: doorWall || window || coversDoor || roomWidened || wrongWall, restageHints: hints, answer: raw };
 }
 
 // ── Desk placement (studies / offices) ──────────────────────────────────────
@@ -1978,8 +2000,8 @@ export async function withConsensus<T extends { error?: string }>(run: (k: numbe
 export function askDoorAccess(emptyPath: string, finalImage: Buffer, doors: DoorOpening[], roomType: string, dir: string, name: string) {
   return withConsensus((k) => askDoorAccessOnce(emptyPath, finalImage, doors, roomType, dir, name, k), (r: any) => Boolean(r.blocked));
 }
-export function askBedWall(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
-  return withConsensus((k) => askBedWallOnce(emptyPath, stagedImage, doors, dir, name, k), (r: any) => Boolean(r.failed));
+export function askBedWall(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string, plannedWall: string | null = null) {
+  return withConsensus((k) => askBedWallOnce(emptyPath, stagedImage, doors, dir, name, k, plannedWall), (r: any) => Boolean(r.failed));
 }
 export function askDeskDoor(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
   return withConsensus((k) => askDeskDoorOnce(emptyPath, stagedImage, doors, dir, name, k), (r: any) => Boolean(r.failed));
@@ -2014,21 +2036,21 @@ export async function askReflectiveSurfaces(emptyPath: string, name: string) {
   return { reflective: ans !== "no", what: String(raw?.what || "").slice(0, 200), model };
 }
 
-async function askBedWallOnce(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string, run = 0) {
+async function askBedWallOnce(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string, run = 0, plannedWall: string | null = null) {
   const stagedPath = path.join(dir, `12_bed_wall_check_input${run ? `_${run}` : ""}.jpg`);
   fs.writeFileSync(stagedPath, await sharp(stagedImage).jpeg({ quality: 88 }).toBuffer());
   try {
     const { raw, model } = await callJsonModel(
       [{ path: emptyPath, label: "Image 1 (empty room):" }, { path: stagedPath, label: "Image 2 (staged):" }],
       "You are an experienced real-estate stager checking where the bed was placed.",
-      buildBedWallPrompt(doors),
+      buildBedWallPrompt(doors, plannedWall),
       name,
       "bed_wall",
     );
-    return { model, ...evaluateBedWall(raw) };
+    return { model, ...evaluateBedWall(raw, plannedWall) };
   } catch (e: any) {
     // A failed check never blocks.
-    return { model: "none", error: String(e?.message || e).slice(0, 200), bedPresent: false, bedOnDoorWall: false, coversWindow: false, coversDoor: false, roomWidened: false, failed: false, restageHints: [] as string[], answer: null };
+    return { model: "none", error: String(e?.message || e).slice(0, 200), bedPresent: false, bedOnDoorWall: false, coversWindow: false, coversDoor: false, roomWidened: false, wrongWall: false, failed: false, restageHints: [] as string[], answer: null };
   }
 }
 
@@ -3153,6 +3175,13 @@ export const FLOAT_GROUND_MARGIN_PCT = Number(process.env.FLOAT_GROUND_MARGIN_PC
 export const FLOAT_MIN_WIDTH_PCT = Number(process.env.FLOAT_MIN_WIDTH_PCT || 3);
 export const FLOAT_NEAR_FLOOR_PCT = Number(process.env.FLOAT_NEAR_FLOOR_PCT || 12);
 
+// A narrow raised strip at the photo's edge is an overhang, not a floating
+// piece, when the same piece stands on the floor elsewhere: its outer leg is
+// simply out of frame (Nov 2026, job_37bb979a attempt 1: an armchair cut off
+// by the left edge, its arm and side 3.9% above the floor line; attempt 1 was
+// re-staged for it and attempt 2 was much worse).
+export const FLOAT_EDGE_OVERHANG_MAX_PCT = Number(process.env.FLOAT_EDGE_OVERHANG_MAX_PCT || 8);
+
 export type FloatingRun = { x1Pct: number; x2Pct: number; gapPct: number; bottomPct: number; floorPct: number; gapVsFloor?: { ratio: number; chroma: number } };
 
 export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8Array, w: number, h: number) {
@@ -3214,8 +3243,25 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
     }
     return false;
   };
+  // Does the piece under this run touch the floor anywhere outside it?
+  const pieceGroundedElsewhere = (x1: number, x2: number) => {
+    const votes = new Map<number, number>();
+    for (let k = x1; k <= x2; k++) { const l = labels[bottom[k] * W + k]; if (l >= 0) votes.set(l, (votes.get(l) || 0) + 1); }
+    let piece = -1, best = 0;
+    for (const [l, n] of votes) if (n > best) { best = n; piece = l; }
+    if (piece < 0) return false;
+    let grounded = 0;
+    for (let x = 0; x < W; x++) {
+      if (x >= x1 && x <= x2) continue;
+      let b = -1;
+      for (let y = H - 1; y >= 0; y--) if (labels[y * W + x] === piece) { b = y; break; }
+      if (b >= 0 && line[x] >= 0 && b >= line[x] + margin) grounded++;
+    }
+    return grounded >= 2;
+  };
   const runs: FloatingRun[] = [];
   const standingOnFloor: FloatingRun[] = [];
+  const edgeOverhang: FloatingRun[] = [];
   for (let x = 0; x < W; ) {
     if (state[x] !== 2) { x++; continue; }
     let x2 = x;
@@ -3241,12 +3287,14 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
         bottomPct: +(((bSum / n) / H) * 100).toFixed(1), floorPct: +(((fSum / n) / H) * 100).toFixed(1),
         ...(gapCheck ? { gapVsFloor: { ratio: gapCheck.ratio, chroma: gapCheck.chroma } } : {}),
       };
+      const atPhotoEdge = x === 0 || x2 === W - 1;
       if (gapCheck?.isFloor) standingOnFloor.push(run);
+      else if (atPhotoEdge && widthPct <= FLOAT_EDGE_OVERHANG_MAX_PCT && pieceGroundedElsewhere(x, x2)) edgeOverhang.push(run);
       else runs.push(run);
     }
     x = x2 + 1;
   }
-  return { floating: runs.length > 0, runs, ...(standingOnFloor.length ? { standingOnFloor } : {}) };
+  return { floating: runs.length > 0, runs, ...(standingOnFloor.length ? { standingOnFloor } : {}), ...(edgeOverhang.length ? { edgeOverhang } : {}) };
 }
 
 // Does the empty room show the same floor in the gap under a "floating" run as
