@@ -512,6 +512,25 @@ export function makeBedPlanConservative(brief: RoomBrief, roomType: string): { b
   const nearDoor = /door/i.test(withoutNegatedDoorMentions(bedSetupText));
   const offPhoto = !nearDoor && (brief as any).bedSpace?.wallRunsOffPhoto === true;
   if (!nearDoor && !offPhoto) return { brief, changed };
+  // Wall runs off the photo but its VISIBLE part is long enough for the bed,
+  // two tables and a spare door-width: keep both tables (Nov 2026, Bedroom_05
+  // with the near-wall strip cut off: 3.6 m of visible wall, a queen bed, and
+  // the rule below still dropped a table). The near table must stand on floor
+  // the photo shows.
+  if (offPhoto && Number((brief as any).bedSpace?.wallMetres) >= bedWidthMetres((brief as any).bedSpace?.bed) + 2 * 0.5 + 0.8) {
+    const tableItems = brief.layout.filter(isTable);
+    const planned = Math.max(tableItems.length, ...tableItems.map((it: any) => (/tables|set of (2|two)|pair|\btwo\b|each side|both sides|flanking|either side/i.test(`${it?.item || ""} ${it?.placement || ""}`) ? 2 : 1)), Number((brief as any).bedSpace?.bedsideTables) || 0);
+    if (planned >= 2) {
+      const onFloor = "standing on floor that is visible in the photo, never past the point where the wall's skirting runs off the photo edge";
+      changed.push("kept two bedside tables: the visible wall is long enough (wall runs off the photo)");
+      const layout = brief.layout.map((it: any) => {
+        if (isTable(it)) return { ...it, placement: `${String(it.placement || "").replace(/\.\s*$/, "")} — ${onFloor}` };
+        if (isBed(it)) return { ...it, placement: `${String(it.placement || "").replace(/\.\s*$/, "")} — with room for a bedside table on each side on visible floor; the headboard stays in place and is never cut off by the photo edge — only the foot of the bed may run off the photo` };
+        return it;
+      });
+      return { brief: { ...brief, layout, bedSpace: { ...(brief as any).bedSpace, bedsideTables: 2 } } as RoomBrief, changed };
+    }
+  }
   // "Bedside tables (set of 2)" as ONE layout entry (production, client
   // Image 02): turn it into a single table on the safe side, and its lamps
   // into one lamp.
