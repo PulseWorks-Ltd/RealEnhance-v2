@@ -14,6 +14,7 @@
 //                    the real doorways?
 
 import { RELIGHT_FINAL, compositeRelight } from "./relight";
+import { roomAllowsEmptyLayout } from "../roomBrief";
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
@@ -950,7 +951,9 @@ export function reshapeHint(cam: { scale?: number } | null | undefined): string 
 
 export type MaskedJobResult =
   | { ok: true; outputPath: string; attempts: number; reports: any[] }
-  | { ok: false; reasons: string[]; attempts: number; reports: any[] };
+  // nothingToStage: Gemini added nothing, in a room that may stay empty
+  // (hallway, pantry, laundry...). Not a failure: no re-stage.
+  | { ok: false; reasons: string[]; attempts: number; reports: any[]; nothingToStage?: boolean };
 
 // One photo through the masked Stage 2: stage -> trace -> harmonise ->
 // checked blend -> final door check. A photo is re-staged ONCE (for any
@@ -1396,6 +1399,14 @@ export async function runMaskedStage2Job(p: {
       reasons.push(`processing error: ${row.error}`);
     }
     if (p.onAttemptFiles) pendingUploads.push(p.onAttemptFiles(attempt, dir, [...files]).catch(() => {}));
+    // Gemini added nothing, in a room that may stay empty: nothing to stage.
+    // Re-staging can't help (Nov 2026, Harcourts batch: garages failed 4x).
+    if (/tracing found almost no furniture/.test(String(row.error || "")) && roomAllowsEmptyLayout(p.roomType)) {
+      row.outcome = "nothing to stage (room may stay empty)";
+      p.log?.(`[${p.jobId}] masked Stage 2: nothing was added to this ${p.roomType} — delivering the enhanced photo, no re-stage`);
+      await finishUploads();
+      return { ok: false, reasons: ["nothing to stage"], attempts: attempt, reports, nothingToStage: true };
+    }
     if (reasons.length === 0 && final) {
       const outputPath = p.outputPathFor(attempt);
       await sharp(final).webp({ quality: 95 }).toFile(outputPath);
