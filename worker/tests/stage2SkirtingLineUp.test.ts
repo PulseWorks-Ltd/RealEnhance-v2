@@ -1,6 +1,6 @@
 jest.mock("../src/ai/gemini", () => ({ getGeminiClient: () => ({}), closestGeminiAspectRatio: () => "4:3" }));
 import sharp from "sharp";
-import { planSkirtingLineUp, applySkirtingLineUp } from "../src/pipeline/stage2Masked/core";
+import { planSkirtingLineUp, applySkirtingLineUp, fitLineUpScale } from "../src/pipeline/stage2Masked/core";
 
 // 100x100 photo. The bed's wall runs from x 15 to the corner at x 53 (floor
 // line rising from 90% to 70% down), then the next wall (floor line falling).
@@ -83,5 +83,82 @@ describe("skirting beside furniture: pull forward (Bedroom 05, Oct 2026)", () =>
     const plan = planSkirtingLineUp([{ x1Pct: 36, x2Pct: 41, widthPct: 5, dyPct: -3 }], m, 100, 100, realLine);
     expect(plan.ok).toBe(false);
     expect(plan.why).toMatch(/across two walls/);
+  });
+});
+
+describe("skirting line-up fitted along the whole wall (Nov 2026: steps beside lined-up furniture)", () => {
+  // Gemini's floor line, made by scaling the real one about (vx, vy) by 1/k
+  // (the plan scales about the selected furniture's centre, x 48.5, and the
+  // horizon at 45%): a move by k lines it up everywhere along the wall.
+  const gemOffsets = (k: number, tilt = 0, vx = 48.5, vy = 45) => {
+    const off: Array<number | null> = realLine.map(() => null);
+    for (let x = 15; x <= 53; x++) {
+      const xg = Math.round(vx + (x - vx) / k);
+      if (xg < 15 || xg > 53 || (xg >= 22 && xg <= 50)) continue; // hidden behind the bed (x 22-50)
+      const yG = vy + (realLine[x] * 100 - vy) / k + tilt * (xg - 35);
+      off[xg] = +(yG - realLine[xg] * 100).toFixed(3); // % of a 100 px height
+    }
+    return off;
+  };
+
+  it("uses columns on both sides of the furniture and finds the move that fits them all", () => {
+    const m = room();
+    const off = gemOffsets(1.06);
+    const plan = planSkirtingLineUp([{ x1Pct: 16, x2Pct: 21, widthPct: 5, dyPct: off[17] ?? -4 }], m, 100, 100, realLine, off);
+    expect(plan.ok).toBe(true);
+    expect(plan.fit?.method).toBe("wall");
+    expect(plan.fit?.sides).toBe("both sides");
+    expect(plan.fit!.residualPct).toBeLessThanOrEqual(0.6);
+  });
+
+  it("refuses when Gemini's floor line runs at a different angle (no move can line it up everywhere)", () => {
+    const m = room();
+    const off = gemOffsets(1.06, 0.25);
+    const plan = planSkirtingLineUp([{ x1Pct: 16, x2Pct: 21, widthPct: 5, dyPct: off[17] ?? -4 }], m, 100, 100, realLine, off);
+    expect(plan.ok).toBe(false);
+    expect(plan.why).toMatch(/different angle|isn't straight/);
+  });
+
+  it("without wall-wide measurements it still lines up on the one stretch (as before)", () => {
+    const plan = planSkirtingLineUp([run], room(), 100, 100, realLine);
+    expect(plan.ok).toBe(true);
+    expect(plan.fit?.method).toBe("one stretch");
+  });
+});
+
+describe("line-up fit at photo size (800 columns)", () => {
+  // One wall across the photo; its real floor line slopes down to the right.
+  const W = 800, H = 600, vx = 400, vy = 0.45 * H;
+  const real = Array.from({ length: W }, (_, c) => 0.62 + (c / W) * 0.2);
+  // Gemini's line seen left (x 120-220) and right (x 580-680) of a bed at x 240-560.
+  const gemini = (k: number, tiltPerPx: number) => {
+    const off: Array<number | null> = real.map(() => null);
+    for (let x = 0; x < W; x++) {
+      const xg = Math.round(vx + (x - vx) / k);
+      if (!((xg >= 120 && xg <= 220) || (xg >= 580 && xg <= 680))) continue;
+      const yG = vy + (real[x] * H - vy) / k + tiltPerPx * (xg - 400);
+      off[xg] = ((yG - real[xg] * H) / H) * 100;
+    }
+    return off;
+  };
+
+  it("finds the move when Gemini's floor line is the real one, just nearer or further", () => {
+    const f = fitLineUpScale(gemini(1.08, 0), real, [0, W - 1], [240, 560], W, H, vx, vy)!;
+    expect(f.slantMeasured).toBe(true);
+    expect(f.k).toBeCloseTo(1.08, 1);
+    expect(f.residualPct).toBeLessThan(0.6);
+  });
+
+  it("reports a large leftover when Gemini tilted its floor line (Bedroom_02)", () => {
+    const f = fitLineUpScale(gemini(1.08, 0.04), real, [0, W - 1], [240, 560], W, H, vx, vy)!;
+    expect(f.slantMeasured).toBe(true);
+    expect(f.residualPct).toBeGreaterThan(0.6);
+  });
+
+  it("ignores stray readings (a door frame read as the floor)", () => {
+    const off = gemini(1.08, 0);
+    for (let c = 670; c <= 680; c++) off[c] = -9;
+    const f = fitLineUpScale(off, real, [0, W - 1], [240, 560], W, H, vx, vy)!;
+    expect(f.residualPct).toBeLessThan(0.6);
   });
 });
