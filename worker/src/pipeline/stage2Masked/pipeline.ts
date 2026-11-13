@@ -229,6 +229,23 @@ const FLOAT_ACCEPT_LAST_GAP_PCT = Number(process.env.STAGE2_FLOAT_ACCEPT_LAST_GA
 // Extra staging attempts after the normal re-stage budget, only when the last
 // attempt failed on how the furniture fitted the room or a processing error.
 export const EXTRA_RESTAGES = Math.max(0, Math.round(Number(process.env.STAGE2_MASKED_EXTRA_RESTAGES ?? 1)));
+/**
+ * Gemini changed the room the same way, in the same place, on two attempts
+ * in a row: a further staging is very unlikely to differ, so the extra
+ * re-stage is skipped (Nov 2026, job_2575a584: the right-hand wall's floor
+ * line redrawn ~7% flatter on all three attempts, at x 79-95% each time).
+ */
+export function sameRoomChangeAgain(prev: any, cur: any): boolean {
+  const changed = (r: any) => Array.isArray(r?.reasonsList) && r.reasonsList.includes("room changed to fit the furniture");
+  if (!changed(prev) || !changed(cur)) return false;
+  const spans = (r: any): [number, number][] => [
+    ...((r?.skirtingBeside?.runs || []) as any[]).map((x) => [Number(x.x1Pct), Number(x.x2Pct)] as [number, number]),
+    ...(Array.isArray(r?.floorMovedCheck?.atXPct) ? [r.floorMovedCheck.atXPct as [number, number]] : []),
+  ].filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b) && b > a);
+  const A = spans(prev), B = spans(cur);
+  return A.some(([a1, a2]) => B.some(([b1, b2]) => Math.min(a2, b2) - Math.max(a1, b1) >= 0.5 * Math.min(a2 - a1, b2 - b1)));
+}
+
 export function isLayoutOrTransientFailure(reason: string): boolean {
   const r = String(reason || "");
   return r === "furniture cut off by the trace"
@@ -1104,7 +1121,7 @@ export async function runMaskedStage2Job(p: {
       const staged = fs.readFileSync(stagedPath);
       io.save?.("2_staged_raw.webp", staged);
       // The exact staging prompt (and room brief, if used), saved by Stage 2.
-      for (const [suffix, name] of [[".prompt.txt", "2_stage_prompt.txt"], [".room-brief.json", "2_room_brief.json"]] as const) {
+      for (const [suffix, name] of [[".prompt.txt", "2_stage_prompt.txt"], [".room-brief.json", "2_room_brief.json"], [".floor-guide.jpg", "2_floor_guide.jpg"]] as const) {
         try {
           if (fs.existsSync(stagedPath + suffix)) io.save?.(name, fs.readFileSync(stagedPath + suffix));
         } catch {}
@@ -1498,7 +1515,13 @@ export async function runMaskedStage2Job(p: {
       // between stagings, and these are usually fine on a fresh try (Nov 2026
       // test run, Bedroom_05: 4 of 4 new stagings kept the wall Gemini had
       // removed in both attempts). Any other reason fails as before.
-      const extraOk = extraRestagesUsed < EXTRA_RESTAGES && reasons.length > 0 && reasons.every(isLayoutOrTransientFailure);
+      row.reasonsList = [...reasons];
+      const repeat = attempt >= 2 && sameRoomChangeAgain(reports[reports.length - 2], row);
+      if (repeat) {
+        row.extraRestageSkipped = "same room change in the same place as the last attempt";
+        p.warn?.(`[${p.jobId}] masked Stage 2: Gemini changed the room the same way, in the same place, as the last attempt — no extra staging`);
+      }
+      const extraOk = !repeat && extraRestagesUsed < EXTRA_RESTAGES && reasons.length > 0 && reasons.every(isLayoutOrTransientFailure);
       if (!extraOk) {
         row.outcome = `FAILED after re-stage (${reasons.join(", ")})`;
         await finishUploads();
@@ -1507,6 +1530,7 @@ export async function runMaskedStage2Job(p: {
       extraRestagesUsed++;
       row.extraRestage = true;
     }
+    row.reasonsList = [...reasons];
     row.outcome = `re-stage (${reasons.join(", ")})`;
     p.warn?.(`[${p.jobId}] masked Stage 2: re-staging (attempt ${attempt + 1}): ${reasons.join(", ")}`);
     hints = [

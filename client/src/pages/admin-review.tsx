@@ -45,6 +45,7 @@ const FILTERS: { value: string; label: string }[] = [
 
 // Plain names for the work images, in the order they're made.
 const STEP_LABELS: [RegExp, string][] = [
+  [/^2_floor_guide/, "Floor line shown to Gemini"],
   [/^2_staged_raw/, "Gemini's staging"],
   [/^2_staged_aligned/, "Staging lined up with the photo"],
   [/^3_mask_overlay/, "What was cut out (furniture)"],
