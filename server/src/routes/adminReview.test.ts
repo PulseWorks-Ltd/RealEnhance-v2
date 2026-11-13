@@ -28,3 +28,16 @@ test("review list: a staged job that fell back to the enhanced photo shows as 'f
   assert.equal(summariseJob({ ...rec, stage2Masked: { ok: true, attempts: 1, reports: [] } }, null).outcome, "published");
   assert.equal(summariseJob({ ...rec, status: "failed" }, null).outcome, "failed");
 });
+
+test("review detail: stage pictures are found under the names the worker saves them as", () => {
+  const rec = {
+    jobId: "job_2", status: "complete",
+    payload: { label: "Bedroom_08.jpg", imageId: "img_x", options: { virtualStage: true } },
+    stageUrls: { stage1A: "https://x/1a.jpg", stage1B: null, stage2: "https://x/2.jpg" },
+  };
+  const j = summariseJob(rec, null);
+  assert.equal(j.imageName, "Bedroom_08.jpg");
+  assert.equal(j.images.enhanced, "https://x/1a.jpg");
+  assert.equal(j.images.staged, "https://x/2.jpg");
+  assert.equal(summariseJob({ ...rec, stageUrls: { "1A": "https://x/old.jpg" } }, null).images.enhanced, "https://x/old.jpg");
+});

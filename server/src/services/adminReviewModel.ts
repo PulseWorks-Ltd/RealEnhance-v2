@@ -2,6 +2,7 @@
 // Pure helpers for the admin review page (no database or Redis), so they can
 // be tested on their own.
 import { extractKeyFromS3Url } from "../utils/s3.js";
+import { normalizeStageUrls } from "@realenhance/shared/stageUrlResolver.js";
 
 // Only these folders can be opened from the review page.
 const ALLOWED_PREFIXES = ["debug-attempts/", "realenhance/"];
@@ -28,7 +29,8 @@ export function summariseJob(rec: any, mark: Mark | null) {
   const p = rec?.payload || {};
   const opt = p.options || {};
   const sm = rec?.stage2Masked || null;
-  const stageUrls = rec?.stageUrls || {};
+  // Stored as stage1A / stage1B / stage2 (older jobs: 1A / 1B / 2).
+  const stages = normalizeStageUrls(rec?.stageUrls || {});
   const status = String(rec?.status || "unknown");
   const fellBack = Boolean(sm && sm.ok === false) || /fallback|exhausted|nothing_to_stage/i.test(String(rec?.validationNote || rec?.meta?.failureReason || ""));
   const outcome = status === "failed" ? "failed"
@@ -37,7 +39,7 @@ export function summariseJob(rec: any, mark: Mark | null) {
   return {
     jobId: String(rec?.jobId || rec?.id || ""),
     createdAt: rec?.createdAt || p.createdAt || null,
-    imageName: p.imageName || p.originalName || rec?.imageId || "",
+    imageName: p.label || p.originalFilename || p.imageName || p.originalName || rec?.imageId || "",
     userId: rec?.userId || p.userId || null,
     agencyId: p.agencyId || null,
     retry: p.retryType || null,
@@ -58,10 +60,10 @@ export function summariseJob(rec: any, mark: Mark | null) {
       steps: (sm.reports || []).map((r: any) => ({ attempt: r.attempt, outcome: r.outcome || (r.error ? `error: ${r.error}` : "") })),
     } : null,
     images: {
-      original: p.remoteOriginalUrl || stageUrls.original || null,
-      enhanced: stageUrls["1A"] || null,
-      decluttered: stageUrls["1B"] || null,
-      staged: stageUrls["2"] || null,
+      original: p.remoteOriginalUrl || rec?.stageUrls?.original || null,
+      enhanced: stages.stage1A || null,
+      decluttered: stages.stage1B || null,
+      staged: stages.stage2 || null,
       final: rec?.finalOutputUrl || rec?.resultUrl || null,
     },
     mark,

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { CompareSlider } from "@/components/CompareSlider";
 
 /* Admin > Review: every job's upload and results, newest first, with the
    staging work images for each attempt and quick "good / problem" marks.
@@ -84,6 +85,53 @@ function apiErrorMessage(err: any, fallback: string): string {
   } catch {
     return fallback;
   }
+}
+
+type Side = "original" | "enhanced" | "decluttered" | "staged";
+const SIDE_LABEL: Record<Side, string> = { original: "Upload", enhanced: "Enhanced", decluttered: "Decluttered", staged: "Staged" };
+
+// Before/after slider, like the one customers get. Either side can be switched.
+function ReviewCompare({ images }: { images: Images }) {
+  const have = (["original", "enhanced", "decluttered", "staged"] as Side[]).filter((k) => !!images[k]);
+  const pickAfter = (): Side | null => (images.staged ? "staged" : images.decluttered ? "decluttered" : images.enhanced ? "enhanced" : null);
+  const [left, setLeft] = useState<Side | null>(images.original ? "original" : have[0] || null);
+  const [right, setRight] = useState<Side | null>(pickAfter());
+  if (!left || !right || left === right || have.length < 2) return null;
+  const choose = (side: "left" | "right") => (
+    <div className="flex flex-wrap items-center gap-1">
+      <span className="text-xs text-muted-foreground mr-1">{side === "left" ? "Left:" : "Right:"}</span>
+      {have.map((k) => (
+        <Button
+          key={k}
+          size="sm"
+          variant={(side === "left" ? left : right) === k ? "default" : "outline"}
+          className="h-7 px-2 text-xs"
+          disabled={(side === "left" ? right : left) === k}
+          onClick={() => (side === "left" ? setLeft(k) : setRight(k))}
+        >
+          {SIDE_LABEL[k]}
+        </Button>
+      ))}
+    </div>
+  );
+  return (
+    <div className="space-y-2">
+      <CompareSlider
+        key={`${left}-${right}`}
+        originalImage={images[left]!}
+        enhancedImage={images[right]!}
+        originalLabel={SIDE_LABEL[left]}
+        enhancedLabel={SIDE_LABEL[right]}
+        height={420}
+        className="w-full rounded-lg overflow-hidden"
+        data-testid="review-compare-slider"
+      />
+      <div className="flex flex-wrap justify-between gap-2">
+        {choose("left")}
+        {choose("right")}
+      </div>
+    </div>
+  );
 }
 
 function Thumb({ url, label, onOpen }: { url: string | null; label: string; onOpen?: (u: string, l: string) => void }) {
@@ -255,6 +303,7 @@ export default function AdminReview() {
                   {detail.options.style && <Badge variant="outline">{detail.options.style.replace(/_/g, " ")}</Badge>}
                 </div>
                 {detail.note && <p className="text-sm text-muted-foreground">{detail.note}</p>}
+                <ReviewCompare key={detail.jobId} images={detail.images} />
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <Thumb url={detail.images.original} label="Upload" onOpen={(url, label) => setZoom({ url, label })} />
                   <Thumb url={detail.images.enhanced} label="Enhanced" onOpen={(url, label) => setZoom({ url, label })} />
