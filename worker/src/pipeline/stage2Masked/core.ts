@@ -3624,6 +3624,8 @@ export type SkirtingLineUp = {
   ok: boolean; why: string; run?: SkirtingRun;
   select?: Uint8Array;       // furniture pixels that move
   k?: number; vx?: number; vy?: number; // scale about (vx, vy), in pixels
+  s?: number; // tilt: extra drop per pixel sideways from vx (vertical shear); 0 = none
+  tiltDeg?: number;
   wallPct?: [number, number]; movedDownPct?: number; growPct?: number;
   // Fit along the wall: how many columns, on which sides of the furniture,
   // and how far off the skirting is expected to stay (% of the height).
@@ -3637,6 +3639,14 @@ export const LINEUP_MAX_RESIDUAL_PCT = Number(process.env.STAGE2_LINEUP_MAX_RESI
 const LINEUP_MIN_FIT_COLS = 6;
 
 export const LINEUP_FIT_WALL = String(process.env.STAGE2_LINEUP_FIT ?? "on").trim().toLowerCase() !== "off";
+// Tilt (Nov 2026): Gemini often draws the wall's floor line at a slightly
+// different ANGLE as well as higher (Bedroom_02: 6.5% off by the door, about
+// right at the far corner). Moving and growing the furniture can't follow an
+// angle, so the move may also tilt it: a vertical shear — upright lines
+// (legs, lamps, headboard sides) stay upright; lines along the wall follow the
+// real wall's angle. At most STAGE2_LINEUP_MAX_TILT (0.035 = about 2 deg).
+export const LINEUP_TILT = String(process.env.STAGE2_LINEUP_TILT ?? "on").trim().toLowerCase() !== "off";
+export const LINEUP_MAX_TILT = Number(process.env.STAGE2_LINEUP_MAX_TILT || 0.035);
 
 /**
  * Best scale k (about vx, vy) for the furniture against one wall.
@@ -3652,7 +3662,7 @@ export const LINEUP_FIT_WALL = String(process.env.STAGE2_LINEUP_FIT ?? "on").tri
 export function fitLineUpScale(
   colOffsets: Array<number | null>, realLine: number[], wall: [number, number], furn: [number, number],
   w: number, h: number, vx: number, vy: number,
-): { k: number; residualPct: number; cols: number; slantMeasured: boolean; lineFitPct: number } | null {
+): { k: number; s: number; residualPct: number; cols: number; slantMeasured: boolean; lineFitPct: number } | null {
   const L = realLine.length;
   const at = (x: number) => realLine[Math.max(0, Math.min(L - 1, Math.round((x / w) * (L - 1))))];
   const pts: Array<{ x: number; y: number }> = [];
@@ -3703,28 +3713,45 @@ export function fitLineUpScale(
   const contact: number[] = [];
   const steps = 40;
   for (let i = 0; i <= steps; i++) contact.push(furn[0] + ((furn[1] - furn[0]) * i) / steps);
-  const resid = (k: number) => {
-    const r: number[] = [];
+  // For a scale k, the error at each contact point before tilting (e) and
+  // how far it sits sideways from the scaling centre (d): a tilt s adds s*d.
+  const errors = (k: number) => {
+    const e: number[] = [], d: number[] = [];
     for (const x of contact) {
       const xn = vx + k * (x - vx);
       if (xn < wall[0] || xn > wall[1]) continue;
       const yr = at(xn);
       if (yr < 0) continue;
-      const yn = vy + k * (a + b * x - vy);
-      r.push((Math.abs(yn - yr * h) / h) * 100);
+      e.push(vy + k * (a + b * x - vy) - yr * h);
+      d.push(xn - vx);
     }
-    return r.sort((u, v) => u - v);
+    return { e, d };
   };
-  let best: { k: number; score: number } | null = null;
+  const tiltFor = (e: number[], d: number[]) => {
+    if (!LINEUP_TILT || !slantMeasured) return 0;
+    let num = 0, den = 0;
+    for (let i = 0; i < e.length; i++) { num += e[i] * d[i]; den += d[i] * d[i]; }
+    if (den <= 0) return 0;
+    return Math.max(-LINEUP_MAX_TILT, Math.min(LINEUP_MAX_TILT, -num / den));
+  };
+  const resid = (k: number, s: number) => {
+    const { e, d } = errors(k);
+    return e.map((v, i) => (Math.abs(v + s * d[i]) / h) * 100).sort((u, v) => u - v);
+  };
+  let best: { k: number; s: number; score: number } | null = null;
   for (let k = 0.85; k <= 1.25 + 1e-9; k += 0.0025) {
-    const r = resid(k);
-    if (r.length < steps / 2) continue;
-    const score = r.reduce((q, v) => q + v, 0) / r.length;
-    if (!best || score < best.score) best = { k, score };
+    const { e, d } = errors(k);
+    if (e.length < steps / 2) continue;
+    // Best tilt for this k (least squares), within the limit.
+    const s = tiltFor(e, d);
+    const r = e.map((v, i) => (Math.abs(v + s * d[i]) / h) * 100);
+    // A small preference for less tilt, so a tilt is only used when it helps.
+    const score = r.reduce((q, v) => q + v, 0) / r.length + Math.abs(s) * 2;
+    if (!best || score < best.score) best = { k, s, score };
   }
   if (!best) return null;
-  const r = resid(best.k);
-  return { k: +best.k.toFixed(4), residualPct: +r[Math.min(r.length - 1, Math.floor(r.length * 0.8))].toFixed(2), cols: pts.length, slantMeasured, lineFitPct };
+  const r = resid(best.k, best.s);
+  return { k: +best.k.toFixed(4), s: +best.s.toFixed(4), residualPct: +r[Math.min(r.length - 1, Math.floor(r.length * 0.8))].toFixed(2), cols: pts.length, slantMeasured, lineFitPct };
 }
 
 export function planSkirtingLineUp(runs: SkirtingRun[], furniture: Uint8Array, w: number, h: number, realLine: number[], colOffsets: Array<number | null> | null = null): SkirtingLineUp {
@@ -3790,6 +3817,7 @@ export function planSkirtingLineUp(runs: SkirtingRun[], furniture: Uint8Array, w
   const yGem = yReal + (run.dyPct / 100) * h;
   if (yReal <= vy + h * 0.05 || yGem <= vy + h * 0.05) return { ok: false, why: "floor line too close to the horizon to scale safely", run };
   let k = (yReal - vy) / (yGem - vy);
+  let tilt = 0;
   // Fit along the whole wall where it can be measured (both sides of the
   // furniture when visible), not just at the middle of one stretch: a move
   // right at one end left a step in the skirting at the other.
@@ -3811,6 +3839,7 @@ export function planSkirtingLineUp(runs: SkirtingRun[], furniture: Uint8Array, w
         return { ok: false, why: `Gemini's floor line runs at a different angle along this wall — no move lines the skirting up everywhere (best fit still ${f.residualPct}% off)`, run, fit };
       }
       k = f.k;
+      tilt = f.s;
     }
   }
   if (k < 0.85 || k > 1.25) return { ok: false, why: `would resize the furniture by ${Math.round((k - 1) * 100)}%`, run, fit };
@@ -3821,6 +3850,7 @@ export function planSkirtingLineUp(runs: SkirtingRun[], furniture: Uint8Array, w
   if ((sx1 > 1 && newLeft < 0) || (sx2 < w - 2 && newRight > w - 1)) return { ok: false, why: "pulling the furniture forward would cut it off at the side of the photo", run };
   return {
     ok: true, why: "steady offset beside furniture", run, select, k, vx, vy, fit,
+    s: tilt, tiltDeg: +((Math.atan(tilt) * 180) / Math.PI).toFixed(2),
     wallPct: [+((wallX1 / w) * 100).toFixed(1), +((wallX2 / w) * 100).toFixed(1)],
     movedDownPct: +(((vy + k * (yGem - vy) - yGem) / h) * 100).toFixed(1),
     growPct: +((k - 1) * 100).toFixed(1),
@@ -3837,6 +3867,7 @@ export async function applySkirtingLineUp(
   staged: Buffer, masks: Record<string, Uint8Array | null | undefined>, furniture: Uint8Array, plan: SkirtingLineUp, w: number, h: number,
 ): Promise<{ staged: Buffer; masks: Record<string, Mask | null | undefined>; movedArea: Mask }> {
   const { select, k, vx, vy } = plan as Required<SkirtingLineUp>;
+  const tilt = Number(plan.s) || 0;
   // Region that travels with the furniture: the pieces plus their shadow area,
   // minus any piece that stays.
   // Wall art stays where it hangs: the margin around a headboard reached the
@@ -3852,10 +3883,11 @@ export async function applySkirtingLineUp(
   const dst = new Uint8Array(w * h); // destination pixels written from the region
   const srcIdx = new Int32Array(w * h).fill(-1);
   for (let y = 0; y < h; y++) {
-    const sy = vy + (y - vy) / k;
-    if (sy < 0 || sy > h - 1) continue;
     for (let x = 0; x < w; x++) {
+      // Forward: x' = vx + k(x - vx); y' = vy + k(y - vy) + tilt(x' - vx).
       const sx = vx + (x - vx) / k;
+      const sy = vy + (y - vy - tilt * (x - vx)) / k;
+      if (sy < 0 || sy > h - 1) continue;
       if (sx < 0 || sx > w - 1) continue;
       const ni = Math.round(sy) * w + Math.round(sx);
       if (!region[ni]) continue;

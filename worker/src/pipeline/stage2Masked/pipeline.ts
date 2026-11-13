@@ -1279,7 +1279,7 @@ export async function runMaskedStage2Job(p: {
           skirtingLeft = sk.runs;
           if (sk.runs.length) {
             const plan: SkirtingLineUp = SKIRTING_LINE_UP ? planSkirtingLineUp(sk.runs, layers.floor, w, h, (sk as any).realLine || [], (sk as any).colOffsets || null) : { ok: false, why: "line-up switched off" };
-            row.skirtingLineUp = { ok: plan.ok, why: plan.why, ...(plan.fit ? { fit: plan.fit } : {}), ...(plan.ok ? { wallPct: plan.wallPct, movedDownPct: plan.movedDownPct, growPct: plan.growPct } : {}) };
+            row.skirtingLineUp = { ok: plan.ok, why: plan.why, ...(plan.fit ? { fit: plan.fit } : {}), ...(plan.ok ? { wallPct: plan.wallPct, movedDownPct: plan.movedDownPct, growPct: plan.growPct, tiltDeg: plan.tiltDeg || 0 } : {}) };
             let ap: Awaited<ReturnType<typeof applySkirtingLineUp>> | null = null;
             if (plan.ok) {
               ap = await applySkirtingLineUp(ctx.staged, {
@@ -1307,7 +1307,7 @@ export async function runMaskedStage2Job(p: {
               const after = await measureSkirtingOffsets(original, ctx.staged, layers.solid, w, h).catch(() => ({ runs: [] as SkirtingRun[], checkedColsPct: 0 }));
               row.skirtingLineUp.after = after.runs;
               skirtingLeft = after.runs;
-              p.log?.(`[${ctx.name}] skirting beside furniture was ${Math.abs(plan.run!.dyPct)}% ${plan.run!.dyPct < 0 ? "higher" : "lower"} in Gemini's picture (x ${plan.run!.x1Pct}-${plan.run!.x2Pct}%) — pulled the furniture against that wall (x ${plan.wallPct![0]}-${plan.wallPct![1]}%) ${plan.k! >= 1 ? "forward" : "back"}: ${plan.k! >= 1 ? "down" : "up"} ${Math.abs(plan.movedDownPct!)}% and ${Math.abs(plan.growPct!)}% ${plan.k! >= 1 ? "bigger" : "smaller"}; fitted on ${plan.fit?.method === "wall" ? `${plan.fit.cols} columns, ${plan.fit.sides}` : "one stretch"}, skirting left ${row.skirtingLineUp.leftoverPct ?? "?"}% off${layers.legPocket ? "; gaps between legs from the real photo" : ""}${after.runs.length ? ` (still off: ${after.runs.map((r) => `${r.dyPct}% at x ${r.x1Pct}-${r.x2Pct}%`).join("; ")})` : ""}`);
+              p.log?.(`[${ctx.name}] skirting beside furniture was ${Math.abs(plan.run!.dyPct)}% ${plan.run!.dyPct < 0 ? "higher" : "lower"} in Gemini's picture (x ${plan.run!.x1Pct}-${plan.run!.x2Pct}%) — pulled the furniture against that wall (x ${plan.wallPct![0]}-${plan.wallPct![1]}%) ${plan.k! >= 1 ? "forward" : "back"}: ${plan.k! >= 1 ? "down" : "up"} ${Math.abs(plan.movedDownPct!)}% and ${Math.abs(plan.growPct!)}% ${plan.k! >= 1 ? "bigger" : "smaller"}${plan.tiltDeg ? `, tilted ${plan.tiltDeg}° to follow the real wall` : ""}; fitted on ${plan.fit?.method === "wall" ? `${plan.fit.cols} columns, ${plan.fit.sides}` : "one stretch"}, skirting left ${row.skirtingLineUp.leftoverPct ?? "?"}% off${layers.legPocket ? "; gaps between legs from the real photo" : ""}${after.runs.length ? ` (still off: ${after.runs.map((r) => `${r.dyPct}% at x ${r.x1Pct}-${r.x2Pct}%`).join("; ")})` : ""}`);
             } else if (!plan.ok) {
               p.warn?.(`[${ctx.name}] skirting beside furniture off by ${sk.runs.map((r) => `${r.dyPct}% at x ${r.x1Pct}-${r.x2Pct}%`).join("; ")} — not lined up: ${plan.why}`);
             }
