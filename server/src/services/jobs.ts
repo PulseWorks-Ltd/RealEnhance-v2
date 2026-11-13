@@ -286,6 +286,18 @@ export async function deleteBatchState(batchId: string) {
 }
 
 // Redis-based job record helpers
+// Newest jobs first, for the admin review page (Nov 2026). Only the job id
+// and its creation time are kept here; everything else is read from the job.
+export const ADMIN_REVIEW_INDEX_KEY = "admin:review:jobs";
+const ADMIN_REVIEW_INDEX_MAX = 5000;
+async function indexJobForAdminReview(jobId: string, rec: any) {
+  if (String(rec?.type || rec?.payload?.type || "") !== "enhance") return;
+  const created = Date.parse(String(rec?.createdAt || rec?.payload?.createdAt || ""));
+  if (!Number.isFinite(created)) return;
+  await redisClient.zAdd(ADMIN_REVIEW_INDEX_KEY, { score: created, value: jobId }, { NX: true });
+  await redisClient.zRemRangeByRank(ADMIN_REVIEW_INDEX_KEY, 0, -(ADMIN_REVIEW_INDEX_MAX + 1));
+}
+
 export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record<string, any>) {
   const key = `jobs:${jobId}`;
   let rec: any = {};
@@ -299,6 +311,7 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
     updatedAt: new Date().toISOString()
   };
   await redisClient.set(key, JSON.stringify(rec));
+  await indexJobForAdminReview(jobId, rec).catch(() => {});
 
   const userId = String(rec?.userId || "").trim();
   if (userId) {

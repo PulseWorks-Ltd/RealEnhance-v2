@@ -42,7 +42,8 @@ export async function createDebugSignedUrl(
   // force: upload even when debug URL logging is off (masked Stage 2's own
   // STAGE2_MASKED_DEBUG_UPLOAD switch). keyName: object name, default the
   // file's basename.
-  options?: { force?: boolean; keyName?: string; body?: Buffer }
+  // sign: false = upload only, no link (the admin review page opens it).
+  options?: { force?: boolean; keyName?: string; body?: Buffer; sign?: boolean }
 ): Promise<DebugSignedUrlResult> {
   if (!options?.force && !isDebugImageUrlLoggingEnabled()) {
     return { signedUrl: null, key: null };
@@ -83,6 +84,7 @@ export async function createDebugSignedUrl(
     })
   );
 
+  if (options?.sign === false) return { signedUrl: null, key };
   const signedUrl = await getSignedUrl(
     s3,
     new GetObjectCommand({ Bucket: bucket, Key: key }),
@@ -90,6 +92,32 @@ export async function createDebugSignedUrl(
   );
 
   return { signedUrl, key };
+}
+
+/**
+ * Masked Stage 2's work images, saved for the admin review page (Nov 2026).
+ * Files go to debug-attempts/<job>/masked/attempt<N>/<name>; only their names
+ * are kept on the job — no links in the logs. Opened through the admin page,
+ * which checks the session and makes a 5-minute link.
+ */
+export function maskedDebugSaver(jobId: string) {
+  const files: Record<string, string[]> = {};
+  const prefix = `debug-attempts/${jobId}/masked`;
+  const onAttemptFiles = async (attempt: number, dir: string, names: string[]) => {
+    const saved: string[] = [];
+    await Promise.all(names.map(async (name) => {
+      try {
+        const res = await createDebugSignedUrl(path.join(dir, name), jobId, { force: true, sign: false, keyName: `masked/attempt${attempt}/${name}` });
+        if (res.key) saved.push(name);
+      } catch (err: any) {
+        console.warn("[STAGE2_MASKED_DEBUG_UPLOAD_FAILED]", { jobId, file: name, error: err?.message || String(err) });
+      }
+    }));
+    const k = `attempt${attempt}`;
+    files[k] = [...new Set([...(files[k] || []), ...saved])].sort();
+    console.log(`[STAGE2_MASKED_DEBUG_SAVED] job=${jobId} attempt=${attempt} files=${saved.length}/${names.length} (open from Admin > Review)`);
+  };
+  return { files, prefix, onAttemptFiles };
 }
 
 // Debug uploads run in the background: the image is read into memory now (so

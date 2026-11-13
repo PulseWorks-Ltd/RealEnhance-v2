@@ -101,7 +101,7 @@ import { toBase64, siblingOutPath, logImageContentHash } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage, publishThumbnailVariant, type PublishResult } from "./utils/publish";
-import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl, trackDebugUpload, flushDebugUploads } from "./utils/debugImageUrls";
+import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl, trackDebugUpload, flushDebugUploads, maskedDebugSaver } from "./utils/debugImageUrls";
 import {
   runMaskedStage2Job,
   doorsFromStructuralBaseline,
@@ -7270,6 +7270,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
       if (useMaskedRetry) {
         const retryRoomType = String(payload.options.roomType || "living_room");
+        // Manual retries keep their work images too (Nov 2026: a retry's
+        // phantom shadow couldn't be looked into — nothing was saved).
+        const retryDebugUpload = maskedStage2DebugUploadEnabled();
+        const retryDebugSaver = maskedDebugSaver(payload.jobId);
         const maskedRetry = await withMemoryPhase("stage2_generation_masked", { stage2BaseStage: stage2OnlyBaseStage, promptMode: stage2OnlyPromptMode, retry: true }, () => runMaskedStage2Job({
           inputPath: basePath,
           roomType: retryRoomType,
@@ -7299,12 +7303,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }),
           outputPathFor: (attempt) => siblingOutPath(basePath, attempt === 1 ? "-2" : `-2-retry${attempt - 1}`, ".webp"),
           workDir: siblingOutPath(basePath, "-2-masked-work", ""),
+          onAttemptFiles: retryDebugUpload ? retryDebugSaver.onAttemptFiles : undefined,
           log: (msg) => console.log(`[STAGE2_MASKED] ${msg}`),
           warn: (msg) => console.warn(`[STAGE2_MASKED] ${msg}`),
         }));
         console.log(`[STAGE2_MASKED_SUMMARY] job=${payload.jobId} path=manual_retry RESULT=${maskedRetry.ok ? "published" : `FAILED (${maskedRetry.reasons.join(", ")})`} attempts=${maskedRetry.attempts}`);
         console.log("[STAGE2_MASKED_RESULT]", JSON.stringify({ jobId: payload.jobId, imageId: payload.imageId, path: "manual_retry", ok: maskedRetry.ok, attempts: maskedRetry.attempts, reports: maskedRetry.reports }));
-        try { await updateJob(payload.jobId, { stage2Masked: { ok: maskedRetry.ok, attempts: maskedRetry.attempts, reports: maskedRetry.reports } }); } catch {}
+        try { await updateJob(payload.jobId, { stage2Masked: { ok: maskedRetry.ok, attempts: maskedRetry.attempts, ...(maskedRetry.ok ? {} : { reasons: maskedRetry.reasons }), reports: maskedRetry.reports, ...(retryDebugUpload ? { debugFiles: retryDebugSaver.files, debugPrefix: retryDebugSaver.prefix } : {}) } }); } catch {}
         if (!maskedRetry.ok && (maskedRetry as any).nothingToStage) {
           await failManualStage2Retry("nothing_to_stage", noStagingMessage(retryRoomType), { stage2Ms: Date.now() - t2 });
           return;
@@ -11585,7 +11590,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           }
         }
         const debugUpload = maskedStage2DebugUploadEnabled();
-        const debugLinks: Record<string, string> = {};
+        const debugSaver = maskedDebugSaver(payload.jobId);
         const result = await runMaskedStage2Job({
           inputPath: stage2InputResolved,
           roomType: String(stage2MainRoomType),
@@ -11620,27 +11625,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }),
           outputPathFor: (attempt) => siblingOutPath(stage2InputResolved, attempt === 1 ? "-2" : `-2-retry${attempt - 1}`, ".webp"),
           workDir: siblingOutPath(stage2InputResolved, "-2-masked-work", ""),
-          onAttemptFiles: debugUpload
-            ? async (attempt, dir, files) => {
-                await Promise.all(files.map(async (name) => {
-                  try {
-                    const res = await createDebugSignedUrl(path.join(dir, name), payload.jobId, {
-                      force: true,
-                      keyName: `masked/attempt${attempt}/${name}`,
-                    });
-                    if (res.signedUrl) debugLinks[`attempt${attempt}/${name}`] = res.signedUrl;
-                  } catch (uploadErr: any) {
-                    console.warn("[STAGE2_MASKED_DEBUG_UPLOAD_FAILED]", { jobId: payload.jobId, file: name, error: uploadErr?.message || String(uploadErr) });
-                  }
-                }));
-                // Print this attempt's links straight away, so they can be
-                // found in the logs even if the job stops before the end.
-                for (const name of files) {
-                  const url = debugLinks[`attempt${attempt}/${name}`];
-                  if (url) console.log(`[STAGE2_MASKED_DEBUG_URL] job_id=${payload.jobId} attempt=${attempt} file=${name} url=${url}`);
-                }
-              }
-            : undefined,
+          onAttemptFiles: debugUpload ? debugSaver.onAttemptFiles : undefined,
           log: (msg) => console.log(`[STAGE2_MASKED] ${msg}`),
           warn: (msg) => console.warn(`[STAGE2_MASKED] ${msg}`),
         });
@@ -11649,12 +11634,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           attempts: result.attempts,
           ...(result.ok ? {} : { reasons: result.reasons }),
           reports: result.reports,
-          ...(debugUpload ? { debugLinks } : {}),
+          ...(debugUpload ? { debugFiles: debugSaver.files, debugPrefix: debugSaver.prefix } : {}),
         };
         // console.log, not nLog: these must show even when quiet log modes mute nLog.
-        // One short, readable line per attempt; the image links were printed one
-        // per line ([STAGE2_MASKED_DEBUG_URL]) and the full report (without the
-        // links) follows for detailed review.
+        // One short, readable line per attempt, then the full report. Work
+        // images are opened from Admin > Review (no image links in the logs).
         for (const r of result.reports as any[]) {
           const parts = [
             `job=${payload.jobId}`,
@@ -11670,8 +11654,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           console.log(`[STAGE2_MASKED_SUMMARY] ${parts.join(" | ")}`);
         }
         console.log(`[STAGE2_MASKED_SUMMARY] job=${payload.jobId} RESULT=${result.ok ? "published" : `FAILED -> fallback (${result.reasons.join(", ")})`} attempts=${result.attempts}`);
-        const { debugLinks: _links, ...summaryNoLinks } = summary as any;
-        console.log("[STAGE2_MASKED_RESULT]", JSON.stringify({ jobId: payload.jobId, imageId: payload.imageId, ...summaryNoLinks }));
+        const { debugFiles: _files, ...summaryNoFiles } = summary as any;
+        console.log("[STAGE2_MASKED_RESULT]", JSON.stringify({ jobId: payload.jobId, imageId: payload.imageId, ...summaryNoFiles }));
         try {
           await updateJob(payload.jobId, { stage2Masked: summary });
         } catch {}
