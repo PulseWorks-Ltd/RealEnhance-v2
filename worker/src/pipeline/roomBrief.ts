@@ -191,6 +191,24 @@ Return ONLY a JSON object:
 }
 
 // Room types whose guidance allows (or requires) no large furniture.
+/**
+ * Rooms that are never staged: the plan adds nothing at all (a garage is
+ * shown clean and empty), so a staging run can only fail its checks and
+ * re-stage (Nov 2026, Harcourts batch: two garages failed 4 times each).
+ * Staging is skipped and the enhanced photo delivered instead.
+ */
+export function roomGetsNoStaging(roomType: string): boolean {
+  const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
+  return key === "garage";
+}
+
+/** What the user is told when a room isn't staged (never says "AI"). */
+export function noStagingMessage(roomType: string): string {
+  const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
+  if (key === "garage") return "Garages are shown clean and empty, so we enhanced your photo without adding furniture.";
+  return "This room is shown as it is, so we enhanced your photo without adding furniture.";
+}
+
 export function roomAllowsEmptyLayout(roomType: string): boolean {
   const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
   return key === "kitchen" || key.startsWith("bathroom") || ["laundry", "pantry", "closet", "garage", "staircase", "hallway", "entryway"].includes(key);

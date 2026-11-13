@@ -76,7 +76,7 @@ import { runFurnitureDetectionSafe } from "./ai/runFurnitureDetectionSafe";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
 import { startFurniturePrecheckWorker } from "./precheck/furniturePrecheck";
 import { buildLayoutContext, type LayoutContextResult } from "./ai/layoutPlanner";
-import { roomBriefEnabled, startRoomBriefPrefetch } from "./pipeline/roomBrief";
+import { roomBriefEnabled, startRoomBriefPrefetch, roomGetsNoStaging, noStagingMessage } from "./pipeline/roomBrief";
 
 import {
   updateJob,
@@ -7261,6 +7261,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       );
       let maskedRetryUsed = false;
       let stage2Result: any;
+      if (useMaskedRetry && roomGetsNoStaging(String(payload.options.roomType || ""))) {
+        // A garage is never staged: stop before any Gemini call, without
+        // using up a retry (Nov 2026: garage retries failed after 2 stagings each).
+        console.log(`[STAGE2_MASKED_SUMMARY] job=${payload.jobId} path=manual_retry RESULT=nothing to stage (${payload.options.roomType}) attempts=0`);
+        await failManualStage2Retry("nothing_to_stage", noStagingMessage(String(payload.options.roomType || "")), { stage2Ms: Date.now() - t2 });
+        return;
+      }
       if (useMaskedRetry) {
         const retryRoomType = String(payload.options.roomType || "living_room");
         const maskedRetry = await withMemoryPhase("stage2_generation_masked", { stage2BaseStage: stage2OnlyBaseStage, promptMode: stage2OnlyPromptMode, retry: true }, () => runMaskedStage2Job({
@@ -7298,6 +7305,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         console.log(`[STAGE2_MASKED_SUMMARY] job=${payload.jobId} path=manual_retry RESULT=${maskedRetry.ok ? "published" : `FAILED (${maskedRetry.reasons.join(", ")})`} attempts=${maskedRetry.attempts}`);
         console.log("[STAGE2_MASKED_RESULT]", JSON.stringify({ jobId: payload.jobId, imageId: payload.imageId, path: "manual_retry", ok: maskedRetry.ok, attempts: maskedRetry.attempts, reports: maskedRetry.reports }));
         try { await updateJob(payload.jobId, { stage2Masked: { ok: maskedRetry.ok, attempts: maskedRetry.attempts, reports: maskedRetry.reports } }); } catch {}
+        if (!maskedRetry.ok && (maskedRetry as any).nothingToStage) {
+          await failManualStage2Retry("nothing_to_stage", noStagingMessage(retryRoomType), { stage2Ms: Date.now() - t2 });
+          return;
+        }
         if (!maskedRetry.ok) {
           await consumeManualRetryAttemptIfNeeded("stage2_only", true);
           await failManualStage2Retry(
@@ -8964,6 +8975,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       && earlyRoomType
       && !["auto", "unknown"].includes(earlyRoomType.toLowerCase())
       && earlyStage2Mode !== "REFRESH"
+      && !roomGetsNoStaging(earlyRoomType)
     ) {
       const earlyStyle = (payload as any)?.options?.stagingStyle;
       startRoomBriefPrefetch({
@@ -11559,6 +11571,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // layout-planner context is built the same way, from the same env var.
       let maskedLayoutContext: LayoutContextResult | null = null;
       const runMaskedStage2 = async () => {
+        // A room that is never staged (garage): no Gemini calls at all — the
+        // enhanced photo is delivered with a clear note and staging refunded.
+        if (roomGetsNoStaging(String(stage2MainRoomType))) {
+          console.log(`[STAGE2_MASKED_SUMMARY] job=${payload.jobId} RESULT=nothing to stage (${stage2MainRoomType}) attempts=0`);
+          return { maskedFailed: true as const, reasons: ["nothing_to_stage"], attempts: 0, nothingToStage: true };
+        }
         if (stage2PromptMode === "full" && process.env.USE_GEMINI_LAYOUT_PLANNER === "1" && !roomBriefEnabled()) {
           try {
             maskedLayoutContext = await buildLayoutContext(stage2InputResolved);
@@ -11667,7 +11685,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             localReasons: [] as string[],
           };
         }
-        return { maskedFailed: true as const, reasons: result.reasons, attempts: result.attempts };
+        return { maskedFailed: true as const, reasons: result.reasons, attempts: result.attempts, nothingToStage: Boolean((result as any).nothingToStage) };
       };
       const stage2Promise = payload.options.virtualStage && !stage2Blocked && useMaskedStage2
         ? withMemoryPhase("stage2_generation_masked", { stage2BaseStage, promptMode: stage2PromptMode }, runMaskedStage2)
@@ -11789,7 +11807,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }));
         stage2Blocked = true;
         stage2FallbackStage = stage2BaseStage;
-        stage2BlockedReason = "composite_validation_exhausted";
+        stage2BlockedReason = (stage2Outcome as any).nothingToStage ? "nothing_to_stage" : "composite_validation_exhausted";
         stage2Outcome = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A;
       }
 
@@ -15493,7 +15511,8 @@ All openings must remain identical in position and size to the original image.`;
   nLog(`[AUDIT FIX] Compliance evaluated in retry flow — proceeding to publish Stage 2 image or fallback`);
   logPostCompliancePhaseEnd("publish_prep", Date.now() - postCompliancePublishPrepStartedAt);
 
-  if (payload.options.virtualStage && stage2Blocked && stage2BlockedReason === "composite_validation_exhausted") {
+  if (payload.options.virtualStage && stage2Blocked && (stage2BlockedReason === "composite_validation_exhausted" || stage2BlockedReason === "nothing_to_stage")) {
+    const nothingToStage = stage2BlockedReason === "nothing_to_stage";
     const fallbackStage: "1A" | "1B" = path1B ? "1B" : "1A";
     const fallbackPath = fallbackStage === "1B" ? path1B! : path1A;
     await completePartialJobWithSummary({
@@ -15504,10 +15523,12 @@ All openings must remain identical in position and size to the original image.`;
       pub1AUrl,
       pub1BUrl,
       sceneMeta: { ...sceneMeta },
-      userMessage: fallbackStage === "1B"
+      userMessage: nothingToStage
+        ? noStagingMessage(String(payload.options.roomType || ""))
+        : fallbackStage === "1B"
         ? "We decluttered your image but could not safely stage it."
         : "We enhanced your image but could not safely stage it.",
-      reason: "composite_validation_exhausted",
+      reason: nothingToStage ? "nothing_to_stage" : "composite_validation_exhausted",
       stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
       billingContext: {
         payload,
