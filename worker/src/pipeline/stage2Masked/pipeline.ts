@@ -82,6 +82,7 @@ import {
   shouldPrealign,
   BED_WALL_CHECK,
   askBedWall,
+  plannedBedWallFromBrief,
   REFLECTION_GATE,
   askReflectiveSurfaces,
   askDeskDoor,
@@ -233,6 +234,8 @@ export function isLayoutOrTransientFailure(reason: string): boolean {
   return r === "furniture cut off by the trace"
     || r === "furniture floating"
     || r === "room changed to fit the furniture"
+    || r === "room changed to fit the bed"
+    || r === "bed not where the plan put it"
     || r === "room reshaped"
     || r.startsWith("processing error:");
 }
@@ -1069,6 +1072,12 @@ export async function runMaskedStage2Job(p: {
     ? askReflectiveSurfaces(p.inputPath, p.jobId).catch(() => null)
     : Promise.resolve(null);
   let extraRestagesUsed = 0;
+  // "Last attempt" leniencies (keep Gemini's pixels where the trace missed
+  // part of a piece; accept a hair of floating) only when no further staging
+  // can follow — not on attempt 2 while the extra re-stage is still unused
+  // (Nov 2026, job_0ed1adf2: attempt 2 took Gemini's floor and skirting under
+  // the near bedside table — a step in the skirting and a lighter carpet patch).
+  const finalAttempt = (attempt: number) => attempt > p.maxRestages + Math.max(0, EXTRA_RESTAGES - extraRestagesUsed);
   for (let attempt = 1; ; attempt++) {
     const dir = path.join(p.workDir, `attempt${attempt}`);
     fs.mkdirSync(dir, { recursive: true });
@@ -1100,12 +1109,16 @@ export async function runMaskedStage2Job(p: {
           if (fs.existsSync(stagedPath + suffix)) io.save?.(name, fs.readFileSync(stagedPath + suffix));
         } catch {}
       }
-      let ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row, fillMissedUnder: attempt > p.maxRestages && PUBLISH_CUT_ON_LAST_ATTEMPT };
+      let ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row, fillMissedUnder: finalAttempt(attempt) && PUBLISH_CUT_ON_LAST_ATTEMPT };
       // Bed placement (bedrooms) needs only the staged picture, so it runs now,
       // alongside the line-up, and a rejected placement skips the trace and blend
       // (~US$0.50 of Gemini calls) and goes straight to the re-stage.
+      try {
+        if (fs.existsSync(stagedPath + ".room-brief.json")) attemptBrief = JSON.parse(fs.readFileSync(stagedPath + ".room-brief.json", "utf8"));
+      } catch {}
+      const plannedBedWall = plannedBedWallFromBrief(attemptBrief);
       const bedWallP = BED_WALL_CHECK && !ctx.offline && /bed/i.test(p.roomType)
-        ? getDoors().then((doors) => askBedWall(ctx.originalPath, staged, doors || [], dir, ctx.name)).catch(() => null)
+        ? getDoors().then((doors) => askBedWall(ctx.originalPath, staged, doors || [], dir, ctx.name, plannedBedWall)).catch(() => null)
         : Promise.resolve(null);
       // Same for the desk in a study / office.
       const deskDoorP = BED_WALL_CHECK && !ctx.offline && /study|office/i.test(p.roomType)
@@ -1113,9 +1126,6 @@ export async function runMaskedStage2Job(p: {
         : Promise.resolve(null);
       // And for sofas, TV units and dining sets in living / dining rooms. The
       // room plan (if Stage 2 used one) shapes the re-stage hint.
-      try {
-        if (fs.existsSync(stagedPath + ".room-brief.json")) attemptBrief = JSON.parse(fs.readFileSync(stagedPath + ".room-brief.json", "utf8"));
-      } catch {}
       const livingPlan = livingPlanFromBrief(attemptBrief);
       const livingDoorP = LIVING_DOOR_CHECK && !ctx.offline && /living|dining/i.test(p.roomType) && !/bed/i.test(p.roomType)
         ? getDoors().then((doors) => askLivingDoor(ctx.originalPath, staged, doors || [], dir, ctx.name, livingPlan)).catch(() => null)
@@ -1146,11 +1156,11 @@ export async function runMaskedStage2Job(p: {
       const bedWall = await bedWallP;
       let placementRejected = false;
       if (bedWall) {
-        row.bedWall = { consensus: (bedWall as any).consensus, model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, ...((bedWall as any).underWindowAccepted ? { underWindowAccepted: true } : {}), coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
+        row.bedWall = { consensus: (bedWall as any).consensus, model: bedWall.model, plannedWall: plannedBedWall, wrongWall: (bedWall as any).wrongWall, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, ...((bedWall as any).underWindowAccepted ? { underWindowAccepted: true } : {}), coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
         if (bedWall.failed) {
-          const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
+          const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture", (bedWall as any).wrongWall && `bed not on the planned wall (${plannedBedWall})`].filter(Boolean).join("; ");
           p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
-          reasons.push((bedWall as any).roomWidened ? "room changed to fit the bed" : "bed against a door wall or window");
+          reasons.push((bedWall as any).roomWidened ? "room changed to fit the bed" : (bedWall as any).wrongWall && !bedWall.bedOnDoorWall && !bedWall.coversWindow && !bedWall.coversDoor ? "bed not where the plan put it" : "bed against a door wall or window");
           row.bedWall.restageHints = bedWall.restageHints;
           placementRejected = true;
         }
@@ -1393,7 +1403,7 @@ export async function runMaskedStage2Job(p: {
         // sofa against a wall in front of a floor-level window, gaps 1.2% and
         // 1.4%, both attempts visual passes, job fell back to 1A).
         if (
-          row.floatingCheck.floating && !floorPlan?.ok && attempt > p.maxRestages &&
+          row.floatingCheck.floating && !floorPlan?.ok && finalAttempt(attempt) &&
           row.floatingCheck.runs.every((r: any) => r.gapPct <= FLOAT_ACCEPT_LAST_GAP_PCT)
         ) {
           row.floatingAccepted = true;
