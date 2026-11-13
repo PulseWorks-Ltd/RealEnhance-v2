@@ -450,3 +450,46 @@ describe("staging prompt with a TV already on the wall", () => {
     expect(buildStage2PromptFromRoomBrief(good, { roomType: "living_room" })).not.toContain("Do not add a second TV");
   });
 });
+
+describe("door beside the bed wall (Nov 2026, job_2575a584)", () => {
+  const { makeBedPlanConservative, doorSideOfPhoto } = require("../src/pipeline/roomBrief");
+  const planA = (wallMetres: number) => ({
+    roomSummary: "Bedroom", camera: "The camera looks into the corner.",
+    landmarks: [
+      { id: "L1", type: "window", description: "wide window on the wall on the left", box: [0.2, 0.3, 0.5, 0.65] },
+      { id: "L2", type: "door", description: "entry door on the wall on the right", box: [0.92, 0.18, 0.97, 0.95] },
+    ],
+    walls: [{ name: "the plain back wall straight ahead" }, { name: "the wall on the right with the entry door" }],
+    bedSpace: { bed: "queen", bedsideTables: 2, wallMetres, depthMetres: 3.2, wallRunsOffPhoto: false },
+    layout: [
+      { item: "Queen bed (1.5 m wide)", placement: "centered against the plain back wall straight ahead" },
+      { item: "Bedside table (0.5 m wide)", placement: "against the plain back wall straight ahead, to the left of the queen bed" },
+      { item: "Bedside table (0.5 m wide)", placement: "against the plain back wall straight ahead, to the right of the queen bed" },
+      { item: "Table lamp", placement: "on the bedside table to the left of the queen bed" },
+      { item: "Table lamp", placement: "on the bedside table to the right of the queen bed" },
+    ],
+    relationships: [], avoid: [], keepUntouched: [], zones: [],
+  });
+  it("finds the door's side of the photo", () => {
+    expect(doorSideOfPhoto(planA(3))).toBe("right");
+  });
+  it("3.0 m with a door on the right: drops the right-hand table and moves the bed away from the door", () => {
+    const { brief, changed } = makeBedPlanConservative(planA(3.0), "bedroom");
+    const tables = brief.layout.filter((l: any) => /bedside/i.test(l.item));
+    expect(tables).toHaveLength(1);
+    expect(tables[0].placement).toMatch(/left/);
+    const bed = brief.layout.find((l: any) => /queen bed/i.test(l.item));
+    expect(bed.placement).toMatch(/furthest from the door on the right/);
+    expect(bed.placement).not.toMatch(/\bcentered\b/);
+    expect((brief as any).bedSpace.bedsideTables).toBe(1);
+    expect(changed.join(" ")).toMatch(/door side/);
+  });
+  it("a wall long enough for both tables and a door-width keeps both", () => {
+    const { brief } = makeBedPlanConservative(planA(3.6), "bedroom");
+    expect(brief.layout.filter((l: any) => /bedside/i.test(l.item))).toHaveLength(2);
+  });
+  it("tells the planner a door belongs to the wall it sits in", () => {
+    const { buildRoomBriefInstruction } = require("../src/pipeline/roomBrief");
+    expect(buildRoomBriefInstruction("bedroom")).toMatch(/never split one flat wall into two walls at a door/);
+  });
+});
