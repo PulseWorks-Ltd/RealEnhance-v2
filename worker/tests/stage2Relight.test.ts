@@ -1,6 +1,7 @@
 jest.mock("../src/ai/gemini", () => ({ getGeminiClient: () => ({}), closestGeminiAspectRatio: () => "4:3" }));
 import sharp from "sharp";
 import { compositeRelight } from "../src/pipeline/stage2Masked/relight";
+jest.setTimeout(20000); // image work: ~4 s per test on a slow machine
 
 // 400x300 room: wall (light) on top, carpet (mid, textured) below y=200, a
 // dark wall corner edge at x=100. Furniture: a box at x 180-260, y 140-210.
@@ -68,4 +69,27 @@ describe("relit final: the blend's lighting on the real room", () => {
     const { safe, raw, lum } = await run(blend);
     for (const [x, y] of [[20, 20], [380, 20], [20, 290], [390, 290]]) expect(Math.abs(lum(raw, x, y) - lum(safe, x, y))).toBeLessThanOrEqual(2);
   });
+});
+
+describe("relit final: no-borrow area beside the furniture (Nov 2026, Bedroom_02)", () => {
+  it("carries the surrounding shadow across it instead of leaving a bright block", async () => {
+    const safe = room();
+    // The blend: a soft shadow on the wall right of the furniture (x 262-320),
+    // and Gemini's dark floor drawn over the real wall in part of it.
+    const blend = room();
+    for (let y = 120; y < 200; y++) for (let x = 262; x < 320; x++) {
+      const i = (y * W + x) * 3;
+      const v = x >= 280 && x < 300 && y >= 170 ? 110 : Math.round(blend[i] * 0.75);
+      blend.set([v, v, v], i);
+    }
+    const noBorrow = await mask((x, y) => x >= 278 && x < 302 && y >= 165 && y < 200);
+    const out = await compositeRelight(await png(safe), await png(blend), await mask(inFurn), await mask(inCore), await mask(inZone), noBorrow);
+    const raw = await sharp(out.buffer).removeAlpha().raw().toBuffer();
+    const at = (x: number, y: number) => raw[(y * W + x) * 3];
+    // Inside the no-borrow area: shaded like its surroundings (not the bright
+    // real wall, and not Gemini's dark floor).
+    expect(at(290, 185)).toBeLessThan(205);
+    expect(at(290, 185)).toBeGreaterThan(130);
+    expect(Math.abs(at(290, 185) - at(270, 185))).toBeLessThan(25);
+  }, 20000);
 });

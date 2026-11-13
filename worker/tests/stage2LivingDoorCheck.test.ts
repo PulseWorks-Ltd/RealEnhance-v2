@@ -58,7 +58,7 @@ describe("living / dining re-stage hint", () => {
     const plan = livingPlanFromBrief({ ...brief, walls: [{ name: "Left wall", usableForLargeFurniture: true }] });
     const hint = livingDoorRestageHint("sofa blocks D2", doors, plan);
     expect(hint).toContain("use only: Left wall");
-    expect(hint).toContain("Use a smaller sofa and move it further into the open room");
+    expect(hint).toContain("Use a more compact sofa (still at true real-world size) and move it further into the open room");
   });
 
   it("keeps the old wording (with doors in words) when there is no room plan", () => {
