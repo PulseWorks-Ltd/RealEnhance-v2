@@ -3237,6 +3237,12 @@ export async function undoneOverlay(original: Buffer, staged: Buffer, mask: Uint
 export const FLOAT_GROUND_MARGIN_PCT = Number(process.env.FLOAT_GROUND_MARGIN_PCT || 1);
 export const FLOAT_MIN_WIDTH_PCT = Number(process.env.FLOAT_MIN_WIDTH_PCT || 3);
 export const FLOAT_NEAR_FLOOR_PCT = Number(process.env.FLOAT_NEAR_FLOOR_PCT || 12);
+// High above the floor but beside floor-standing furniture (Nov 2026, Harcourts
+// 07: a bedside table whose legs stopped 7-15% above the real carpet, next to
+// the bed). Up to this far above the floor line a stretch that joins a hanging
+// stretch, or sits beside grounded furniture, is still checked; a piece all on
+// its own that high (a wall-mounted TV, a wall shelf) is not.
+export const FLOAT_FAR_FLOOR_PCT = Number(process.env.FLOAT_FAR_FLOOR_PCT || 22);
 
 // A narrow raised strip at the photo's edge is an overhang, not a floating
 // piece, when the same piece stands on the floor elsewhere: its outer leg is
@@ -3256,17 +3262,30 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
   const rgb = await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).blur(1.5).raw().toBuffer();
   const margin = (FLOAT_GROUND_MARGIN_PCT / 100) * H;
   const near = (FLOAT_NEAR_FLOOR_PCT / 100) * H;
+  const far = (Math.max(FLOAT_NEAR_FLOOR_PCT, FLOAT_FAR_FLOOR_PCT) / 100) * H;
   // Per column: lowest furniture pixel (-1 = no furniture in this column).
   const bottom = new Int32Array(W).fill(-1);
   for (let x = 0; x < W; x++) for (let y = H - 1; y >= 0; y--) if (m[y * W + x] > 127) { bottom[x] = y; break; }
-  // 0 = no furniture, 1 = grounded (or unknown floor), 2 = hanging near the floor
+  // 0 = no furniture, 1 = grounded (or unknown floor), 2 = hanging near the
+  // floor, 3 = hanging higher up (see FLOAT_FAR_FLOOR_PCT; settled below)
   const state = new Uint8Array(W);
   for (let x = 0; x < W; x++) {
     if (bottom[x] < 0) continue;
     const f = line[x];
     if (f < 0 || bottom[x] >= H - 2) { state[x] = 1; continue; }
     const gap = f - bottom[x];
-    state[x] = bottom[x] >= f + margin ? 1 : gap <= near ? 2 : 1; // far above the floor: wall item, not checked
+    state[x] = bottom[x] >= f + margin ? 1 : gap <= near ? 2 : gap <= far ? 3 : 1; // far above the floor: wall item, not checked
+  }
+  // A higher stretch counts when it joins a hanging stretch or sits beside
+  // grounded furniture; on its own it is a wall item (as before).
+  for (let x = 0; x < W; ) {
+    if (state[x] !== 3) { x++; continue; }
+    let x2 = x;
+    while (x2 + 1 < W && state[x2 + 1] === 3) x2++;
+    const l = x > 0 ? state[x - 1] : 0, r = x2 < W - 1 ? state[x2 + 1] : 0;
+    const v = l === 2 || r === 2 || l === 1 || r === 1 ? 2 : 1;
+    for (let k = x; k <= x2; k++) state[k] = v;
+    x = x2 + 1;
   }
   // Legged furniture (TV unit, sideboard): the body between and beyond the
   // legs is raised off the floor by design. A raised stretch is supported
@@ -3332,7 +3351,12 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
     const freeLeft = x === 0 || state[x - 1] === 0;
     const freeRight = x2 === W - 1 || state[x2 + 1] === 0;
     const widthPct = ((x2 - x + 1) / W) * 100;
-    if (widthPct >= FLOAT_MIN_WIDTH_PCT && (freeLeft || freeRight) && !standsOnLegBeside(x, x2, freeLeft, freeRight)) {
+    // Boxed in on both sides (the bed on one side, a shadow or another piece
+    // on the other): still floating when the empty room shows wall or
+    // skirting in the gap — not when it shows floor (a piece in front, a
+    // raised base over carpet).
+    const boxedWall = !(freeLeft || freeRight) && (() => { const gc = gapVsFloor(rgb, line, bottom, x, x2, W, H); return Boolean(gc && !gc.isFloor); })();
+    if (widthPct >= FLOAT_MIN_WIDTH_PCT && (freeLeft || freeRight || boxedWall) && !standsOnLegBeside(x, x2, freeLeft, freeRight)) {
       let gapSum = 0, n = 0, bSum = 0, fSum = 0;
       for (let k = x; k <= x2; k++) { gapSum += line[k] - bottom[k]; bSum += bottom[k]; fSum += line[k]; n++; }
       // Is the "gap" under the piece really floor? The floor line is the
@@ -3918,6 +3942,270 @@ export function planSkirtingLineUp(runs: SkirtingRun[], furniture: Uint8Array, w
     movedDownPct: +(((vy + k * (yGem - vy) - yGem) / h) * 100).toFixed(1),
     growPct: +((k - 1) * 100).toFixed(1),
   };
+}
+
+// ── Per-piece line-up (Nov 2026) ───────────────────────────────────────────
+// Gemini often draws a steep side wall's floor line flatter than the real one
+// (Harcourts 07, Bedroom_02): right by the far bedside table its floor is
+// 5-10% higher, by the bed hardly at all. One move for the whole wall can't
+// follow that, so each floating piece is moved on its own: down until its
+// back feet — standing on Gemini's floor line — meet the real one, and a
+// little bigger, as it is now nearer the camera. Gemini's floor line under
+// the piece is read in the gap between its legs (its own picture), or just
+// beside it. Small pieces only; the result is checked like any line-up.
+export const PIECE_LINEUP = String(process.env.STAGE2_PIECE_LINEUP ?? "on").trim().toLowerCase() !== "off";
+export const PIECE_LINEUP_MAX_MOVE_PCT = Number(process.env.STAGE2_PIECE_LINEUP_MAX_MOVE_PCT || 14);
+// Mostly a move down, with little growth: grown by the full perspective
+// amount, a bedside table spread over the bed beside it (which can't move)
+// and looked too big next to it (Harcourts 07 replay).
+export const PIECE_LINEUP_MAX_GROW = Number(process.env.STAGE2_PIECE_LINEUP_MAX_GROW || 0.05);
+export const PIECE_LINEUP_MAX_WIDTH_PCT = Number(process.env.STAGE2_PIECE_LINEUP_MAX_WIDTH_PCT || 25);
+// Legs may run off the bottom of the photo by this share of the piece's height.
+export const PIECE_LINEUP_MAX_CUT = Number(process.env.STAGE2_PIECE_LINEUP_MAX_CUT || 0.3);
+
+export type PiecePlan = SkirtingLineUp & { pieceXPct?: [number, number]; geminiLinePct?: number; cols?: number; stayCols?: [number, number] };
+
+export async function planPieceLineUps(
+  original: Buffer, staged: Buffer, furniture: Uint8Array, runs: Array<{ x1Pct: number; x2Pct: number }>, w: number, h: number,
+): Promise<{ plans: PiecePlan[]; notes: string[] }> {
+  const W = 800, H = Math.max(8, Math.round((W * h) / w));
+  const line = await realFloorLine(await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer(), W, H);
+  const sg = await sharp(staged).removeAlpha().resize(W, H, { fit: "fill" }).greyscale().blur(1.5).raw().toBuffer();
+  const mk = await sharp(Buffer.from(furniture.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
+    .resize(W, H, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const isF = (x: number, y: number) => mk[y * W + x] > 127;
+  const step = Math.max(2, Math.round(H * 0.004));
+  // Which way the wall-to-floor edge goes (lighter wall over darker floor, or
+  // the other way), from the empty room: an edge the other way is a shadow
+  // or a leg, not the floor line.
+  const og = await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).greyscale().blur(1.5).raw().toBuffer();
+  let wallMinusFloor = 0;
+  for (let x = 0; x < W; x += 2) {
+    const f = line[x];
+    if (f < 0 || f - Math.round(H * 0.06) < 0 || f + Math.round(H * 0.03) >= H) continue;
+    wallMinusFloor += og[(f - Math.round(H * 0.05)) * W + x] - og[(f + Math.round(H * 0.02)) * W + x];
+  }
+  const edgeSign = Math.sign(wallMinusFloor) || 1;
+  const plans: PiecePlan[] = [];
+  const notes: string[] = [];
+  for (const run of runs) {
+    const label = `x ${run.x1Pct}-${run.x2Pct}%`;
+    const a = Math.max(0, Math.floor((run.x1Pct / 100) * W)), b = Math.min(W - 1, Math.ceil((run.x2Pct / 100) * W));
+    if (((b - a) / W) * 100 > PIECE_LINEUP_MAX_WIDTH_PCT) { notes.push(`${label}: too wide to move on its own`); continue; }
+    // Gemini's floor line in this stretch (and a little either side): the
+    // lowest strong edge in its picture, below the piece, away from furniture.
+    const pad = Math.round(W * 0.03);
+    const diffs: number[] = []; const gems: number[] = [];
+    for (let x = Math.max(0, a - pad); x <= Math.min(W - 1, b + pad); x++) {
+      if (line[x] < 0) continue;
+      let low = -1; for (let y = H - 1; y >= 0; y--) if (isF(x, y)) { low = y; break; }
+      for (let y = H - 1 - step; y > H * 0.35; y--) {
+        if (low >= 0 && y <= low) break; // only below furniture (never up through the bed beside it)
+        if (isF(x, y - step) || isF(x, y) || isF(x, y + step)) continue;
+        if ((sg[(y - step) * W + x] - sg[(y + step) * W + x]) * edgeSign >= 18) {
+          // Wall above, floor below: the edge must sit above the real floor
+          // line's reach (a rug edge on the floor is lower down).
+          gems.push(y); diffs.push(line[x] - y);
+          break;
+        }
+      }
+    }
+    if (diffs.length < 6) { notes.push(`${label}: Gemini's floor line not visible under or beside it`); continue; }
+    diffs.sort((p, q) => p - q);
+    gems.sort((p, q) => p - q);
+    const dyS = diffs[diffs.length >> 1];
+    const spread = diffs[Math.floor(diffs.length * 0.8)] - diffs[Math.floor(diffs.length * 0.2)];
+    const dyPct = (dyS / H) * 100;
+    if (dyPct < 1) { notes.push(`${label}: Gemini's floor line already meets the real one (${dyPct.toFixed(1)}%) — the piece floats in Gemini's picture too`); continue; }
+    if (dyPct > PIECE_LINEUP_MAX_MOVE_PCT) { notes.push(`${label}: would move ${dyPct.toFixed(1)}% — too far`); continue; }
+    if ((spread / H) * 100 > 3) { notes.push(`${label}: Gemini's floor line here is unsteady (${((spread / H) * 100).toFixed(1)}% spread)`); continue; }
+    // The piece: the outline joined to this stretch, cut free of a neighbour
+    // it only touches (a bedside table against the bed's side) by thinning
+    // the outline a little first. Its legs may run past the stretch (one off
+    // the bottom of the photo counts as "standing"), so it is the whole
+    // outline, not just these columns.
+    const X1 = Math.floor((a / W) * w), X2 = Math.ceil(((b + 1) / W) * w) - 1;
+    const r = Math.max(2, Math.round(w * 0.003));
+    const thin = erode(furniture, w, h, r);
+    const votes = new Map<number, number>();
+    const comps = labelComponents(thin, w, h);
+    const lab = new Int32Array(w * h).fill(-1);
+    comps.forEach((c, idx) => { for (const i of c.pixels) lab[i] = idx; });
+    for (let y = Math.floor(h * 0.4); y < h; y++) for (let x = X1; x <= X2; x++) { const l = lab[y * w + x]; if (l >= 0) votes.set(l, (votes.get(l) || 0) + 1); }
+    let best = -1, bestN = 0;
+    for (const [l, c] of votes) if (c > bestN) { bestN = c; best = l; }
+    const select = new Uint8Array(w * h);
+    let n = 0, sx1 = w, sx2 = 0, sy1 = h, sy2 = 0;
+    let stayCols: [number, number] | null = null;
+    if (best >= 0) {
+      const core = new Uint8Array(w * h);
+      for (const i of comps[best].pixels) core[i] = 1;
+      const grown = dilate(core, w, h, r + 2);
+      for (let i = 0; i < grown.length; i++) if (grown[i] && furniture[i]) { select[i] = 1; n++; const x = i % w, y = (i - x) / w; if (x < sx1) sx1 = x; if (x > sx2) sx2 = x; if (y < sy1) sy1 = y; if (y > sy2) sy2 = y; }
+    }
+    // Joined to a bigger piece (a bedside table drawn against the bed's
+    // side): on a side where the outline runs on well past this stretch, cut
+    // it at the stretch's edge; on a side where it only runs on a little (a
+    // leg off the bottom of the photo, a side panel), keep it.
+    if (n && ((sx2 - sx1) / w) * 100 > PIECE_LINEUP_MAX_WIDTH_PCT) {
+      const reach = w * 0.06;
+      const cutL = X1 - sx1 > reach ? X1 : sx1, cutR = sx2 - X2 > reach ? X2 : sx2;
+      const part = new Uint8Array(w * h);
+      for (let i = 0; i < select.length; i++) if (select[i]) { const x = i % w; if (x >= cutL && x <= cutR) part[i] = 1; }
+      // The part joined to this stretch's lower half.
+      const pc = labelComponents(part, w, h);
+      let pb = -1, pn = 0;
+      pc.forEach((c, idx) => { let v = 0; for (const i of c.pixels) { const x = i % w, y = (i - x) / w; if (x >= X1 && x <= X2 && y >= h * 0.4) v++; } if (v > pn) { pn = v; pb = idx; } });
+      select.fill(0); n = 0; sx1 = w; sx2 = 0; sy1 = h; sy2 = 0;
+      if (pb >= 0) for (const i of pc[pb].pixels) { select[i] = 1; n++; const x = i % w, y = (i - x) / w; if (x < sx1) sx1 = x; if (x > sx2) sx2 = x; if (y < sy1) sy1 = y; if (y > sy2) sy2 = y; }
+      // Above the piece's body, what touches the cut edge belongs to the
+      // bigger piece (the end of a headboard behind a bedside table) and
+      // stays; what stands on it away from that edge (a lamp) moves with it.
+      if (n && (cutL > sx1 - 1 || cutR < sx2 + 1)) {
+        const pw = sx2 - sx1 + 1;
+        let bodyTop = sy2;
+        for (let y = sy2; y >= sy1; y--) { let c = 0; for (let x = sx1; x <= sx2; x++) if (select[y * w + x]) c++; if (c >= pw * 0.4) bodyTop = y; }
+        const above = new Uint8Array(w * h);
+        for (let y = sy1; y < bodyTop; y++) for (let x = sx1; x <= sx2; x++) if (select[y * w + x]) above[y * w + x] = 1;
+        const edge = Math.max(2, Math.round(w * 0.01));
+        for (const c of labelComponents(above, w, h)) {
+          const atCut = c.pixels.some((i) => { const x = i % w; return (cutL > sx1 - 1 && x <= cutL + edge) || (cutR < sx2 + 1 && x >= cutR - edge); });
+          // Tall (a headboard rising well above the table), not the table
+          // top's own back edge.
+          if (!atCut) continue;
+          // Only the columns where it rises high stay behind (a strip of the
+          // table's own top edge joined to it moves with the table).
+          const colTop = new Map<number, number>();
+          for (const i of c.pixels) { const x = i % w, y = (i - x) / w; const t = colTop.get(x); if (t === undefined || y < t) colTop.set(x, y); }
+          // In those columns the table's top edge runs on behind: find it as a
+          // straight line from the columns just beside them (the table's own
+          // top) and carried on; below it is the table (moves), above it the
+          // headboard (stays).
+          const tall = (x: number) => bodyTop - (colTop.get(x) as number) >= h * 0.04;
+          let tx1 = w, tx2 = -1;
+          for (const x of colTop.keys()) if (tall(x)) { if (x < tx1) tx1 = x; if (x > tx2) tx2 = x; }
+          const pts: Array<[number, number]> = [];
+          const onLeft = cutL > sx1 - 1;
+          const from = onLeft ? tx2 + 1 : Math.max(sx1, tx1 - Math.round(w * 0.04));
+          const to = onLeft ? Math.min(sx2, tx2 + Math.round(w * 0.04)) : tx1 - 1;
+          for (let x = from; x <= to; x++) { if (tall(x) && colTop.has(x)) continue; for (let y = sy1; y <= sy2; y++) if (select[y * w + x]) { pts.push([x, y]); break; } }
+          let edgeAt: ((x: number) => number) | null = null;
+          if (pts.length >= 6) {
+            const n0 = pts.length, mx = pts.reduce((q, p) => q + p[0], 0) / n0, my = pts.reduce((q, p) => q + p[1], 0) / n0;
+            let sxy = 0, sxx = 0; for (const [x, y] of pts) { sxy += (x - mx) * (y - my); sxx += (x - mx) * (x - mx); }
+            const bb = sxx > 0 ? sxy / sxx : 0;
+            edgeAt = (x: number) => my + bb * (x - mx);
+          }
+          for (const i of c.pixels) {
+            const x = i % w, y = (i - x) / w;
+            if (!tall(x)) continue;
+            if (edgeAt && y >= edgeAt(x) - 2) continue; // the table's top, carried on
+            select[i] = 0; n--;
+          }
+          if (tx2 >= tx1) stayCols = [Math.min(stayCols?.[0] ?? tx1, tx1), Math.max(stayCols?.[1] ?? tx2, tx2)];
+        }
+        sx1 = w; sx2 = 0; sy1 = h; sy2 = 0;
+        for (let i = 0; i < select.length; i++) if (select[i]) { const x = i % w, y = (i - x) / w; if (x < sx1) sx1 = x; if (x > sx2) sx2 = x; if (y < sy1) sy1 = y; if (y > sy2) sy2 = y; }
+      }
+      if (n && ((sx2 - sx1) / w) * 100 > PIECE_LINEUP_MAX_WIDTH_PCT) { notes.push(`${label}: the piece is joined to a bigger one — can't move it on its own`); continue; }
+      // A piece of its own (a bedside table) stands clearly lower than the
+      // bigger piece beside the cut (the headboard). A part as tall as its
+      // neighbour is a slice of that piece (the end of a bed): moving it
+      // would tear it (Nov 2026, Bedroom_02 replay).
+      if (n) {
+        let nTop = h;
+        const nx1 = cutL > sx1 - 1 ? Math.max(0, cutL - Math.round(w * 0.05)) : cutR + 1;
+        const nx2 = cutL > sx1 - 1 ? cutL - 1 : Math.min(w - 1, cutR + Math.round(w * 0.05));
+        for (let y = 0; y < h && nTop === h; y++) for (let x = nx1; x <= nx2; x++) if (furniture[y * w + x]) { nTop = y; break; }
+        if (sy1 - nTop < h * 0.04) { notes.push(`${label}: part of a bigger piece (as tall as it), not a piece of its own — can't move it without tearing`); continue; }
+      }
+    }
+    if (!n) { notes.push(`${label}: no piece found`); continue; }
+    const yGem = (gems[gems.length >> 1] / H) * h;
+    const yReal = yGem + (dyS / H) * h;
+    const vyH = SKIRTING_HORIZON * h;
+    if (yGem <= vyH + h * 0.05) { notes.push(`${label}: floor line too close to the horizon`); continue; }
+    const kPersp = (yReal - vyH) / (yGem - vyH);
+    const k = Math.max(1.01, Math.min(1 + PIECE_LINEUP_MAX_GROW, kPersp));
+    const vy = (k * yGem - yReal) / (k - 1);
+    // Grow away from furniture beside it: anchor on the side where another
+    // piece stands right next to it (the bed), else the middle.
+    const besideAt = (x: number) => { if (x < 0 || x >= w) return false; for (let y = Math.floor(h * 0.4); y < h; y++) if (furniture[y * w + x] && !select[y * w + x]) return true; return false; };
+    const gapPx = Math.round(w * 0.01);
+    const leftBeside = besideAt(sx1 - gapPx), rightBeside = besideAt(sx2 + gapPx);
+    const vx = leftBeside && !rightBeside ? sx1 : rightBeside && !leftBeside ? sx2 : (sx1 + sx2) / 2;
+    const newBottom = vy + k * (sy2 - vy);
+    const pieceH = sy2 - sy1;
+    // What the move pushes out of the photo (a piece already cut by the
+    // bottom edge only loses the strip that moves out).
+    const lost = sy2 >= h - 2 ? newBottom - sy2 : Math.max(0, newBottom - (h - 1));
+    if (lost > PIECE_LINEUP_MAX_CUT * pieceH) { notes.push(`${label}: would run off the bottom of the photo`); continue; }
+    const nl = vx + k * (sx1 - vx), nr = vx + k * (sx2 - vx);
+    if ((sx1 > 1 && nl < 0) || (sx2 < w - 2 && nr > w - 1)) { notes.push(`${label}: would run off the side of the photo`); continue; }
+    plans.push({
+      ok: true, why: "piece floating; Gemini's floor line measured under it", select, k, vx, vy, s: 0, tiltDeg: 0,
+      run: { x1Pct: run.x1Pct, x2Pct: run.x2Pct, widthPct: +(run.x2Pct - run.x1Pct).toFixed(1), dyPct: -+dyPct.toFixed(1) },
+      wallPct: [+((sx1 / w) * 100).toFixed(1), +((sx2 / w) * 100).toFixed(1)],
+      movedDownPct: +dyPct.toFixed(1), growPct: +((k - 1) * 100).toFixed(1),
+      pieceXPct: [+((sx1 / w) * 100).toFixed(1), +((sx2 / w) * 100).toFixed(1)], geminiLinePct: +((yGem / h) * 100).toFixed(1), cols: diffs.length,
+      ...(stayCols ? { stayCols } : {}),
+    });
+    notes.push(`${label}: Gemini's floor ${dyPct.toFixed(1)}% higher (${diffs.length} columns) — move down, ${((k - 1) * 100).toFixed(0)}% bigger`);
+  }
+  return { plans, notes };
+}
+
+/**
+ * After a piece cut free of a bigger one (a bedside table off the bed) moved
+ * down: the bigger piece's part that was hidden behind it (the bottom of the
+ * headboard) is now uncovered and Gemini never drew it. In those columns its
+ * lowest visible rows are carried down until they meet furniture again
+ * (at most 15% of the height); the pixels become furniture. Changes staged
+ * and floor in place.
+ */
+export function fillUncoveredBehind(stagedRgb: Buffer, floor: Uint8Array, cols: [number, number], w: number, h: number): number {
+  let filled = 0;
+  const maxRun = Math.round(h * 0.15);
+  for (let x = Math.max(0, cols[0]); x <= Math.min(w - 1, cols[1]); x++) {
+    // Lowest pixel of the upper piece in this column: the first furniture
+    // pixel from the top, then down to where it ends.
+    let y = 0;
+    while (y < h && !floor[y * w + x]) y++;
+    while (y < h && floor[y * w + x]) y++;
+    const y0 = y - 1;
+    if (y0 < 4 || y >= h) continue;
+    let end = y;
+    while (end < h && !floor[end * w + x] && end - y < maxRun) end++;
+    if (end >= h || !floor[end * w + x]) continue; // must meet furniture again below
+    const c = [0, 0, 0];
+    for (let k = 1; k <= 4; k++) { const j = ((y0 - k) * w + x) * 3; c[0] += stagedRgb[j]; c[1] += stagedRgb[j + 1]; c[2] += stagedRgb[j + 2]; }
+    for (let yy = y; yy < end; yy++) { const j = (yy * w + x) * 3; stagedRgb[j] = Math.round(c[0] / 4); stagedRgb[j + 1] = Math.round(c[1] / 4); stagedRgb[j + 2] = Math.round(c[2] / 4); floor[yy * w + x] = 1; filled++; }
+  }
+  return filled;
+}
+
+/**
+ * After a per-piece move: does the moved piece reach the real floor line
+ * (within FLOOR_TOUCH_TOL_PCT) somewhere across its width? Back legs of a
+ * piece against the wall sit right ON the line, which the floating check
+ * (wanting 1% below it) reads as hanging. x range in pixels.
+ */
+export const FLOOR_TOUCH_TOL_PCT = Number(process.env.STAGE2_FLOOR_TOUCH_TOL_PCT || 0.8);
+export async function pieceReachesFloor(original: Buffer, floor: Uint8Array, x1: number, x2: number, w: number, h: number): Promise<{ reaches: boolean; closestPct: number | null }> {
+  const W = 800, H = Math.max(8, Math.round((W * h) / w));
+  const line = await realFloorLine(await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer(), W, H);
+  const mk = await sharp(Buffer.from(floor.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } }).resize(W, H, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const a = Math.max(0, Math.floor((x1 / w) * W)), b = Math.min(W - 1, Math.ceil((x2 / w) * W));
+  let closest: number | null = null;
+  for (let x = a; x <= b; x++) {
+    let low = -1; for (let y = H - 1; y >= 0; y--) if (mk[y * W + x] > 127) { low = y; break; }
+    if (low < 0) continue;
+    if (low >= H - 2) return { reaches: true, closestPct: 0 }; // runs off the bottom of the photo
+    if (line[x] < 0) continue;
+    const gap = ((line[x] - low) / H) * 100;
+    if (closest === null || gap < closest) closest = +gap.toFixed(2);
+  }
+  return { reaches: closest !== null && closest <= FLOOR_TOUCH_TOL_PCT, closestPct: closest };
 }
 
 /**

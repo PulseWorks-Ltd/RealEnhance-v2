@@ -66,6 +66,11 @@ import {
   checkFloorMoved,
   measureSkirtingOffsets,
   planSkirtingLineUp,
+  planPieceLineUps,
+  pieceReachesFloor,
+  fillUncoveredBehind,
+  PIECE_LINEUP,
+  type PiecePlan,
   applySkirtingLineUp,
   lineUpLeftoverPct,
   LINEUP_MAX_RESIDUAL_PCT,
@@ -267,6 +272,9 @@ const FINAL_RELIT_ALWAYS = ["on", "1", "true", "yes"].includes(String(process.en
 // Floating furniture: try lining the pieces up with the real floor (see the
 // skirting line-up) before re-staging. STAGE2_FLOAT_LINE_UP=off turns it off.
 const FLOAT_LINE_UP = String(process.env.STAGE2_FLOAT_LINE_UP ?? "on").trim().toLowerCase() !== "off";
+// A piece moved on its own may leave a little more skirting offset beside it
+// than a whole-wall move (its own short stretch only).
+const PIECE_LINEUP_LEFTOVER_FACTOR = Number(process.env.STAGE2_PIECE_LINEUP_LEFTOVER_FACTOR || 1.5);
 const PUBLISH_CUT_ON_LAST_ATTEMPT = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_PUBLISH_CUT_ON_LAST_ATTEMPT || "").trim().toLowerCase());
 const CUT_UNDER_MAX_SHADOW_PCT = Number(process.env.CUT_UNDER_MAX_SHADOW_PCT || 80); // ...unless it is mostly the floor in shade
 const CLOSEUP_MAX_ADD_FACTOR = 3;     // may add at most 3x the flagged area...
@@ -1407,6 +1415,79 @@ export async function runMaskedStage2Job(p: {
             p.warn?.(`[${ctx.name}] floating furniture can't be lined up: ${plan.why}`);
           }
         }
+        // Still floating: move each floating piece on its own (see
+        // planPieceLineUps). Kept only if nothing floats afterwards and the
+        // skirting beside the moved pieces lines up.
+        if (row.floatingCheck.floating && !floorPlan?.ok && SKIRTING_LINE_UP && PIECE_LINEUP) {
+          const pp = await planPieceLineUps(original, ctx.staged, layers.floor, row.floatingCheck.runs, w, h)
+            .catch((e: any) => ({ plans: [] as PiecePlan[], notes: [`plan error: ${String(e?.message || e)}`] }));
+          row.pieceLineUp = { applied: false, notes: pp.notes };
+          // Every floating stretch needs a plan, or the photo still has a floating piece.
+          if (pp.plans.length && pp.plans.length === row.floatingCheck.runs.length) {
+            let st = ctx.staged;
+            let ms: Record<string, Uint8Array | null | undefined> = { floor: layers.floor, tightFloor: layers.tightFloor, artRegion: layers.artRegion, solid: layers.solid, zone: layers.zone, core: layers.core, legPocket: layers.legPocket };
+            const moved = new Uint8Array(w * h);
+            for (const plan of pp.plans) {
+              const ap = await applySkirtingLineUp(st, ms, ms.floor as Uint8Array, plan, w, h);
+              st = ap.staged; ms = ap.masks;
+              for (let i = 0; i < moved.length; i++) if (ap.movedArea[i]) moved[i] = 1;
+            }
+            // What the moved pieces uncovered of a bigger piece behind them.
+            for (const plan of pp.plans) {
+              if (!plan.stayCols) continue;
+              const raw = await sharp(st).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer();
+              const fl = Uint8Array.from(ms.floor as Uint8Array);
+              const tf = ms.tightFloor ? Uint8Array.from(ms.tightFloor) : null;
+              const before = Uint8Array.from(fl);
+              const nFill = fillUncoveredBehind(raw, fl, plan.stayCols, w, h);
+              if (nFill) {
+                if (tf) for (let i = 0; i < fl.length; i++) if (fl[i] && !before[i]) tf[i] = 1;
+                const sol = ms.solid ? Uint8Array.from(ms.solid) : null;
+                if (sol) for (let i = 0; i < fl.length; i++) if (fl[i] && !before[i]) sol[i] = 1;
+                ms = { ...ms, floor: fl, ...(tf ? { tightFloor: tf } : {}), ...(sol ? { solid: sol } : {}) };
+                st = await sharp(raw, { raw: { width: w, height: h, channels: 3 } }).png().toBuffer();
+                row.pieceLineUp.uncoveredFilledPct = +((nFill / (w * h)) * 100).toFixed(3);
+              }
+            }
+            let recheck: any = await checkFloatingFurniture(original, ms.floor as Uint8Array, w, h).catch((e: any) => ({ floating: true, runs: [], error: String(e?.message || e) }));
+            // A moved piece whose legs now reach the real floor line is not
+            // floating (its back legs sit right on the line); other floating
+            // stretches still count.
+            const reach: Array<{ xPct: [number, number]; reaches: boolean; closestPct: number | null }> = [];
+            for (const pl of pp.plans) {
+              const nx1 = pl.vx! + pl.k! * ((pl.pieceXPct![0] / 100) * w - pl.vx!), nx2 = pl.vx! + pl.k! * ((pl.pieceXPct![1] / 100) * w - pl.vx!);
+              const r = await pieceReachesFloor(original, ms.floor as Uint8Array, nx1, nx2, w, h).catch(() => ({ reaches: false, closestPct: null }));
+              reach.push({ xPct: [+((nx1 / w) * 100).toFixed(1), +((nx2 / w) * 100).toFixed(1)], ...r });
+            }
+            if (recheck.floating) {
+              const left = recheck.runs.filter((r: any) => !reach.some((p) => p.reaches && r.x1Pct >= p.xPct[0] - 1 && r.x2Pct <= p.xPct[1] + 1));
+              recheck = { ...recheck, floating: left.length > 0, runs: left, ...(left.length < recheck.runs.length ? { standingAfterMove: recheck.runs.filter((r: any) => !left.includes(r)) } : {}) };
+            }
+            const leftover = await lineUpLeftoverPct(original, st, moved, ms.floor as Uint8Array, w, h).catch(() => null);
+            const stepLeft = Boolean(leftover && leftover.pct > LINEUP_MAX_RESIDUAL_PCT * PIECE_LINEUP_LEFTOVER_FACTOR);
+            io.save?.("3d_pieces_moved.webp", await sharp(st).webp({ quality: 88 }).toBuffer());
+            io.save?.("3d_pieces_moved_mask.png", await maskToPng(ms.floor as Uint8Array, w, h));
+            Object.assign(row.pieceLineUp, {
+              pieces: pp.plans.map((pl) => ({ xPct: pl.pieceXPct, movedDownPct: pl.movedDownPct, growPct: pl.growPct })),
+              leftoverPct: leftover?.pct ?? null, reachesFloor: reach, ...(recheck.floating ? { stillFloating: recheck.runs } : {}),
+            });
+            if (!recheck.floating && !stepLeft) {
+              ctx = { ...ctx, staged: st };
+              layers = layersAfterLineUp(layers, ms as any);
+              layers = { ...layers, solidPng: await maskToPng(layers.solid, w, h) };
+              row.pieceLineUp.applied = true;
+              row.floatingCheck = { ...recheck, linedUpFrom: row.floatingCheck.runs };
+              // The pieces now stand on the real floor; Gemini's own skirting
+              // beside them is never shown.
+              skirtingLeft = [];
+              p.log?.(`[${ctx.name}] floating furniture moved piece by piece onto the real floor: ${pp.plans.map((pl) => `x ${pl.pieceXPct![0]}-${pl.pieceXPct![1]}% down ${pl.movedDownPct}%, ${pl.growPct}% bigger`).join("; ")} (skirting left ${leftover?.pct ?? "?"}% off) — no re-stage needed`);
+            } else {
+              p.warn?.(`[${ctx.name}] piece-by-piece line-up tried but not used: ${recheck.floating ? `still floating (${recheck.runs.map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% ${r.gapPct}%`).join("; ")})` : `skirting beside the moved pieces would still be ${leftover!.pct}% off`}`);
+            }
+          } else {
+            p.warn?.(`[${ctx.name}] floating furniture can't be moved piece by piece: ${pp.notes.join("; ")}`);
+          }
+        }
         // Floor moved: Gemini raised the floor / pushed a wall back to fit the
         // furniture (walls and windows unchanged, so the room check passes).
         // Merging would paste a rug or bed onto the real wall.
@@ -1420,7 +1501,9 @@ export async function runMaskedStage2Job(p: {
           }
           // Furniture standing on floor Gemini drew over the real wall (found
           // above, from the "missed" areas): the same fault.
-          if (!row.floorMovedCheck.moved && row.floorOverWallUnderFurniture?.length) {
+          // (Not after the floating pieces were moved onto the real floor: they
+          // no longer stand on the floor Gemini drew over the wall.)
+          if (!row.floorMovedCheck.moved && row.floorOverWallUnderFurniture?.length && !row.pieceLineUp?.applied) {
             const list = row.floorOverWallUnderFurniture as any[];
             row.floorMovedCheck = {
               ...row.floorMovedCheck, moved: true, underFurniture: true,
