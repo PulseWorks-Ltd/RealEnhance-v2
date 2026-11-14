@@ -66,11 +66,9 @@ import {
   checkFloorMoved,
   measureSkirtingOffsets,
   planSkirtingLineUp,
-  planPieceLineUps,
-  pieceReachesFloor,
-  fillUncoveredBehind,
-  PIECE_LINEUP,
-  type PiecePlan,
+  seamUnderFurniture,
+  planGroupForward,
+  GROUP_SHIFT,
   applySkirtingLineUp,
   lineUpLeftoverPct,
   LINEUP_MAX_RESIDUAL_PCT,
@@ -272,9 +270,8 @@ const FINAL_RELIT_ALWAYS = ["on", "1", "true", "yes"].includes(String(process.en
 // Floating furniture: try lining the pieces up with the real floor (see the
 // skirting line-up) before re-staging. STAGE2_FLOAT_LINE_UP=off turns it off.
 const FLOAT_LINE_UP = String(process.env.STAGE2_FLOAT_LINE_UP ?? "on").trim().toLowerCase() !== "off";
-// A piece moved on its own may leave a little more skirting offset beside it
-// than a whole-wall move (its own short stretch only).
-const PIECE_LINEUP_LEFTOVER_FACTOR = Number(process.env.STAGE2_PIECE_LINEUP_LEFTOVER_FACTOR || 1.5);
+// Gemini's floor line under furniture vs the real one (STAGE2_SEAM_UNDER_CHECK=off: off).
+const SEAM_UNDER_CHECK = String(process.env.STAGE2_SEAM_UNDER_CHECK ?? "on").trim().toLowerCase() !== "off";
 const PUBLISH_CUT_ON_LAST_ATTEMPT = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_PUBLISH_CUT_ON_LAST_ATTEMPT || "").trim().toLowerCase());
 const CUT_UNDER_MAX_SHADOW_PCT = Number(process.env.CUT_UNDER_MAX_SHADOW_PCT || 80); // ...unless it is mostly the floor in shade
 const CLOSEUP_MAX_ADD_FACTOR = 3;     // may add at most 3x the flagged area...
@@ -1365,6 +1362,16 @@ export async function runMaskedStage2Job(p: {
           }
         }
         row.floatingCheck = await checkFloatingFurniture(original, layers.floor, w, h).catch((e: any) => ({ floating: false, runs: [], error: String(e?.message || e) }));
+        // Furniture standing on Gemini's floor where Gemini drew it higher
+        // than the real one, read from Gemini's floor line under it (see
+        // seamUnderFurniture) — the leg-bottom check can be fooled.
+        if (!row.floatingCheck.floating && SEAM_UNDER_CHECK) {
+          const under = await seamUnderFurniture(original, ctx.staged, layers.floor, w, h).catch(() => [] as any[]);
+          if (under.length) {
+            row.floatingCheck = { floating: true, runs: under, fromGeminiFloorLine: true };
+            p.warn?.(`[${ctx.name}] Gemini's floor line under furniture is higher than the real one: ${under.map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% by ${r.gapPct}%`).join("; ")} — the furniture there would float`);
+          }
+        }
         let floorPlan: Awaited<ReturnType<typeof planFloorPatches>> | null = null;
         if (row.floatingCheck.floating) {
           p.warn?.(`[${ctx.name}] furniture floating above the real floor: ${row.floatingCheck.runs.map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% ends ${r.gapPct}% above the floor line`).join("; ")}`);
@@ -1415,83 +1422,55 @@ export async function runMaskedStage2Job(p: {
             p.warn?.(`[${ctx.name}] floating furniture can't be lined up: ${plan.why}`);
           }
         }
-        // Still floating: move each floating piece on its own (see
-        // planPieceLineUps). Kept only if nothing floats afterwards and the
-        // skirting beside the moved pieces lines up.
-        if (row.floatingCheck.floating && !floorPlan?.ok && SKIRTING_LINE_UP && PIECE_LINEUP) {
-          const pp = await planPieceLineUps(original, ctx.staged, layers.floor, row.floatingCheck.runs, w, h)
-            .catch((e: any) => ({ plans: [] as PiecePlan[], notes: [`plan error: ${String(e?.message || e)}`] }));
-          row.pieceLineUp = { applied: false, notes: pp.notes };
-          // Every floating stretch needs a plan, or the photo still has a floating piece.
-          if (pp.plans.length && pp.plans.length === row.floatingCheck.runs.length) {
-            let st = ctx.staged;
-            let ms: Record<string, Uint8Array | null | undefined> = { floor: layers.floor, tightFloor: layers.tightFloor, artRegion: layers.artRegion, solid: layers.solid, zone: layers.zone, core: layers.core, legPocket: layers.legPocket };
-            const moved = new Uint8Array(w * h);
-            for (const plan of pp.plans) {
-              const ap = await applySkirtingLineUp(st, ms, ms.floor as Uint8Array, plan, w, h);
-              st = ap.staged; ms = ap.masks;
-              for (let i = 0; i < moved.length; i++) if (ap.movedArea[i]) moved[i] = 1;
-            }
-            // What the moved pieces uncovered of a bigger piece behind them.
-            for (const plan of pp.plans) {
-              if (!plan.stayCols) continue;
-              const raw = await sharp(st).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer();
-              const fl = Uint8Array.from(ms.floor as Uint8Array);
-              const tf = ms.tightFloor ? Uint8Array.from(ms.tightFloor) : null;
-              const before = Uint8Array.from(fl);
-              const nFill = fillUncoveredBehind(raw, fl, plan.stayCols, w, h);
-              if (nFill) {
-                if (tf) for (let i = 0; i < fl.length; i++) if (fl[i] && !before[i]) tf[i] = 1;
-                const sol = ms.solid ? Uint8Array.from(ms.solid) : null;
-                if (sol) for (let i = 0; i < fl.length; i++) if (fl[i] && !before[i]) sol[i] = 1;
-                ms = { ...ms, floor: fl, ...(tf ? { tightFloor: tf } : {}), ...(sol ? { solid: sol } : {}) };
-                st = await sharp(raw, { raw: { width: w, height: h, channels: 3 } }).png().toBuffer();
-                row.pieceLineUp.uncoveredFilledPct = +((nFill / (w * h)) * 100).toFixed(3);
-              }
-            }
-            let recheck: any = await checkFloatingFurniture(original, ms.floor as Uint8Array, w, h).catch((e: any) => ({ floating: true, runs: [], error: String(e?.message || e) }));
-            // A moved piece whose legs now reach the real floor line is not
-            // floating (its back legs sit right on the line); other floating
-            // stretches still count.
-            const reach: Array<{ xPct: [number, number]; reaches: boolean; closestPct: number | null }> = [];
-            for (const pl of pp.plans) {
-              const nx1 = pl.vx! + pl.k! * ((pl.pieceXPct![0] / 100) * w - pl.vx!), nx2 = pl.vx! + pl.k! * ((pl.pieceXPct![1] / 100) * w - pl.vx!);
-              const r = await pieceReachesFloor(original, ms.floor as Uint8Array, nx1, nx2, w, h).catch(() => ({ reaches: false, closestPct: null }));
-              reach.push({ xPct: [+((nx1 / w) * 100).toFixed(1), +((nx2 / w) * 100).toFixed(1)], ...r });
-            }
-            if (recheck.floating) {
-              const left = recheck.runs.filter((r: any) => !reach.some((p) => p.reaches && r.x1Pct >= p.xPct[0] - 1 && r.x2Pct <= p.xPct[1] + 1));
-              recheck = { ...recheck, floating: left.length > 0, runs: left, ...(left.length < recheck.runs.length ? { standingAfterMove: recheck.runs.filter((r: any) => !left.includes(r)) } : {}) };
-            }
-            const leftover = await lineUpLeftoverPct(original, st, moved, ms.floor as Uint8Array, w, h).catch(() => null);
-            const stepLeft = Boolean(leftover && leftover.pct > LINEUP_MAX_RESIDUAL_PCT * PIECE_LINEUP_LEFTOVER_FACTOR);
-            io.save?.("3d_pieces_moved.webp", await sharp(st).webp({ quality: 88 }).toBuffer());
-            io.save?.("3d_pieces_moved_mask.png", await maskToPng(ms.floor as Uint8Array, w, h));
-            Object.assign(row.pieceLineUp, {
-              pieces: pp.plans.map((pl) => ({ xPct: pl.pieceXPct, movedDownPct: pl.movedDownPct, growPct: pl.growPct })),
-              leftoverPct: leftover?.pct ?? null, reachesFloor: reach, ...(recheck.floating ? { stillFloating: recheck.runs } : {}),
-            });
-            if (!recheck.floating && !stepLeft) {
-              ctx = { ...ctx, staged: st };
-              layers = layersAfterLineUp(layers, ms as any);
+        // Still floating, or the skirting beside furniture still higher in
+        // Gemini's picture: bring ALL the furniture forward together, in
+        // perspective, until the place that needs it most stands just below
+        // the real skirting (see planGroupForward). Kept when nothing floats
+        // afterwards.
+        let groupShifted = false;
+        const needDown: Array<{ x1Pct: number; x2Pct: number; needPct: number }> = [];
+        if (row.floatingCheck.floating && !floorPlan?.ok) {
+          // How far: Gemini's floor line under the furniture vs the real one
+          // where it can be read (the floating check's own gap runs from a
+          // table's raised body, not its feet, and overstates it).
+          const under = row.floatingCheck.fromGeminiFloorLine ? row.floatingCheck.runs : await seamUnderFurniture(original, ctx.staged, layers.floor, w, h).catch(() => [] as any[]);
+          for (const r of (under.length ? under : row.floatingCheck.runs)) needDown.push({ x1Pct: r.x1Pct, x2Pct: r.x2Pct, needPct: Number(r.gapPct) });
+        }
+        if (!lineUpApplied) for (const r of skirtingLeft) if (r.dyPct < 0 && Math.abs(r.dyPct) >= FLOOR_MOVED_RISE_PCT) needDown.push({ x1Pct: r.x1Pct, x2Pct: r.x2Pct, needPct: -r.dyPct });
+        if (needDown.length && GROUP_SHIFT) {
+          const plan = await planGroupForward(original, needDown, layers.floor, w, h).catch((e: any) => ({ ok: false, why: `plan error: ${String(e?.message || e)}` } as any));
+          row.groupShift = { applied: false, needed: needDown, why: plan.why, ...(plan.ok ? { shiftPct: plan.shiftPct, growPct: plan.growPct } : {}) };
+          if (plan.ok) {
+            const ap = await applySkirtingLineUp(ctx.staged, {
+              floor: layers.floor, tightFloor: layers.tightFloor, artRegion: layers.artRegion, solid: layers.solid, zone: layers.zone, core: layers.core, legPocket: layers.legPocket,
+            }, layers.floor, plan, w, h);
+            const fl = ap.masks.floor as Uint8Array;
+            const recheck: any = await checkFloatingFurniture(original, fl, w, h).catch((e: any) => ({ floating: true, runs: [], error: String(e?.message || e) }));
+            const under = recheck.floating ? [] : await seamUnderFurniture(original, ap.staged, fl, w, h).catch(() => [] as any[]);
+            io.save?.("3d_brought_forward.webp", await sharp(ap.staged).webp({ quality: 88 }).toBuffer());
+            if (!recheck.floating && !under.length) {
+              ctx = { ...ctx, staged: ap.staged };
+              layers = layersAfterLineUp(layers, ap.masks);
               layers = { ...layers, solidPng: await maskToPng(layers.solid, w, h) };
-              row.pieceLineUp.applied = true;
+              row.groupShift.applied = true;
               row.floatingCheck = { ...recheck, linedUpFrom: row.floatingCheck.runs };
-              // The pieces now stand on the real floor; Gemini's own skirting
-              // beside them is never shown.
               skirtingLeft = [];
-              p.log?.(`[${ctx.name}] floating furniture moved piece by piece onto the real floor: ${pp.plans.map((pl) => `x ${pl.pieceXPct![0]}-${pl.pieceXPct![1]}% down ${pl.movedDownPct}%, ${pl.growPct}% bigger`).join("; ")} (skirting left ${leftover?.pct ?? "?"}% off) — no re-stage needed`);
+              groupShifted = true;
+              p.log?.(`[${ctx.name}] all furniture brought forward together: down ${plan.shiftPct}% and ${plan.growPct}% bigger (Gemini's floor was up to ${Math.max(...needDown.map((n) => n.needPct)).toFixed(1)}% higher than the real one) — it now stands just below the real skirting; no re-stage needed`);
             } else {
-              p.warn?.(`[${ctx.name}] piece-by-piece line-up tried but not used: ${recheck.floating ? `still floating (${recheck.runs.map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% ${r.gapPct}%`).join("; ")})` : `skirting beside the moved pieces would still be ${leftover!.pct}% off`}`);
+              row.groupShift.stillFloating = recheck.floating ? recheck.runs : under;
+              p.warn?.(`[${ctx.name}] bringing all furniture forward (down ${plan.shiftPct}%, ${plan.growPct}% bigger) tried but something still floats (${(recheck.floating ? recheck.runs : under).map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% ${r.gapPct}%`).join("; ")}) — not used`);
             }
           } else {
-            p.warn?.(`[${ctx.name}] floating furniture can't be moved piece by piece: ${pp.notes.join("; ")}`);
+            p.warn?.(`[${ctx.name}] furniture not brought forward: ${plan.why}`);
           }
         }
         // Floor moved: Gemini raised the floor / pushed a wall back to fit the
         // furniture (walls and windows unchanged, so the room check passes).
         // Merging would paste a rug or bed onto the real wall.
-        if (FLOOR_MOVED_CHECK) {
+        // (Not after the group shift: the furniture now stands at or below the
+        // real floor line wherever Gemini's was higher.)
+        if (FLOOR_MOVED_CHECK && !groupShifted) {
           row.floorMovedCheck = await checkFloorMoved(original, ctx.staged, layers.solid, w, h).catch((e: any) => ({ moved: false, error: String(e?.message || e) }));
           // A clear offset beside furniture that wasn't lined up counts too.
           const besides = skirtingLeft.filter((r) => Math.abs(r.dyPct) >= FLOOR_MOVED_RISE_PCT);
@@ -1501,9 +1480,7 @@ export async function runMaskedStage2Job(p: {
           }
           // Furniture standing on floor Gemini drew over the real wall (found
           // above, from the "missed" areas): the same fault.
-          // (Not after the floating pieces were moved onto the real floor: they
-          // no longer stand on the floor Gemini drew over the wall.)
-          if (!row.floorMovedCheck.moved && row.floorOverWallUnderFurniture?.length && !row.pieceLineUp?.applied) {
+          if (!row.floorMovedCheck.moved && row.floorOverWallUnderFurniture?.length) {
             const list = row.floorOverWallUnderFurniture as any[];
             row.floorMovedCheck = {
               ...row.floorMovedCheck, moved: true, underFurniture: true,
