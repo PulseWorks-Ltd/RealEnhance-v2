@@ -97,18 +97,24 @@ export async function createDebugSignedUrl(
 /**
  * Masked Stage 2's work images, saved for the admin review page (Nov 2026).
  * Files go to debug-attempts/<job>/masked/attempt<N>/<name>; only their names
- * are kept on the job — no links in the logs. Opened through the admin page,
- * which checks the session and makes a 5-minute link.
+ * are kept on the job. Opened through the admin page, which checks the
+ * session and makes a 5-minute link. No links in the logs unless
+ * ENABLE_DEBUG_IMAGE_URLS=1 / SIGN_ALL_STAGE_OUTPUTS=1 (testing).
  */
 export function maskedDebugSaver(jobId: string) {
   const files: Record<string, string[]> = {};
   const prefix = `debug-attempts/${jobId}/masked`;
+  const withLinks = isDebugImageUrlLoggingEnabled();
   const onAttemptFiles = async (attempt: number, dir: string, names: string[]) => {
     const saved: string[] = [];
     await Promise.all(names.map(async (name) => {
       try {
-        const res = await createDebugSignedUrl(path.join(dir, name), jobId, { force: true, sign: false, keyName: `masked/attempt${attempt}/${name}` });
+        // With ENABLE_DEBUG_IMAGE_URLS=1 (or SIGN_ALL_STAGE_OUTPUTS=1) each file
+        // also gets a link in the logs, for reviewing a test run from the logs
+        // alone. Off: no links, as above.
+        const res = await createDebugSignedUrl(path.join(dir, name), jobId, { force: true, sign: withLinks, keyName: `masked/attempt${attempt}/${name}` });
         if (res.key) saved.push(name);
+        if (res.signedUrl) console.log(`[STAGE2_MASKED_DEBUG_URL] job=${jobId} attempt=${attempt} file=${name} url=${res.signedUrl}`);
       } catch (err: any) {
         console.warn("[STAGE2_MASKED_DEBUG_UPLOAD_FAILED]", { jobId, file: name, error: err?.message || String(err) });
       }
