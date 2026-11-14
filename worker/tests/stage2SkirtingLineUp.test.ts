@@ -1,6 +1,6 @@
 jest.mock("../src/ai/gemini", () => ({ getGeminiClient: () => ({}), closestGeminiAspectRatio: () => "4:3" }));
 import sharp from "sharp";
-import { planSkirtingLineUp, applySkirtingLineUp, fitLineUpScale } from "../src/pipeline/stage2Masked/core";
+import { planSkirtingLineUp, applySkirtingLineUp, fitLineUpScale, LINEUP_MAX_TILT } from "../src/pipeline/stage2Masked/core";
 
 // 100x100 photo. The bed's wall runs from x 15 to the corner at x 53 (floor
 // line rising from 90% to 70% down), then the next wall (floor line falling).
@@ -153,7 +153,7 @@ describe("line-up fit at photo size (800 columns)", () => {
     const f = fitLineUpScale(gemini(1.08, 0.02), real, [0, W - 1], [240, 560], W, H, vx, vy)!;
     expect(f.slantMeasured).toBe(true);
     expect(Math.abs(f.s)).toBeGreaterThan(0.005);
-    expect(Math.abs(f.s)).toBeLessThanOrEqual(0.035);
+    expect(Math.abs(f.s)).toBeLessThanOrEqual(LINEUP_MAX_TILT);
     expect(f.residualPct).toBeLessThan(0.6);
   });
 

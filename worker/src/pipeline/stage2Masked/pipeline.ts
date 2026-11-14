@@ -68,6 +68,10 @@ import {
   planSkirtingLineUp,
   seamUnderFurniture,
   planGroupForward,
+  skirtingOffsetsInMoved,
+  fitSkirtingNudge,
+  applySkirtingNudge,
+  SKIRTING_FIT,
   geminiLineUnderColumns,
   GROUP_SHIFT,
   applySkirtingLineUp,
@@ -175,6 +179,33 @@ function warn(ctx: MaskedContext, msg: string) {
 // Holes in furniture that show Gemini's room are left to the real photo.
 // STAGE2_GAP_ROOM_CHECK=off goes back to filling every hole from Gemini.
 export const GAP_ROOM_CHECK = String(process.env.STAGE2_GAP_ROOM_CHECK ?? "on").trim().toLowerCase() !== "off";
+
+/**
+ * Final skirting fit after a move (see fitSkirtingNudge): nudges each column
+ * of the moved furniture so Gemini's floor line meets the real one all along.
+ * Returned only when it brings the skirting closer and nothing floats.
+ */
+async function finalSkirtingFit(original: Buffer, staged: Buffer, layers: any, movedArea: Uint8Array, w: number, h: number) {
+  if (!SKIRTING_FIT) return null;
+  const offs = await skirtingOffsetsInMoved(original, staged, layers.floor, movedArea, w, h).catch(() => null);
+  if (!offs) return null;
+  const fit = fitSkirtingNudge(offs, w, h);
+  if (!fit) return { applied: false as const, why: "too little of Gemini's skirting to fit" };
+  if (fit.beforePct < 0.4) return { applied: false as const, why: `skirting already within ${fit.beforePct}%`, beforePct: fit.beforePct };
+  const r = await applySkirtingNudge(original, staged, {
+    floor: layers.floor, tightFloor: layers.tightFloor, artRegion: layers.artRegion, solid: layers.solid, zone: layers.zone, core: layers.core, legPocket: layers.legPocket,
+  }, movedArea, fit.nudge, w, h);
+  const fl = r.masks.floor as Uint8Array;
+  const floating: any = await checkFloatingFurniture(original, fl, w, h).catch(() => ({ floating: true, runs: [] }));
+  const under = floating.floating ? [] : await seamUnderFurniture(original, r.staged, fl, w, h).catch(() => [] as any[]);
+  if (floating.floating || under.length) return { applied: false as const, why: "the furniture would float after the fit", beforePct: fit.beforePct };
+  const after = await skirtingOffsetsInMoved(original, r.staged, fl, movedArea, w, h).catch(() => null);
+  const vals = after ? Array.from(after).filter((v) => !Number.isNaN(v)).map(Math.abs).sort((a, b) => a - b) : [];
+  const afterPct = vals.length ? +vals[Math.floor(vals.length * 0.8)].toFixed(2) : null;
+  if (afterPct !== null && afterPct >= fit.beforePct) return { applied: false as const, why: `no better (${fit.beforePct}% → ${afterPct}%)`, beforePct: fit.beforePct, afterPct };
+  let maxNudge = 0; for (const v of fit.nudge) maxNudge = Math.max(maxNudge, Math.abs(v));
+  return { applied: true as const, staged: r.staged, masks: r.masks, beforePct: fit.beforePct, afterPct, cols: fit.cols, maxNudgePct: +((maxNudge / h) * 100).toFixed(2) };
+}
 
 export type TraceLayers = Awaited<ReturnType<typeof traceLayers>>;
 
@@ -1345,6 +1376,19 @@ export async function runMaskedStage2Job(p: {
               layers = { ...layers, solidPng: await maskToPng(layers.solid, w, h) };
               lineUpApplied = true;
               io.save?.("3b_skirting_lined_up.webp", await sharp(ctx.staged).webp({ quality: 90 }).toBuffer());
+              {
+                const sf = await finalSkirtingFit(original, ctx.staged, layers, ap.movedArea, w, h).catch(() => null);
+                if (sf) {
+                  row.skirtingFit = { applied: sf.applied, ...(sf.applied ? { beforePct: sf.beforePct, afterPct: sf.afterPct, maxNudgePct: sf.maxNudgePct } : { why: sf.why }) };
+                  if (sf.applied) {
+                    ctx = { ...ctx, staged: sf.staged };
+                    layers = layersAfterLineUp(layers, sf.masks as any);
+                    layers = { ...layers, solidPng: await maskToPng(layers.solid, w, h) };
+                    io.save?.("3e_skirting_fitted.webp", await sharp(ctx.staged).webp({ quality: 88 }).toBuffer());
+                    p.log?.(`[${ctx.name}] skirting fitted along the furniture: Gemini's floor line ${sf.beforePct}% → ${sf.afterPct ?? "?"}% from the real one (columns nudged up to ${sf.maxNudgePct}%)`);
+                  }
+                }
+              }
               const after = await measureSkirtingOffsets(original, ctx.staged, layers.solid, w, h).catch(() => ({ runs: [] as SkirtingRun[], checkedColsPct: 0 }));
               row.skirtingLineUp.after = after.runs;
               // Gemini's own skirting beyond the moved furniture is never shown
@@ -1460,6 +1504,7 @@ export async function runMaskedStage2Job(p: {
             const recheck: any = await checkFloatingFurniture(original, fl, w, h).catch((e: any) => ({ floating: true, runs: [], error: String(e?.message || e) }));
             const under = recheck.floating ? [] : await seamUnderFurniture(original, ap.staged, fl, w, h).catch(() => [] as any[]);
             io.save?.("3d_brought_forward.webp", await sharp(ap.staged).webp({ quality: 88 }).toBuffer());
+            io.save?.("3d_brought_forward_mask.png", await maskToPng(fl, w, h));
             if (!recheck.floating && !under.length) {
               ctx = { ...ctx, staged: ap.staged };
               layers = layersAfterLineUp(layers, ap.masks);
@@ -1468,6 +1513,17 @@ export async function runMaskedStage2Job(p: {
               row.floatingCheck = { ...recheck, linedUpFrom: row.floatingCheck.runs };
               skirtingLeft = [];
               groupShifted = true;
+              const sf = await finalSkirtingFit(original, ctx.staged, layers, ap.movedArea, w, h).catch(() => null);
+              if (sf) {
+                row.skirtingFit = { applied: sf.applied, ...(sf.applied ? { beforePct: sf.beforePct, afterPct: sf.afterPct, maxNudgePct: sf.maxNudgePct } : { why: sf.why }) };
+                if (sf.applied) {
+                  ctx = { ...ctx, staged: sf.staged };
+                  layers = layersAfterLineUp(layers, sf.masks as any);
+                  layers = { ...layers, solidPng: await maskToPng(layers.solid, w, h) };
+                  io.save?.("3e_skirting_fitted.webp", await sharp(ctx.staged).webp({ quality: 88 }).toBuffer());
+                  p.log?.(`[${ctx.name}] skirting fitted along the furniture: Gemini's floor line ${sf.beforePct}% → ${sf.afterPct ?? "?"}% from the real one (columns nudged up to ${sf.maxNudgePct}%)`);
+                }
+              }
               p.log?.(`[${ctx.name}] all furniture brought forward together: down ${plan.shiftPct}% and ${plan.growPct}% bigger${plan.tiltDeg ? `, tilted ${plan.tiltDeg}° to follow the real wall` : ""} (Gemini's floor was up to ${Math.max(...needDown.map((n) => n.needPct)).toFixed(1)}% higher than the real one) — it now stands just below the real skirting; no re-stage needed`);
             } else {
               row.groupShift.stillFloating = recheck.floating ? recheck.runs : under;

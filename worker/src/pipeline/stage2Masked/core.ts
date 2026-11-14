@@ -3732,9 +3732,9 @@ export const LINEUP_FIT_WALL = String(process.env.STAGE2_LINEUP_FIT ?? "on").tri
 // right at the far corner). Moving and growing the furniture can't follow an
 // angle, so the move may also tilt it: a vertical shear — upright lines
 // (legs, lamps, headboard sides) stay upright; lines along the wall follow the
-// real wall's angle. At most STAGE2_LINEUP_MAX_TILT (0.035 = about 2 deg).
+// real wall's angle. At most STAGE2_LINEUP_MAX_TILT (0.0524 = about 3 deg).
 export const LINEUP_TILT = String(process.env.STAGE2_LINEUP_TILT ?? "on").trim().toLowerCase() !== "off";
-export const LINEUP_MAX_TILT = Number(process.env.STAGE2_LINEUP_MAX_TILT || 0.035);
+export const LINEUP_MAX_TILT = Number(process.env.STAGE2_LINEUP_MAX_TILT || 0.0524); // about 3 deg (was 2, Nov 2026 owner review)
 
 /**
  * Best scale k (about vx, vy) for the furniture against one wall.
@@ -4120,6 +4120,123 @@ export async function planGroupForward(original: Buffer, needs: GroupNeed[], fur
     shiftPct, movedDownPct: shiftPct, growPct: +((k - 1) * 100).toFixed(1), wallPct: [+((sx1 / w) * 100).toFixed(1), +((sx2 / w) * 100).toFixed(1)],
     run: { x1Pct: at.x1Pct, x2Pct: at.x2Pct, widthPct: +(at.x2Pct - at.x1Pct).toFixed(1), dyPct: -at.needPct },
   };
+}
+
+// ── Final skirting fit (Nov 2026) ──────────────────────────────────────────
+// After the furniture is moved as one piece, Gemini's floor line still runs
+// at a slightly different angle or curve from the real one (it drew the room
+// a different shape), so the skirting beside the furniture is right at one
+// end and a little off at the other. This nudges each column of the moved
+// furniture up or down — a smooth curve, at most SKIRTING_FIT_MAX_PCT — until
+// Gemini's floor line meets the real one all along. Upright lines stay
+// upright; lines along the wall follow the real wall. No AI call.
+export const SKIRTING_FIT = String(process.env.STAGE2_SKIRTING_FIT ?? "on").trim().toLowerCase() !== "off";
+export const SKIRTING_FIT_MAX_PCT = Number(process.env.STAGE2_SKIRTING_FIT_MAX_PCT || 2.5);
+
+/** Gemini's floor line minus the real one beside the moved furniture (% of height), per column of `w`; NaN where unknown. */
+export async function skirtingOffsetsInMoved(original: Buffer, movedStaged: Buffer, movedFloor: Uint8Array, movedArea: Uint8Array, w: number, h: number): Promise<Float32Array> {
+  const sk = await measureSkirtingOffsets(original, movedStaged, movedFloor, w, h);
+  const L = sk.colOffsets.length;
+  const out = new Float32Array(L).fill(NaN);
+  for (let c = 0; c < L; c++) {
+    const v = sk.colOffsets[c];
+    const f = sk.realLine[c];
+    if (v == null || f < 0) continue;
+    // Only where the moved picture shows Gemini's moved surroundings (its
+    // skirting further out was never moved, and is never shown).
+    const x = Math.round((c / (L - 1)) * (w - 1)), y = Math.min(h - 1, Math.round(f * h));
+    let inMoved = false;
+    for (let dy = -Math.round(h * 0.02); dy <= Math.round(h * 0.02) && !inMoved; dy++) { const yy = y + dy; if (yy >= 0 && yy < h && movedArea[yy * w + x]) inMoved = true; }
+    if (inMoved) out[c] = v;
+  }
+  return out;
+}
+
+/**
+ * The smooth per-column nudge (pixels down, per column of `w`) that puts
+ * Gemini's floor line on the real one, or null when it can't be fitted:
+ * a curve (up to a quadratic) through the measured columns, held level past
+ * the ends, clamped to SKIRTING_FIT_MAX_PCT.
+ */
+export function fitSkirtingNudge(offsets: Float32Array, w: number, h: number): { nudge: Float32Array; cols: number; beforePct: number; fitPct: number } | null {
+  const L = offsets.length;
+  let pts: Array<[number, number]> = [];
+  for (let c = 0; c < L; c++) if (!Number.isNaN(offsets[c]) && Math.abs(offsets[c]) <= 6) pts.push([c / (L - 1), -offsets[c]]);
+  if (pts.length < 10) return null;
+  const solve = (P: Array<[number, number]>, deg: number) => {
+    // Least squares polynomial (deg 1 or 2) by normal equations.
+    const n = deg + 1, A = Array.from({ length: n }, () => new Array(n + 1).fill(0));
+    for (const [x, y] of P) { const pw = [1, x, x * x]; for (let i = 0; i < n; i++) { for (let j = 0; j < n; j++) A[i][j] += pw[i] * pw[j]; A[i][n] += pw[i] * y; } }
+    for (let i = 0; i < n; i++) { let mx = i; for (let r = i + 1; r < n; r++) if (Math.abs(A[r][i]) > Math.abs(A[mx][i])) mx = r; [A[i], A[mx]] = [A[mx], A[i]]; if (Math.abs(A[i][i]) < 1e-12) return null; for (let r = 0; r < n; r++) if (r !== i) { const f = A[r][i] / A[i][i]; for (let cc = i; cc <= n; cc++) A[r][cc] -= f * A[i][cc]; } }
+    return Array.from({ length: n }, (_, i) => A[i][n] / A[i][i]);
+  };
+  const xs = pts.map((p) => p[0]);
+  const span = Math.max(...xs) - Math.min(...xs);
+  const deg = span >= 0.15 && pts.length >= 20 ? 2 : 1;
+  let coef = solve(pts, deg);
+  if (!coef) return null;
+  const ev = (cf: number[], x: number) => cf.reduce((q, v, i) => q + v * x ** i, 0);
+  // One pass without the worst 20% (stray readings).
+  const res = pts.map((p) => Math.abs(p[1] - ev(coef!, p[0]))).sort((a, b) => a - b);
+  const cut = res[Math.floor(res.length * 0.8)];
+  pts = pts.filter((p) => Math.abs(p[1] - ev(coef!, p[0])) <= cut + 1e-9);
+  coef = solve(pts, deg) || coef;
+  const lo = Math.min(...pts.map((p) => p[0])), hi = Math.max(...pts.map((p) => p[0]));
+  const nudge = new Float32Array(w);
+  const max = (SKIRTING_FIT_MAX_PCT / 100) * h;
+  for (let x = 0; x < w; x++) {
+    const xn = Math.max(lo, Math.min(hi, x / (w - 1)));
+    nudge[x] = Math.max(-max, Math.min(max, (ev(coef, xn) / 100) * h));
+  }
+  const before = pts.map((p) => Math.abs(p[1])).sort((a, b) => a - b);
+  const after = pts.map((p) => Math.abs(p[1] - ev(coef!, p[0]))).sort((a, b) => a - b);
+  return { nudge, cols: pts.length, beforePct: +before[Math.floor(before.length * 0.8)].toFixed(2), fitPct: +after[Math.floor(after.length * 0.8)].toFixed(2) };
+}
+
+/**
+ * Moves each column of the moved area down by nudge[x] pixels (up when
+ * negative) at the real floor line, fading to no move at the bottom of the
+ * photo — a bed running off the bottom edge has nothing below the edge to
+ * bring up (a smeared band, Bedroom_02 test). Picture bilinear, masks nearest.
+ */
+export async function applySkirtingNudge(original: Buffer, staged: Buffer, masks: Record<string, Uint8Array | null | undefined>, movedArea: Uint8Array, nudge: Float32Array, w: number, h: number) {
+  const W8 = 800, H8 = Math.max(8, Math.round((W8 * h) / w));
+  const line8 = await realFloorLine(await sharp(original).removeAlpha().resize(W8, H8, { fit: "fill" }).png().toBuffer(), W8, H8);
+  const lineAt = (x: number) => { const v = line8[Math.max(0, Math.min(W8 - 1, Math.round((x / (w - 1)) * (W8 - 1))))]; return v < 0 ? h * 0.8 : (v / H8) * h; };
+  // Full nudge down to the real floor line, then easing off to none at the bottom edge.
+  const weight = (x: number, y: number, f: number) => (y <= f ? 1 : Math.max(0, (h - 1 - y) / Math.max(1, h - 1 - f)));
+  const { data } = await sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer({ resolveWithObject: true });
+  const out = Buffer.from(data);
+  // The area that travels: the moved area, a little taller so a column
+  // nudged down has its own pixels to bring.
+  const reach = Math.ceil(Math.max(...Array.from(nudge, Math.abs))) + 1;
+  const area = new Uint8Array(w * h);
+  for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) if (movedArea[y * w + x]) for (let d = -reach; d <= reach; d++) { const yy = y + d; if (yy >= 0 && yy < h) area[yy * w + x] = 1; }
+  const src = new Int32Array(w * h).fill(-1);
+  for (let x = 0; x < w; x++) {
+    const d0 = nudge[x];
+    if (!d0) continue;
+    const f = lineAt(x);
+    for (let y = 0; y < h; y++) {
+      const i = y * w + x;
+      if (!area[i]) continue;
+      const d = d0 * weight(x, y, f);
+      const sy = y - d;
+      if (sy < 0 || sy > h - 1) continue;
+      const y0 = Math.floor(sy), y1 = Math.min(h - 1, y0 + 1), fy = sy - y0;
+      if (!area[y0 * w + x]) continue;
+      for (let c = 0; c < 3; c++) out[i * 3 + c] = Math.round(data[(y0 * w + x) * 3 + c] * (1 - fy) + data[(y1 * w + x) * 3 + c] * fy);
+      src[i] = Math.round(sy) * w + x;
+    }
+  }
+  const moved: Record<string, Mask | null | undefined> = {};
+  for (const [name, m] of Object.entries(masks)) {
+    if (!m || name === "artRegion") { moved[name] = m as any; continue; }
+    const o: Mask = Uint8Array.from(m);
+    for (let i = 0; i < o.length; i++) if (area[i] && nudge[i % w]) o[i] = src[i] >= 0 ? m[src[i]] : 0;
+    moved[name] = o;
+  }
+  return { staged: await sharp(out, { raw: { width: w, height: h, channels: 3 } }).png().toBuffer(), masks: moved };
 }
 
 /**
