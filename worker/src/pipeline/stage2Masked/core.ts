@@ -541,7 +541,11 @@ export function fillFurnitureColumns(src: Uint8Array, w: number, h: number): Mas
 // carpet under bedside tables (Oct 2026, production: Bedroom_09, Bedroom_16).
 // A pocket is taken from Gemini's picture only when it is small and Gemini
 // really drew something different there (else the real floor matches anyway).
-export const LEG_POCKET_FILL = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_FILL_LEG_POCKETS || "").trim().toLowerCase());
+// Off by default (Nov 2026): the floor between legs came from Gemini's picture,
+// where its floor/skirting can sit at another height — a strip of Gemini's
+// wall under a bedside table. The real floor is used; shadows come from the
+// lighting step. STAGE2_FILL_LEG_POCKETS=on brings the old behaviour back.
+export const LEG_POCKET_FILL = ["1", "on", "true", "yes"].includes(String(process.env.STAGE2_FILL_LEG_POCKETS || "").trim().toLowerCase());
 const LEG_POCKET_MAX_PCT = 1.0;      // a pocket bigger than this (open space under a dining table) is left alone
 const LEG_POCKET_MIN_MEAN_DIFF = 15; // average colour difference (0-255) between Gemini's and the real floor there
 
@@ -710,6 +714,65 @@ function greyStd(grey: Buffer, pixels: ArrayLike<number>): number {
   for (let k = 0; k < pixels.length; k++) { const v = grey[pixels[k]]; sum += v; sum2 += v * v; }
   const n = Math.max(1, pixels.length), mean = sum / n;
   return +Math.sqrt(Math.max(0, sum2 / n - mean * mean)).toFixed(1);
+}
+
+/**
+ * Holes the outline-filling closed (under a table between its legs and frame,
+ * between a chair's legs) that show Gemini's ROOM, not furniture: its wall,
+ * skirting or floor. Those are left to the real photo — Gemini's room there
+ * can sit at another height, which put a block of white wall and a skirting
+ * line under a bedside table where the photo has carpet (Nov 2026, owner
+ * review). A hole whose pixels match Gemini's room just beside the piece, on
+ * the same rows, is room; anything else (a dark table top on a white rug, a
+ * drawer front) stays furniture.
+ */
+export function dropRoomColouredGaps(mask: Uint8Array, traced: Uint8Array, stagedRgb: Buffer, w: number, h: number): { mask: Mask; droppedPct: number } {
+  const out: Mask = new Uint8Array(mask.length);
+  out.set(mask);
+  const gaps = new Uint8Array(w * h);
+  for (let i = 0; i < gaps.length; i++) if (mask[i] && !traced[i]) gaps[i] = 1;
+  const reach = Math.max(4, Math.round(w * 0.03));
+  const near = (i: number, j: number) => Math.max(Math.abs(stagedRgb[i * 3] - stagedRgb[j * 3]), Math.abs(stagedRgb[i * 3 + 1] - stagedRgb[j * 3 + 1]), Math.abs(stagedRgb[i * 3 + 2] - stagedRgb[j * 3 + 2])) <= 28;
+  let dropped = 0;
+  for (const comp of labelComponents(gaps, w, h)) {
+    let roomLike = 0, judged = 0;
+    for (const i of comp.pixels) {
+      const x = i % w, y = (i - x) / w;
+      let match = false, sampled = false;
+      for (const dir of [-1, 1]) {
+        // Walk out of the piece along the row to the first pixel beside it.
+        let k = x + dir, steps = 0;
+        while (k >= 0 && k < w && mask[y * w + k] && steps < reach * 4) { k += dir; steps++; }
+        if (k < 0 || k >= w || Math.abs(k - x) > reach * 4) continue;
+        sampled = true;
+        // A few pixels further out, so the piece's own edge isn't the sample.
+        const k2 = Math.max(0, Math.min(w - 1, k + dir * 3));
+        if (near(i, y * w + k2)) match = true;
+      }
+      // The piece's own colour beside the hole (first traced pixels along the
+      // row): a hole that matches the piece as well as the room (a white
+      // drawer on a white wall) can't be told apart, so it stays furniture.
+      if (match) {
+        for (const dir of [-1, 1]) {
+          let k = x + dir, steps = 0;
+          while (k >= 0 && k < w && !traced[y * w + k] && mask[y * w + k] && steps < reach * 4) { k += dir; steps++; }
+          if (k < 0 || k >= w || !traced[y * w + k]) continue;
+          // A pixel or two into the piece (less where it is thin, like a leg).
+          let k2 = k;
+          for (let d = 1; d <= 2; d++) { const kk = k + dir * d; if (kk >= 0 && kk < w && traced[y * w + kk]) k2 = kk; else break; }
+          if (near(i, y * w + k2)) { match = false; break; }
+        }
+      }
+      if (!sampled) continue;
+      judged++;
+      if (match) roomLike++;
+    }
+    if (judged >= comp.pixels.length * 0.5 && roomLike >= judged * 0.6) {
+      for (const i of comp.pixels) out[i] = 0;
+      dropped += comp.pixels.length;
+    }
+  }
+  return { mask: out, droppedPct: +((dropped / (w * h)) * 100).toFixed(2) };
 }
 
 export async function fillChangedGaps(floor: Uint8Array, original: Buffer, staged: Buffer, w: number, h: number): Promise<Mask> {
