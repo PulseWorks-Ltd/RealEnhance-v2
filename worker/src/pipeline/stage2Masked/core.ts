@@ -3954,7 +3954,12 @@ export function planSkirtingLineUp(runs: SkirtingRun[], furniture: Uint8Array, w
 // the real one: where Gemini's is clearly higher, the furniture there stands
 // on Gemini's floor, not the real one. No AI call.
 export const SEAM_UNDER_MIN_PCT = Number(process.env.STAGE2_SEAM_UNDER_MIN_PCT || 2);
-export async function seamUnderFurniture(original: Buffer, staged: Buffer, furniture: Uint8Array, w: number, h: number): Promise<FloatingRun[]> {
+/**
+ * Per column (800 wide): how much higher Gemini's floor line is than the real
+ * one (% of the height; negative = lower), read in Gemini's picture in the
+ * gap under furniture. NaN where there is no furniture or it can't be read.
+ */
+export async function geminiLineUnderColumns(original: Buffer, staged: Buffer, furniture: Uint8Array, w: number, h: number): Promise<Float32Array> {
   const W = 800, H = Math.max(8, Math.round((W * h) / w));
   const ob = await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer();
   const line = await realFloorLine(ob, W, H);
@@ -3980,14 +3985,23 @@ export async function seamUnderFurniture(original: Buffer, staged: Buffer, furni
     for (let y = H - 1 - step; y > low + step; y--) {
       if (isF(x, y - step) || isF(x, y) || isF(x, y + step)) continue;
       if ((sg[(y - step) * W + x] - sg[(y + step) * W + x]) * sign >= 18) {
-        // Gemini's wall-to-floor edge under the furniture. Only where the
-        // real photo shows wall there (it is above the real floor line).
-        if (y < f) diff[x] = ((f - y) / H) * 100;
-        else diff[x] = 0;
+        // Gemini's wall-to-floor edge under the furniture.
+        diff[x] = ((f - y) / H) * 100;
         break;
       }
     }
   }
+  return diff;
+}
+
+export async function seamUnderFurniture(original: Buffer, staged: Buffer, furniture: Uint8Array, w: number, h: number): Promise<FloatingRun[]> {
+  const W = 800, H = Math.max(8, Math.round((W * h) / w));
+  const line = await realFloorLine(await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer(), W, H);
+  const mk = await sharp(Buffer.from(furniture.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
+    .resize(W, H, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const isF = (x: number, y: number) => mk[y * W + x] > 127;
+  // Only where the real photo shows wall there (Gemini's line above the real one).
+  const diff = (await geminiLineUnderColumns(original, staged, furniture, w, h)).map((v) => (Number.isNaN(v) ? NaN : Math.max(0, v)));
   // Stretches of steady offset, allowing gaps (legs hide the line).
   const runs: FloatingRun[] = [];
   const maxGap = Math.round(W * 0.02);
@@ -4030,7 +4044,11 @@ export const GROUP_SHIFT_MARGIN_PCT = Number(process.env.STAGE2_GROUP_SHIFT_MARG
 export const GROUP_SHIFT_MAX_GROW = Number(process.env.STAGE2_GROUP_SHIFT_MAX_GROW || 0.3);
 
 export type GroupNeed = { x1Pct: number; x2Pct: number; needPct: number };
-export async function planGroupForward(original: Buffer, needs: GroupNeed[], furniture: Uint8Array, w: number, h: number): Promise<SkirtingLineUp & { shiftPct?: number }> {
+// Points along Gemini's floor line (x %, how much higher it is than the real
+// one there, %): the fit keeps every one just below the real skirting, and a
+// slight tilt lets one end move less than the other.
+export type GroupPoint = { xPct: number; needPct: number };
+export async function planGroupForward(original: Buffer, needs: GroupNeed[], furniture: Uint8Array, w: number, h: number, extra: GroupPoint[] = []): Promise<SkirtingLineUp & { shiftPct?: number }> {
   const W = 800, H = Math.max(8, Math.round((W * h) / w));
   const line = await realFloorLine(await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer(), W, H);
   const vy = SKIRTING_HORIZON * h;
@@ -4053,32 +4071,52 @@ export async function planGroupForward(original: Buffer, needs: GroupNeed[], fur
     }
   }
   if (!pts.length) return { ok: false, why: "nothing to move (or the floor line is too close to the horizon)" };
+  // Gemini's floor line elsewhere along the furniture (even where it is about
+  // right): kept just below the real one too, so the tilt is fitted to it.
+  for (const e of extra) {
+    if (!Number.isFinite(e.needPct)) continue;
+    const x = (e.xPct / 100) * w, yr = realAt(x);
+    if (yr < 0) continue;
+    const yGem = yr - (e.needPct / 100) * h;
+    if (yGem > vy + h * 0.05) pts.push({ x, yGem, nd: { x1Pct: e.xPct, x2Pct: e.xPct, needPct: e.needPct } });
+  }
   const margin = (GROUP_SHIFT_MARGIN_PCT / 100) * h;
-  // Smallest k (growth) that does it, for a centre point on the horizon:
-  // tried at the places that need it most, the middle of the furniture and
-  // the middle of the photo; the one needing the least growth is used (the
-  // place it is centred on moves straight down, the rest spread from it).
-  const kFor = (cx: number) => {
-    for (let kk = 1.0; kk <= 1 + GROUP_SHIFT_MAX_GROW + 1e-9; kk += 0.0025) {
-      let ok = true;
-      for (const p of pts) {
-        const nx = cx + kk * (p.x - cx), ny = vy + kk * (p.yGem - vy);
-        const yr = realAt(nx);
-        if (yr >= 0 && ny < yr + margin) { ok = false; break; }
-      }
-      if (ok) return kk;
-    }
-    return Infinity;
-  };
+  // For a centre point on the horizon and a slight tilt: the smallest growth
+  // k that puts every point just below the real floor line. Centres tried:
+  // the places that need it most, the middle of the furniture and of the
+  // photo; tilts up to LINEUP_MAX_TILT (about 2 deg) when on. The pair that
+  // leaves the furniture closest to the real skirting overall is used (with a
+  // small preference for less growth and less tilt).
+  const tilts: number[] = [0];
+  if (LINEUP_TILT) for (let t = 0.0025; t <= LINEUP_MAX_TILT + 1e-9; t += 0.0025) tilts.push(t, -t);
   const centres = [...needs.map((nd) => ((nd.x1Pct + nd.x2Pct) / 200) * w), (sx1 + sx2) / 2, w / 2];
-  let k = Infinity, vx = w / 2;
-  for (const cx of centres) { const kk = kFor(cx); if (kk < k) { k = kk; vx = cx; } }
+  const strict = pts.filter((p) => p.nd.x1Pct !== p.nd.x2Pct); // the stretches that must be fixed
+  const tol = h * 0.003;
+  let best: { k: number; s: number; cx: number; score: number } | null = null;
+  for (const cx of centres) for (const tl of tilts) {
+    for (let kk = 1.0; kk <= 1 + GROUP_SHIFT_MAX_GROW + 1e-9; kk += 0.0025) {
+      let ok = true, over = 0;
+      for (const p of pts) {
+        const nx = cx + kk * (p.x - cx), ny = vy + kk * (p.yGem - vy) + tl * (nx - cx);
+        const yr = realAt(nx);
+        if (yr < 0) continue;
+        // The must-fix stretches strictly; the other points within a hair.
+        if (ny < yr + margin - (strict.includes(p) ? 0 : tol)) { ok = false; break; }
+        over += ny - (yr + margin);
+      }
+      if (!ok) continue;
+      const score = over / pts.length / h * 100 + (kk - 1) * 2 + Math.abs(tl) * 5;
+      if (!best || score < best.score) best = { k: kk, s: tl, cx, score };
+      break; // the smallest k for this centre and tilt
+    }
+  }
+  const k = best ? best.k : Infinity, vx = best ? best.cx : w / 2, tilt = best ? best.s : 0;
   let at: GroupNeed | null = null, yGemAt = 0;
-  if (Number.isFinite(k)) { const p0 = pts.reduce((q, p) => (p.nd.needPct > q.nd.needPct ? p : q)); at = p0.nd; yGemAt = p0.yGem; }
+  if (best) { const p0 = (strict.length ? strict : pts).reduce((q, p) => (p.nd.needPct > q.nd.needPct ? p : q)); at = p0.nd; yGemAt = p0.yGem; }
   if (!at) return { ok: false, why: `would have to bring the furniture forward more than ${Math.round(GROUP_SHIFT_MAX_GROW * 100)}% bigger — too far` };
   const shiftPct = +(((vy + k * (yGemAt - vy) - yGemAt) / h) * 100).toFixed(1);
   return {
-    ok: true, why: "Gemini's floor higher than the real one", select, k: +k.toFixed(4), vx, vy, s: 0, tiltDeg: 0,
+    ok: true, why: "Gemini's floor higher than the real one", select, k: +k.toFixed(4), vx, vy, s: tilt, tiltDeg: +((Math.atan(tilt) * 180) / Math.PI).toFixed(2),
     shiftPct, movedDownPct: shiftPct, growPct: +((k - 1) * 100).toFixed(1), wallPct: [+((sx1 / w) * 100).toFixed(1), +((sx2 / w) * 100).toFixed(1)],
     run: { x1Pct: at.x1Pct, x2Pct: at.x2Pct, widthPct: +(at.x2Pct - at.x1Pct).toFixed(1), dyPct: -at.needPct },
   };
