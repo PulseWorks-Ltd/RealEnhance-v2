@@ -97,6 +97,7 @@ import {
   REALIGN_MAX_EMPTY_PCT,
   EDGE_CROP_ENABLED,
   LEG_POCKET_FILL,
+  dropRoomColouredGaps,
   findLegPockets,
   BAND_LEG_KEEP,
   findBandLegs,
@@ -166,6 +167,10 @@ function log(ctx: MaskedContext, msg: string) {
 function warn(ctx: MaskedContext, msg: string) {
   (ctx.io.warn || console.warn)(msg);
 }
+
+// Holes in furniture that show Gemini's room are left to the real photo.
+// STAGE2_GAP_ROOM_CHECK=off goes back to filling every hole from Gemini.
+export const GAP_ROOM_CHECK = String(process.env.STAGE2_GAP_ROOM_CHECK ?? "on").trim().toLowerCase() !== "off";
 
 export type TraceLayers = Awaited<ReturnType<typeof traceLayers>>;
 
@@ -578,7 +583,16 @@ export async function traceLayers(ctx: MaskedContext) {
   // Gaps inside a traced piece (a coffee table Gemini drew black on top of a
   // white rug) are filled too, but only where the staged image really
   // differs from the original — bare floor showing between chair legs stays.
-  const tightFloor = ctx.tight ? await fillChangedGaps(floor, original, staged, w, h) : null;
+  let tightFloor = ctx.tight ? await fillChangedGaps(floor, original, staged, w, h) : null;
+  // Holes in a piece that show Gemini's room (wall/skirting/floor) go to the
+  // real photo, in both outlines (see dropRoomColouredGaps).
+  const tracedOnly = Uint8Array.from(floor);
+  const stagedRgb = await sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).blur(1).raw().toBuffer();
+  if (tightFloor && GAP_ROOM_CHECK) {
+    const g = dropRoomColouredGaps(tightFloor, tracedOnly, stagedRgb, w, h);
+    tightFloor = g.mask;
+    if (g.droppedPct > 0) { row.roomGapsDroppedPct = g.droppedPct; log(ctx, `[${ctx.name}] holes in furniture showing Gemini's room (not furniture) left to the real photo: ${g.droppedPct}% of image`); }
+  }
   if (tightFloor) row.possiblyMissedByTrace = (tightFloor as any).possiblyMissedByTrace;
   // Where Gemini drew floor over the real wall (pushed a wall back). Such an
   // area is not furniture the trace missed: it is never taken from Gemini's
@@ -617,7 +631,11 @@ export async function traceLayers(ctx: MaskedContext) {
       log(ctx, `[${ctx.name}] took ${filled.map((m) => `${m.areaPct}%`).join(", ")} under furniture from Gemini's picture (missed by the trace${big.length ? "; last attempt" : ""})`);
     }
   }
-  floor = fillFurnitureColumns(floor, w, h);
+  {
+    const beforeFill = Uint8Array.from(floor);
+    floor = fillFurnitureColumns(floor, w, h);
+    if (GAP_ROOM_CHECK) floor = dropRoomColouredGaps(floor, beforeFill, stagedRgb, w, h).mask;
+  }
   // Floor under a piece, between its legs: keep Gemini's (its shadow there).
   // Kept as its own mask too: after a skirting line-up these gaps show the
   // real room instead (Gemini's skirting there would sit at the wrong height).
@@ -1324,6 +1342,8 @@ export async function runMaskedStage2Job(p: {
               const after = await measureSkirtingOffsets(original, ctx.staged, layers.solid, w, h).catch(() => ({ runs: [] as SkirtingRun[], checkedColsPct: 0 }));
               row.skirtingLineUp.after = after.runs;
               skirtingLeft = after.runs;
+              // A second (floating) line-up below starts from the moved picture.
+              if ((after as any).colOffsets) colOffsetsForLineUp = (after as any).colOffsets;
               p.log?.(`[${ctx.name}] skirting beside furniture was ${Math.abs(plan.run!.dyPct)}% ${plan.run!.dyPct < 0 ? "higher" : "lower"} in Gemini's picture (x ${plan.run!.x1Pct}-${plan.run!.x2Pct}%) — pulled the furniture against that wall (x ${plan.wallPct![0]}-${plan.wallPct![1]}%) ${plan.k! >= 1 ? "forward" : "back"}: ${plan.k! >= 1 ? "down" : "up"} ${Math.abs(plan.movedDownPct!)}% and ${Math.abs(plan.growPct!)}% ${plan.k! >= 1 ? "bigger" : "smaller"}; fitted on ${plan.fit?.method === "wall" ? `${plan.fit.cols} columns, ${plan.fit.sides}` : "one stretch"}, skirting left ${row.skirtingLineUp.leftoverPct ?? "?"}% off${layers.legPocket ? "; gaps between legs from the real photo" : ""}${after.runs.length ? ` (still off: ${after.runs.map((r) => `${r.dyPct}% at x ${r.x1Pct}-${r.x2Pct}%`).join("; ")})` : ""}`);
             } else if (!plan.ok) {
               p.warn?.(`[${ctx.name}] skirting beside furniture off by ${sk.runs.map((r) => `${r.dyPct}% at x ${r.x1Pct}-${r.x2Pct}%`).join("; ")} — not lined up: ${plan.why}`);
@@ -1346,7 +1366,10 @@ export async function runMaskedStage2Job(p: {
         // check's own gap is that offset: line the pieces on that wall up with
         // the real floor (lower and bigger, no AI call). Kept only if the
         // floating check then passes.
-        if (row.floatingCheck.floating && !floorPlan?.ok && SKIRTING_LINE_UP && FLOAT_LINE_UP && !lineUpApplied) {
+        // Also after a skirting line-up that didn't go far enough (Nov 2026,
+        // Harcourts 07: a bedside table's legs still 6% above the real floor —
+        // hidden until the holes under it stopped showing Gemini's wall).
+        if (row.floatingCheck.floating && !floorPlan?.ok && SKIRTING_LINE_UP && FLOAT_LINE_UP) {
           const floatRuns: SkirtingRun[] = row.floatingCheck.runs.map((r: any) => ({ x1Pct: r.x1Pct, x2Pct: r.x2Pct, widthPct: +(r.x2Pct - r.x1Pct).toFixed(1), dyPct: -r.gapPct }));
           if (!realLineForLineUp.length) {
             const W = 800, H = Math.max(8, Math.round((W * h) / w));
