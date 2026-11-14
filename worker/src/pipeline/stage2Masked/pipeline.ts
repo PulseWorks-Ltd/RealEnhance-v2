@@ -1341,7 +1341,13 @@ export async function runMaskedStage2Job(p: {
               io.save?.("3b_skirting_lined_up.webp", await sharp(ctx.staged).webp({ quality: 90 }).toBuffer());
               const after = await measureSkirtingOffsets(original, ctx.staged, layers.solid, w, h).catch(() => ({ runs: [] as SkirtingRun[], checkedColsPct: 0 }));
               row.skirtingLineUp.after = after.runs;
-              skirtingLeft = after.runs;
+              // Gemini's own skirting beyond the moved furniture is never shown
+              // (the real photo is), and the furniture now meets the real
+              // skirting (leftover check above), so what's still "off" there
+              // is no reason to re-stage (Nov 2026, Bedroom_02: a good line-up
+              // thrown away for Gemini's skirting beside the table). The
+              // floating check below still checks the moved furniture.
+              skirtingLeft = [];
               // A second (floating) line-up below starts from the moved picture.
               if ((after as any).colOffsets) colOffsetsForLineUp = (after as any).colOffsets;
               p.log?.(`[${ctx.name}] skirting beside furniture was ${Math.abs(plan.run!.dyPct)}% ${plan.run!.dyPct < 0 ? "higher" : "lower"} in Gemini's picture (x ${plan.run!.x1Pct}-${plan.run!.x2Pct}%) — pulled the furniture against that wall (x ${plan.wallPct![0]}-${plan.wallPct![1]}%) ${plan.k! >= 1 ? "forward" : "back"}: ${plan.k! >= 1 ? "down" : "up"} ${Math.abs(plan.movedDownPct!)}% and ${Math.abs(plan.growPct!)}% ${plan.k! >= 1 ? "bigger" : "smaller"}${plan.tiltDeg ? `, tilted ${plan.tiltDeg}° to follow the real wall` : ""}; fitted on ${plan.fit?.method === "wall" ? `${plan.fit.cols} columns, ${plan.fit.sides}` : "one stretch"}, skirting left ${row.skirtingLineUp.leftoverPct ?? "?"}% off${layers.legPocket ? "; gaps between legs from the real photo" : ""}${after.runs.length ? ` (still off: ${after.runs.map((r) => `${r.dyPct}% at x ${r.x1Pct}-${r.x2Pct}%`).join("; ")})` : ""}`);
