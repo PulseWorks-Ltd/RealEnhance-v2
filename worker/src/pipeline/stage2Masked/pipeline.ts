@@ -68,6 +68,7 @@ import {
   planSkirtingLineUp,
   seamUnderFurniture,
   planGroupForward,
+  geminiLineUnderColumns,
   GROUP_SHIFT,
   applySkirtingLineUp,
   lineUpLeftoverPct,
@@ -1438,8 +1439,19 @@ export async function runMaskedStage2Job(p: {
         }
         if (!lineUpApplied) for (const r of skirtingLeft) if (r.dyPct < 0 && Math.abs(r.dyPct) >= FLOOR_MOVED_RISE_PCT) needDown.push({ x1Pct: r.x1Pct, x2Pct: r.x2Pct, needPct: -r.dyPct });
         if (needDown.length && GROUP_SHIFT) {
-          const plan = await planGroupForward(original, needDown, layers.floor, w, h).catch((e: any) => ({ ok: false, why: `plan error: ${String(e?.message || e)}` } as any));
-          row.groupShift = { applied: false, needed: needDown, why: plan.why, ...(plan.ok ? { shiftPct: plan.shiftPct, growPct: plan.growPct } : {}) };
+          // Gemini's floor line along the furniture (under it, and the
+          // skirting just beside it), so a slight tilt can follow the real wall.
+          const extra: Array<{ xPct: number; needPct: number }> = [];
+          const under = await geminiLineUnderColumns(original, ctx.staged, layers.floor, w, h).catch(() => null);
+          if (under) for (let c = 0; c < under.length; c += 4) if (!Number.isNaN(under[c])) extra.push({ xPct: (c / (under.length - 1)) * 100, needPct: under[c] });
+          if (colOffsetsForLineUp) {
+            let fx1 = 101, fx2 = -1;
+            for (let i = 0; i < layers.floor.length; i++) if (layers.floor[i]) { const xp = ((i % w) / w) * 100; if (xp < fx1) fx1 = xp; if (xp > fx2) fx2 = xp; }
+            const L = colOffsetsForLineUp.length;
+            for (let c = 0; c < L; c += 4) { const v = colOffsetsForLineUp[c]; const xp = (c / (L - 1)) * 100; if (v != null && xp >= fx1 - 5 && xp <= fx2 + 5) extra.push({ xPct: xp, needPct: -v }); }
+          }
+          const plan = await planGroupForward(original, needDown, layers.floor, w, h, extra).catch((e: any) => ({ ok: false, why: `plan error: ${String(e?.message || e)}` } as any));
+          row.groupShift = { applied: false, needed: needDown, why: plan.why, ...(plan.ok ? { shiftPct: plan.shiftPct, growPct: plan.growPct, tiltDeg: plan.tiltDeg } : {}) };
           if (plan.ok) {
             const ap = await applySkirtingLineUp(ctx.staged, {
               floor: layers.floor, tightFloor: layers.tightFloor, artRegion: layers.artRegion, solid: layers.solid, zone: layers.zone, core: layers.core, legPocket: layers.legPocket,
@@ -1456,7 +1468,7 @@ export async function runMaskedStage2Job(p: {
               row.floatingCheck = { ...recheck, linedUpFrom: row.floatingCheck.runs };
               skirtingLeft = [];
               groupShifted = true;
-              p.log?.(`[${ctx.name}] all furniture brought forward together: down ${plan.shiftPct}% and ${plan.growPct}% bigger (Gemini's floor was up to ${Math.max(...needDown.map((n) => n.needPct)).toFixed(1)}% higher than the real one) — it now stands just below the real skirting; no re-stage needed`);
+              p.log?.(`[${ctx.name}] all furniture brought forward together: down ${plan.shiftPct}% and ${plan.growPct}% bigger${plan.tiltDeg ? `, tilted ${plan.tiltDeg}° to follow the real wall` : ""} (Gemini's floor was up to ${Math.max(...needDown.map((n) => n.needPct)).toFixed(1)}% higher than the real one) — it now stands just below the real skirting; no re-stage needed`);
             } else {
               row.groupShift.stillFloating = recheck.floating ? recheck.runs : under;
               p.warn?.(`[${ctx.name}] bringing all furniture forward (down ${plan.shiftPct}%, ${plan.growPct}% bigger) tried but something still floats (${(recheck.floating ? recheck.runs : under).map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% ${r.gapPct}%`).join("; ")}) — not used`);
