@@ -283,6 +283,9 @@ function isSmallMissedUnder(m: any): boolean {
 // Largest gap (percent of photo height) under a "floating" piece that is
 // still published on the last attempt. STAGE2_FLOAT_ACCEPT_LAST_GAP_PCT=0 turns it off.
 const FLOAT_ACCEPT_LAST_GAP_PCT = Number(process.env.STAGE2_FLOAT_ACCEPT_LAST_GAP_PCT ?? 1.5);
+// After all the furniture was brought forward, a piece still this little above
+// the floor is accepted on any attempt (STAGE2_FLOAT_ACCEPT_AFTER_MOVE_PCT=0: off).
+const FLOAT_ACCEPT_AFTER_MOVE_PCT = Number(process.env.STAGE2_FLOAT_ACCEPT_AFTER_MOVE_PCT ?? 1.5);
 // Extra staging attempts after the normal re-stage budget, only when the last
 // attempt failed on how the furniture fitted the room or a processing error.
 export const EXTRA_RESTAGES = Math.max(0, Math.round(Number(process.env.STAGE2_MASKED_EXTRA_RESTAGES ?? 1)));
@@ -1518,7 +1521,13 @@ export async function runMaskedStage2Job(p: {
               floor: layers.floor, tightFloor: layers.tightFloor, artRegion: layers.artRegion, solid: layers.solid, zone: layers.zone, core: layers.core, legPocket: layers.legPocket,
             }, layers.floor, plan, w, h);
             const fl = ap.masks.floor as Uint8Array;
-            const recheck: any = await checkFloatingFurniture(original, fl, w, h).catch((e: any) => ({ floating: true, runs: [], error: String(e?.message || e) }));
+            let recheck: any = await checkFloatingFurniture(original, fl, w, h).catch((e: any) => ({ floating: true, runs: [], error: String(e?.message || e) }));
+            // A hair above the floor after the move is not visible: the same
+            // allowance the last attempt already has (Nov 2026 test: a piece
+            // at the far edge 1.4% up threw a good move away).
+            if (recheck.floating && recheck.runs?.length && recheck.runs.every((r: any) => Number(r.gapPct) <= FLOAT_ACCEPT_AFTER_MOVE_PCT)) {
+              recheck = { ...recheck, floating: false, acceptedAfterMove: recheck.runs, runs: [] };
+            }
             const under = recheck.floating ? [] : await seamUnderFurniture(original, ap.staged, fl, w, h).catch(() => [] as any[]);
             io.save?.("3d_brought_forward.webp", await sharp(ap.staged).webp({ quality: 88 }).toBuffer());
             io.save?.("3d_brought_forward_mask.png", await maskToPng(fl, w, h));
