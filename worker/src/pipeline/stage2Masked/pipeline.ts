@@ -68,6 +68,8 @@ import {
   planSkirtingLineUp,
   seamUnderFurniture,
   planGroupForward,
+  retryPriorityHint,
+  RETRY_PRIORITY,
   skirtingOffsetsInMoved,
   fitSkirtingNudge,
   applySkirtingNudge,
@@ -1705,7 +1707,16 @@ export async function runMaskedStage2Job(p: {
     row.reasonsList = [...reasons];
     row.outcome = `re-stage (${reasons.join(", ")})`;
     p.warn?.(`[${p.jobId}] masked Stage 2: re-staging (attempt ${attempt + 1}): ${reasons.join(", ")}`);
+    // Pushed a wall back / raised the floor / left furniture floating: a
+    // short instruction at the TOP of the next prompt (see retryPriorityHint).
+    const movedRoom = Boolean(row.floorMovedCheck?.moved || row.floatingCheck?.floating);
+    const movedAt: number[] | null = row.floorMovedCheck?.moved && Array.isArray(row.floorMovedCheck.atXPct)
+      ? row.floorMovedCheck.atXPct
+      : row.floatingCheck?.floating && row.floatingCheck.runs?.length
+        ? [Math.min(...row.floatingCheck.runs.map((r: any) => r.x1Pct)), Math.max(...row.floatingCheck.runs.map((r: any) => r.x2Pct))]
+        : null;
     hints = [
+      ...(movedRoom && RETRY_PRIORITY ? [retryPriorityHint(movedAt)] : []),
       ...(row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : []),
       ...(row.bedWall?.restageHints || []),
       ...(row.deskDoor?.restageHints || []),
