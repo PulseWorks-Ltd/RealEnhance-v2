@@ -196,10 +196,25 @@ async function finalSkirtingFit(original: Buffer, staged: Buffer, layers: any, m
     floor: layers.floor, tightFloor: layers.tightFloor, artRegion: layers.artRegion, solid: layers.solid, zone: layers.zone, core: layers.core, legPocket: layers.legPocket,
   }, movedArea, fit.nudge, w, h);
   const fl = r.masks.floor as Uint8Array;
-  const floating: any = await checkFloatingFurniture(original, fl, w, h).catch(() => ({ floating: true, runs: [] }));
+  const after = await skirtingOffsetsInMoved(original, r.staged, fl, movedArea, w, h).catch(() => null);
+  let floating: any = await checkFloatingFurniture(original, fl, w, h).catch(() => ({ floating: true, runs: [] }));
+  // A stretch whose back legs now sit right on the real floor line reads as
+  // "hanging" to the floating check (it wants 1% below the line); where
+  // Gemini's floor line under it has been fitted onto the real one, the
+  // furniture stands on the real floor.
+  if (floating.floating && after) {
+    const L = after.length;
+    const left = (floating.runs || []).filter((run: any) => {
+      const v: number[] = [];
+      for (let c = Math.floor((run.x1Pct / 100) * (L - 1)); c <= Math.ceil((run.x2Pct / 100) * (L - 1)); c++) if (!Number.isNaN(after[c])) v.push(Math.abs(after[c]));
+      if (v.length < 4) return true;
+      v.sort((a, b) => a - b);
+      return v[v.length >> 1] > 0.8;
+    });
+    floating = { ...floating, floating: left.length > 0, runs: left };
+  }
   const under = floating.floating ? [] : await seamUnderFurniture(original, r.staged, fl, w, h).catch(() => [] as any[]);
   if (floating.floating || under.length) return { applied: false as const, why: "the furniture would float after the fit", beforePct: fit.beforePct };
-  const after = await skirtingOffsetsInMoved(original, r.staged, fl, movedArea, w, h).catch(() => null);
   const vals = after ? Array.from(after).filter((v) => !Number.isNaN(v)).map(Math.abs).sort((a, b) => a - b) : [];
   const afterPct = vals.length ? +vals[Math.floor(vals.length * 0.8)].toFixed(2) : null;
   if (afterPct !== null && afterPct >= fit.beforePct) return { applied: false as const, why: `no better (${fit.beforePct}% → ${afterPct}%)`, beforePct: fit.beforePct, afterPct };
