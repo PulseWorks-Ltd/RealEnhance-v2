@@ -39,6 +39,7 @@ import {
   imagePart,
   approxOutputCost,
   tracePassesFor,
+  lightTracePassesFor,
   buildTracePrompt,
   buildMirrorPrompt,
   buildApplianceSpacePrompt,
@@ -68,6 +69,7 @@ import {
   planSkirtingLineUp,
   seamUnderFurniture,
   planGroupForward,
+  carryPlacementMatch,
   retryPriorityHint,
   RETRY_PRIORITY,
   skirtingOffsetsInMoved,
@@ -151,6 +153,14 @@ export type MaskedContext = {
   tight: boolean;
   // Offline replay: no Gemini calls; saved outputs are read through io.load.
   offline: boolean;
+  // Carry-over round: lighter tracing (see lightTracePassesFor), no close-up.
+  lightTrace?: boolean;
+  // Fallback round: the traces of the same staged picture are read from the
+  // earlier round instead of asking Gemini again (no cost).
+  traceReplay?: (name: string) => Buffer | null;
+  // Carry-over round: Gemini's carried-over picture already has the lighting
+  // and shadows, so the blend borrows from it instead of a new Gemini call.
+  blendFrom?: Buffer | null;
   dir: string; // folder for door-check input images
   io: MaskedIO;
   row: any; // report, filled in step by step
@@ -334,7 +344,7 @@ const CLOSEUP_TARGETS =
 
 async function closeUpRetrace(ctx: MaskedContext, floor: Mask, exclude: Uint8Array, minSpeck: number): Promise<Mask> {
   const { original, staged, w, h, row } = ctx;
-  if (!CLOSEUP_RETRACE) return floor;
+  if (!CLOSEUP_RETRACE || ctx.lightTrace) return floor;
   const probe = await fillChangedGaps(floor, original, staged, w, h);
   const missed: Array<{ areaPct: number; touchingFurniturePct: number; box: number[] }> = ((probe as any).possiblyMissedByTrace || []).filter(
     (m: any) => m.areaPct >= CLOSEUP_MIN_AREA_PCT && m.touchingFurniturePct >= CLOSEUP_MIN_TOUCHING_PCT
@@ -363,8 +373,8 @@ async function closeUpRetrace(ctx: MaskedContext, floor: Mask, exclude: Uint8Arr
   row.closeUpRetrace = { flaggedAreas: missed, crop: [+cx1.toFixed(2), +cy1.toFixed(2), +cx2.toFixed(2), +cy2.toFixed(2)] };
 
   let raw: Buffer | null = null;
-  if (ctx.offline) {
-    raw = ctx.io.load?.("3_trace_closeup_raw.png") ?? null;
+  if (ctx.offline || ctx.traceReplay) {
+    raw = (ctx.traceReplay || ctx.io.load)?.("3_trace_closeup_raw.png") ?? null;
     if (!raw) warn(ctx, `[${ctx.name}] FROM_RUN: no saved close-up trace — skipping it`);
   } else {
     const cropOf = (b: Buffer) =>
@@ -487,9 +497,9 @@ export async function traceLayers(ctx: MaskedContext) {
   const stagedMeta = await sharp(staged).metadata();
   const stagedMime = stagedMeta.format === "jpeg" ? "image/jpeg" : stagedMeta.format === "png" ? "image/png" : "image/webp";
   const passes = await Promise.all(
-    tracePassesFor(ctx.roomType).filter((pass) => !(ctx.skipReflections && pass.kind === "reflection")).map(async (pass) => {
-      if (ctx.offline) {
-        const saved = ctx.io.load?.(`3_trace_${pass.label}_raw.png`) ?? null;
+    (ctx.lightTrace ? lightTracePassesFor(ctx.roomType) : tracePassesFor(ctx.roomType)).filter((pass) => !(ctx.skipReflections && pass.kind === "reflection")).map(async (pass) => {
+      if (ctx.offline || ctx.traceReplay) {
+        const saved = (ctx.traceReplay || ctx.io.load)?.(`3_trace_${pass.label}_raw.png`) ?? null;
         if (!saved) {
           warn(ctx, `[${ctx.name}] FROM_RUN: no saved "${pass.label}" trace — treating it as empty`);
           return { label: pass.label, kind: pass.kind, mask: new Uint8Array(w * h), inverted: false, cost: 0 };
@@ -558,8 +568,8 @@ export async function traceLayers(ctx: MaskedContext) {
   let mirrorMask: Mask | null = null;
   if (labelComponents(reflAll, w, h).some((p) => p.pixels.length >= Math.max(64, Math.round(w * h * 0.0005)))) {
     let mirrorRaw: Buffer | null = null;
-    if (ctx.offline) {
-      mirrorRaw = ctx.io.load?.("3_trace_mirrors_raw.png") ?? null;
+    if (ctx.offline || ctx.traceReplay) {
+      mirrorRaw = (ctx.traceReplay || ctx.io.load)?.("3_trace_mirrors_raw.png") ?? null;
       if (!mirrorRaw) warn(ctx, `[${ctx.name}] FROM_RUN: no saved mirrors trace — reflections will be dropped`);
     } else {
       mirrorRaw = await callGeminiImage({
@@ -600,8 +610,8 @@ export async function traceLayers(ctx: MaskedContext) {
   appAll = removeSmallComponents(appAll, w, h, minSpeck);
   if (labelComponents(appAll, w, h).some((p) => p.pixels.length >= Math.max(64, Math.round(w * h * 0.0005)))) {
     let spaceRaw: Buffer | null = null;
-    if (ctx.offline) {
-      spaceRaw = ctx.io.load?.("3_trace_appliance_spaces_raw.png") ?? null;
+    if (ctx.offline || ctx.traceReplay) {
+      spaceRaw = (ctx.traceReplay || ctx.io.load)?.("3_trace_appliance_spaces_raw.png") ?? null;
     } else {
       spaceRaw = await callGeminiImage({
         model: TRACE_MODEL,
@@ -770,6 +780,59 @@ export async function traceLayers(ctx: MaskedContext) {
   return { floor, tightFloor, artRegion, solid, zone, core, solidPng, traced, undone, floorOverWall: floorOverWall?.mask ?? null, legPocket };
 }
 
+// ── Carry-over (Nov 2026) ───────────────────────────────────────────────────
+// When the furniture had to be moved to stand on the real floor (bring
+// forward / skirting line-up), Gemini is given the empty photo and ONLY the
+// moved furniture (cut out on grey, with the wall art) and asked to put it
+// into the room exactly there. In tests it kept the furniture where our code
+// put it and blended it in more naturally; given its own staged room instead,
+// it copied that room's raised floor. The carried-over picture then goes
+// through every check again (a lighter trace); if it fails, the moved result
+// is used as before. On by default (owner, Nov 2026); STAGE2_CARRY_OVER=off turns it off.
+const CARRY_ROUND_MAX_GROW = Number(process.env.STAGE2_CARRY_ROUND_MAX_GROW || 0.05);
+export const CARRY_OVER = String(process.env.STAGE2_CARRY_OVER ?? "on").trim().toLowerCase() !== "off";
+const CARRY_OVER_MODEL = process.env.STAGE2_CARRY_OVER_MODEL || HARMONISE_MODEL;
+export const CARRY_OVER_PROMPT = `You are given two images.
+IMAGE 1 is a real photo of an empty room.
+IMAGE 2 shows furniture and decor cut out on a plain grey background — there is no room in it. Each piece is already shown in exactly the right place and at the right size for IMAGE 1's room.
+
+Edit IMAGE 1: put these pieces into IMAGE 1 exactly where IMAGE 2 shows them — the same position, size and angle in the frame — and change nothing else.
+
+IMAGE 1's room must stay exactly as it is: the same framing, camera position, zoom and perspective; every wall, corner, window, curtain, door, light fitting and the ceiling in the same place; the same floor and carpet; and the skirting boards and the line where each wall meets the floor exactly where IMAGE 1 shows them.
+
+Make the furniture look naturally part of the room: match IMAGE 1's lighting and colour, finish any edge of a piece that the cut-out left rough, and add soft natural shadows where the furniture meets the floor and wall. Do not move, resize or redraw the pieces, do not add any other furniture or decor, and do not add any grey background.
+
+Return only the edited IMAGE 1.`;
+
+async function carryOverFurniture(ctx: MaskedContext, layers: TraceLayers): Promise<Buffer | null> {
+  const { w, h, row } = ctx;
+  const keep = new Uint8Array(w * h);
+  for (let i = 0; i < keep.length; i++) if (layers.floor[i] || (layers.tightFloor && layers.tightFloor[i]) || (layers.artRegion && layers.artRegion[i])) keep[i] = 1;
+  const m = dilate(keep, w, h, 2);
+  const st = await sharp(ctx.staged).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer();
+  const cut = Buffer.alloc(w * h * 3, 128);
+  for (let i = 0; i < w * h; i++) if (m[i]) { cut[i * 3] = st[i * 3]; cut[i * 3 + 1] = st[i * 3 + 1]; cut[i * 3 + 2] = st[i * 3 + 2]; }
+  const cutJpg = await sharp(cut, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality: 90 }).toBuffer();
+  save(ctx, "9_carry_over_cutout.jpg", cutJpg);
+  if (ctx.offline) {
+    const saved = ctx.io.load?.("9_carry_over_raw.png") ?? null;
+    if (!saved) warn(ctx, `[${ctx.name}] FROM_RUN: no saved carry-over picture — keeping the moved result`);
+    return saved;
+  }
+  const empty = await sharp(ctx.original).removeAlpha().resize(w, h, { fit: "fill" }).jpeg({ quality: 90 }).toBuffer();
+  const res = await callGeminiImage({
+    model: CARRY_OVER_MODEL,
+    parts: [{ text: CARRY_OVER_PROMPT }, { text: "IMAGE 1 (the real, empty room — edit this one):" }, imagePart(empty, "image/jpeg"), { text: "IMAGE 2 (the furniture, already in place, on grey):" }, imagePart(cutJpg, "image/jpeg")],
+    imageSize: HARMONISE_IMAGE_SIZE,
+    aspectRatio: ctx.aspectRatio,
+  }).catch((e) => { warn(ctx, `[${ctx.name}] carry-over call failed: ${String(e?.message || e).slice(0, 200)}`); return null; });
+  if (!res) return null;
+  row.carryOver = { ...(row.carryOver || {}), costUsd: approxOutputCost(res.usage) };
+  const img = await sharp(res.image).resize(w, h, { fit: "fill" }).png().toBuffer();
+  save(ctx, "9_carry_over_raw.png", img);
+  return img;
+}
+
 export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
   const { original, staged, w, h, row } = ctx;
   const { tightFloor, artRegion } = layers;
@@ -824,7 +887,11 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
   save(ctx, "9_safe_composite.webp", safeFinal);
 
   // Phase 2: Gemini adds shadows / blends lighting on the safe image.
-  if (ctx.offline) {
+  if (ctx.blendFrom) {
+    harmRaw = ctx.blendFrom;
+    save(ctx, "9_harmonise_raw.png", await sharp(harmRaw).png().toBuffer());
+    log(ctx, `[${ctx.name}] harmonise: lighting and shadows taken from the carried-over picture (no extra Gemini call)`);
+  } else if (ctx.offline) {
     harmRaw = ctx.io.load?.("9_harmonise_raw.png") ?? null;
     if (!harmRaw) warn(ctx, `[${ctx.name}] FROM_RUN: no saved 9_harmonise_raw.png — using the safe composite as the final`);
   } else {
@@ -1170,8 +1237,14 @@ export async function runMaskedStage2Job(p: {
   // (Nov 2026, job_0ed1adf2: attempt 2 took Gemini's floor and skirting under
   // the near bedside table — a step in the skirting and a lighter carpet patch).
   const finalAttempt = (attempt: number) => attempt > p.maxRestages + Math.max(0, EXTRA_RESTAGES - extraRestagesUsed);
+  // Carry-over rounds (see CARRY_OVER): internal re-runs of the same staging,
+  // never counted as a re-stage.
+  let carry: null | { mode: "carry" | "fallback"; imagePath: string; stagedPath: string; fromDir: string; placed?: Uint8Array } = null;
+  let internalRounds = 0;
   for (let attempt = 1; ; attempt++) {
     const dir = path.join(p.workDir, `attempt${attempt}`);
+    // The attempt number as far as re-staging goes (internal rounds aside).
+    const eff = attempt - internalRounds;
     fs.mkdirSync(dir, { recursive: true });
     const files: string[] = [];
     const io: MaskedIO = {
@@ -1189,10 +1262,12 @@ export async function runMaskedStage2Job(p: {
     reports.push(row);
     const reasons: string[] = [];
     let final: Buffer | null = null;
+    let goRound = false; // a carry-over round follows (see CARRY_OVER)
     // The room plan Stage 2 used for this attempt (if any).
     let attemptBrief: any = null;
     try {
-      const stagedPath = await p.stage(attempt, hints);
+      const stagedPath = carry?.mode === "carry" ? carry.imagePath : carry?.mode === "fallback" ? carry.stagedPath : await p.stage(eff, hints);
+      if (carry) row.carryRound = carry.mode;
       const staged = fs.readFileSync(stagedPath);
       io.save?.("2_staged_raw.webp", staged);
       // The exact staging prompt (and room brief, if used), saved by Stage 2.
@@ -1201,7 +1276,12 @@ export async function runMaskedStage2Job(p: {
           if (fs.existsSync(stagedPath + suffix)) io.save?.(name, fs.readFileSync(stagedPath + suffix));
         } catch {}
       }
-      let ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row, fillMissedUnder: finalAttempt(attempt) && PUBLISH_CUT_ON_LAST_ATTEMPT };
+      let ctx: MaskedContext = {
+        name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row,
+        fillMissedUnder: finalAttempt(eff) && PUBLISH_CUT_ON_LAST_ATTEMPT,
+        ...(carry?.mode === "carry" ? { lightTrace: true } : {}),
+        ...(carry?.mode === "fallback" ? { traceReplay: ((from: string) => (name: string) => { try { const f = path.join(from, name); return fs.existsSync(f) ? fs.readFileSync(f) : null; } catch { return null; } })(carry.fromDir) } : {}),
+      };
       // Bed placement (bedrooms) needs only the staged picture, so it runs now,
       // alongside the line-up, and a rejected placement skips the trace and blend
       // (~US$0.50 of Gemini calls) and goes straight to the re-stage.
@@ -1209,17 +1289,17 @@ export async function runMaskedStage2Job(p: {
         if (fs.existsSync(stagedPath + ".room-brief.json")) attemptBrief = JSON.parse(fs.readFileSync(stagedPath + ".room-brief.json", "utf8"));
       } catch {}
       const plannedBedWall = plannedBedWallFromBrief(attemptBrief);
-      const bedWallP = BED_WALL_CHECK && !ctx.offline && /bed/i.test(p.roomType)
+      const bedWallP = BED_WALL_CHECK && !ctx.offline && !carry && /bed/i.test(p.roomType)
         ? getDoors().then((doors) => askBedWall(ctx.originalPath, staged, doors || [], dir, ctx.name, plannedBedWall)).catch(() => null)
         : Promise.resolve(null);
       // Same for the desk in a study / office.
-      const deskDoorP = BED_WALL_CHECK && !ctx.offline && /study|office/i.test(p.roomType)
+      const deskDoorP = BED_WALL_CHECK && !ctx.offline && !carry && /study|office/i.test(p.roomType)
         ? getDoors().then((doors) => askDeskDoor(ctx.originalPath, staged, doors || [], dir, ctx.name)).catch(() => null)
         : Promise.resolve(null);
       // And for sofas, TV units and dining sets in living / dining rooms. The
       // room plan (if Stage 2 used one) shapes the re-stage hint.
       const livingPlan = livingPlanFromBrief(attemptBrief);
-      const livingDoorP = LIVING_DOOR_CHECK && !ctx.offline && /living|dining/i.test(p.roomType) && !/bed/i.test(p.roomType)
+      const livingDoorP = LIVING_DOOR_CHECK && !ctx.offline && !carry && /living|dining/i.test(p.roomType) && !/bed/i.test(p.roomType)
         ? getDoors().then((doors) => askLivingDoor(ctx.originalPath, staged, doors || [], dir, ctx.name, livingPlan)).catch(() => null)
         : Promise.resolve(null);
       const reflective = await reflectiveP;
@@ -1318,6 +1398,23 @@ export async function runMaskedStage2Job(p: {
             p.log?.(`[${ctx.name}] line-up ${row.realign.rescued ? "RESCUED the staging" : "did not help"} (room check median ${first.medianDiff} -> ${row.framingCheck?.medianDiff}; empty strip ${al.emptyPct}%, furniture reaching it ${cut.cutPct}% of its edge)`);
           }
         }
+        // Carry-over round: did Gemini keep the furniture where it was placed?
+        // If so the picture is trusted — a small shift that fits the room
+        // better is no reason to reject it; if not (resized, moved elsewhere,
+        // turned) it is not used (owner, Nov 2026).
+        let carryTrusted = false, carryMismatch = false;
+        if ((carry as any)?.mode === "carry" && (carry as any).placed) {
+          const m = carryPlacementMatch((carry as any).placed, layers.floor, w, h);
+          row.carryMatch = m;
+          if (m.ok) {
+            carryTrusted = true;
+            p.log?.(`[${ctx.name}] carried-over furniture is where it was placed (main piece ${m.widthRatio}x wide, ${m.shiftPct}% across, top ${m.topPct}%) — trusted`);
+          } else {
+            carryMismatch = true;
+            reasons.push("carried-over furniture moved or resized");
+            p.warn?.(`[${ctx.name}] carried-over furniture is not where it was placed: ${m.why}`);
+          }
+        }
         // Part of a piece missed by the trace: a sizeable changed area directly
         // UNDER traced furniture (where legs or a base should continue) that
         // the close-up re-trace didn't fill. Merging would publish the piece
@@ -1370,7 +1467,9 @@ export async function runMaskedStage2Job(p: {
           row.skirtingBeside = { runs: sk.runs, checkedColsPct: sk.checkedColsPct }; // (not the floor line itself: it would bloat the logged report)
           skirtingLeft = sk.runs;
           if (sk.runs.length) {
-            const plan: SkirtingLineUp = SKIRTING_LINE_UP ? planSkirtingLineUp(sk.runs, layers.floor, w, h, (sk as any).realLine || [], (sk as any).colOffsets || null) : { ok: false, why: "line-up switched off" };
+            const plan: SkirtingLineUp = (carry as any)?.mode === "carry"
+              ? { ok: false, why: "carry-over round: the furniture was already lined up" }
+              : SKIRTING_LINE_UP ? planSkirtingLineUp(sk.runs, layers.floor, w, h, (sk as any).realLine || [], (sk as any).colOffsets || null) : { ok: false, why: "line-up switched off" };
             row.skirtingLineUp = { ok: plan.ok, why: plan.why, ...(plan.fit ? { fit: plan.fit } : {}), ...(plan.ok ? { wallPct: plan.wallPct, movedDownPct: plan.movedDownPct, growPct: plan.growPct, tiltDeg: plan.tiltDeg || 0 } : {}) };
             let ap: Awaited<ReturnType<typeof applySkirtingLineUp>> | null = null;
             if (plan.ok) {
@@ -1455,7 +1554,7 @@ export async function runMaskedStage2Job(p: {
         // Also after a skirting line-up that didn't go far enough (Nov 2026,
         // Harcourts 07: a bedside table's legs still 6% above the real floor —
         // hidden until the holes under it stopped showing Gemini's wall).
-        if (row.floatingCheck.floating && !floorPlan?.ok && SKIRTING_LINE_UP && FLOAT_LINE_UP) {
+        if (row.floatingCheck.floating && !floorPlan?.ok && SKIRTING_LINE_UP && FLOAT_LINE_UP && (carry as any)?.mode !== "carry") {
           const floatRuns: SkirtingRun[] = row.floatingCheck.runs.map((r: any) => ({ x1Pct: r.x1Pct, x2Pct: r.x2Pct, widthPct: +(r.x2Pct - r.x1Pct).toFixed(1), dyPct: -r.gapPct }));
           if (!realLineForLineUp.length) {
             const W = 800, H = Math.max(8, Math.round((W * h) / w));
@@ -1514,7 +1613,9 @@ export async function runMaskedStage2Job(p: {
             const L = colOffsetsForLineUp.length;
             for (let c = 0; c < L; c += 4) { const v = colOffsetsForLineUp[c]; const xp = (c / (L - 1)) * 100; if (v != null && xp >= fx1 - 5 && xp <= fx2 + 5) extra.push({ xPct: xp, needPct: -v }); }
           }
-          const plan = await planGroupForward(original, needDown, layers.floor, w, h, extra).catch((e: any) => ({ ok: false, why: `plan error: ${String(e?.message || e)}` } as any));
+          // In the carry-over round only a small correction: the furniture was
+          // already placed; a big one means Gemini drifted (use the moved result).
+          const plan = await planGroupForward(original, needDown, layers.floor, w, h, extra, (carry as any)?.mode === "carry" ? CARRY_ROUND_MAX_GROW : undefined).catch((e: any) => ({ ok: false, why: `plan error: ${String(e?.message || e)}` } as any));
           row.groupShift = { applied: false, needed: needDown, why: plan.why, ...(plan.ok ? { shiftPct: plan.shiftPct, growPct: plan.growPct, tiltDeg: plan.tiltDeg } : {}) };
           if (plan.ok) {
             const ap = await applySkirtingLineUp(ctx.staged, {
@@ -1603,24 +1704,39 @@ export async function runMaskedStage2Job(p: {
         // sofa against a wall in front of a floor-level window, gaps 1.2% and
         // 1.4%, both attempts visual passes, job fell back to 1A).
         if (
-          row.floatingCheck.floating && !floorPlan?.ok && finalAttempt(attempt) &&
+          row.floatingCheck.floating && !floorPlan?.ok && finalAttempt(eff) &&
           row.floatingCheck.runs.every((r: any) => r.gapPct <= FLOAT_ACCEPT_LAST_GAP_PCT)
         ) {
           row.floatingAccepted = true;
           p.warn?.(`[${ctx.name}] last attempt: publishing — furniture ends only ${Math.max(...row.floatingCheck.runs.map((r: any) => r.gapPct))}% above the floor line (at most ${FLOAT_ACCEPT_LAST_GAP_PCT}% accepted)`);
         }
-        if (row.furnitureCutByTrace && !row.furnitureCutByTraceAccepted) {
+        if (carryMismatch) {
+          // (reason already given; the moved result is used instead)
+        } else if (row.furnitureCutByTrace && !row.furnitureCutByTraceAccepted) {
           reasons.push("furniture cut off by the trace");
         } else if (row.framingCheck?.framingChanged) {
           // Reshaped room: paste-back can't fix it, so skip the blend and door
           // check (time and cost) and go straight to the re-stage / fallback.
           reasons.push("room reshaped");
-        } else if (row.floorMovedCheck?.moved) {
+        } else if (row.floorMovedCheck?.moved && !carryTrusted) {
           reasons.push("room changed to fit the furniture");
-        } else if (row.floatingCheck.floating && !floorPlan?.ok && !row.floatingAccepted) {
+        } else if (row.floatingCheck.floating && !floorPlan?.ok && !row.floatingAccepted && !carryTrusted) {
           reasons.push("furniture floating");
+        } else if (CARRY_OVER && !carry && (groupShifted || lineUpApplied) && await (async () => {
+          // The furniture was moved onto the real floor: let Gemini carry it
+          // over onto the empty photo, then check that picture (next round).
+          const img = await carryOverFurniture(ctx, layers).catch(() => null);
+          if (!img) return false;
+          const imagePath = path.join(dir, "9_carry_over_staged.png");
+          fs.writeFileSync(imagePath, img);
+          carry = { mode: "carry", imagePath, stagedPath, fromDir: dir, placed: Uint8Array.from(layers.floor) };
+          io.save?.("9_carry_over_placed_mask.png", await maskToPng(layers.floor, w, h));
+          p.log?.(`[${ctx.name}] furniture moved onto the real floor — Gemini carried it over onto the empty photo; checking that picture next`);
+          return true;
+        })()) {
+          goRound = true;
         } else {
-          const hm = await harmonise(ctx, layers);
+          const hm = await harmonise((carry as any)?.mode === "carry" ? { ...ctx, blendFrom: ctx.staged } : ctx, layers);
           final = hm.checkedBlend || hm.harmFinal;
           // A piece cut off by the line-up must have been continued by the blend.
           // If not, a small edge crop (below) may still save the photo.
@@ -1677,29 +1793,48 @@ export async function runMaskedStage2Job(p: {
       reasons.push(`processing error: ${row.error}`);
     }
     if (p.onAttemptFiles) pendingUploads.push(p.onAttemptFiles(attempt, dir, [...files]).catch(() => {}));
+    if (goRound) {
+      row.outcome = "moved — carry-over round next";
+      internalRounds++;
+      continue;
+    }
     // Gemini added nothing, in a room that may stay empty: nothing to stage.
     // Re-staging can't help (Nov 2026, Harcourts batch: garages failed 4x).
     if (/tracing found almost no furniture/.test(String(row.error || "")) && roomAllowsEmptyLayout(p.roomType)) {
       row.outcome = "nothing to stage (room may stay empty)";
       p.log?.(`[${p.jobId}] masked Stage 2: nothing was added to this ${p.roomType} — delivering the enhanced photo, no re-stage`);
       await finishUploads();
-      return { ok: false, reasons: ["nothing to stage"], attempts: attempt, reports, nothingToStage: true };
+      return { ok: false, reasons: ["nothing to stage"], attempts: eff, reports, nothingToStage: true };
     }
     if (reasons.length === 0 && final) {
       const outputPath = p.outputPathFor(attempt);
       await sharp(final).webp({ quality: 95 }).toFile(outputPath);
-      row.outcome = "publish";
+      row.outcome = (carry as any)?.mode === "carry" ? "publish (carried over)" : "publish";
       await finishUploads();
-      return { ok: true, outputPath, attempts: attempt, reports };
+      return { ok: true, outputPath, attempts: eff, reports };
     }
-    if (attempt > p.maxRestages) {
+    // The carried-over picture failed a check: use the moved result as before
+    // (same staging, its saved traces — no new Gemini staging or tracing).
+    if ((carry as any)?.mode === "carry") {
+      row.outcome = `carry-over not used (${reasons.join(", ")}) — back to the moved result`;
+      p.warn?.(`[${p.jobId}] masked Stage 2: carried-over picture failed (${reasons.join(", ")}) — using the moved result`);
+      const c = carry as unknown as { mode: "carry" | "fallback"; imagePath: string; stagedPath: string; fromDir: string; placed?: Uint8Array };
+      carry = { ...c, mode: "fallback" };
+      internalRounds++;
+      continue;
+    }
+    carry = null;
+    if (eff > p.maxRestages) {
       // One more staging when the last attempt failed only on how the
       // furniture fitted the room (or a processing error): Gemini varies a lot
       // between stagings, and these are usually fine on a fresh try (Nov 2026
       // test run, Bedroom_05: 4 of 4 new stagings kept the wall Gemini had
       // removed in both attempts). Any other reason fails as before.
       row.reasonsList = [...reasons];
-      const repeat = attempt >= 2 && sameRoomChangeAgain(reports[reports.length - 2], row);
+      // Compare with the previous STAGING (carry-over rounds are the same staging).
+      const stagingRows = reports.filter((r: any) => !r.carryRound);
+      const prior = stagingRows.length >= 2 ? stagingRows[stagingRows.length - 2] : null;
+      const repeat = Boolean(prior) && sameRoomChangeAgain(prior, row);
       if (repeat) {
         row.extraRestageSkipped = "same room change in the same place as the last attempt";
         p.warn?.(`[${p.jobId}] masked Stage 2: Gemini changed the room the same way, in the same place, as the last attempt — no extra staging`);
@@ -1708,14 +1843,14 @@ export async function runMaskedStage2Job(p: {
       if (!extraOk) {
         row.outcome = `FAILED after re-stage (${reasons.join(", ")})`;
         await finishUploads();
-        return { ok: false, reasons, attempts: attempt, reports };
+        return { ok: false, reasons, attempts: eff, reports };
       }
       extraRestagesUsed++;
       row.extraRestage = true;
     }
     row.reasonsList = [...reasons];
     row.outcome = `re-stage (${reasons.join(", ")})`;
-    p.warn?.(`[${p.jobId}] masked Stage 2: re-staging (attempt ${attempt + 1}): ${reasons.join(", ")}`);
+    p.warn?.(`[${p.jobId}] masked Stage 2: re-staging (attempt ${eff + 1}): ${reasons.join(", ")}`);
     // Pushed a wall back / raised the floor / left furniture floating: a
     // short instruction at the TOP of the next prompt (see retryPriorityHint).
     const movedRoom = Boolean(row.floorMovedCheck?.moved || row.floatingCheck?.floating);

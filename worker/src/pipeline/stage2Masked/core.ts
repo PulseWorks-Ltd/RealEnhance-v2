@@ -130,6 +130,16 @@ export type TraceKind = "floor" | "wall_art" | "reflection" | "appliance";
 // a fridge that replaced pantry doors is a change to the cabinetry and goes.
 export const TRACE_APPLIANCES = process.env.TRACE_APPLIANCES !== "0";
 export const APPLIANCE_PASS = { label: "appliances", kind: "appliance" as TraceKind, targets: "freestanding appliances added by staging" };
+/**
+ * Lighter tracing for the carry-over picture (Nov 2026): the furniture is
+ * already known and in place, so one combined furniture pass (plus wall art)
+ * is enough — about half the cost of the full set.
+ */
+export function lightTracePassesFor(roomType: string) {
+  const floorPasses = TRACE_PASSES.filter((p) => p.kind === "floor");
+  const merged = { label: "primary", kind: "floor" as TraceKind, targets: floorPasses.map((p) => p.targets).join("; ") };
+  return [merged, ...TRACE_PASSES.filter((p) => p.kind === "wall_art")];
+}
 export function tracePassesFor(roomType: string) {
   return TRACE_APPLIANCES && /kitchen/i.test(roomType) ? [...TRACE_PASSES, APPLIANCE_PASS] : TRACE_PASSES;
 }
@@ -3328,20 +3338,28 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
     for (let k = x1; k <= x2; k++) bSum += pb(k);
     const runBottom = bSum / (x2 - x1 + 1);
     const grounded = (x: number, b: number) => line[x] >= 0 && b >= line[x] + margin;
-    const maxLeg = Math.max(2, Math.round(W * 0.02)), tol = H * 0.015;
     for (const dir of [-1, 1] as const) {
       if ((dir < 0 && freeLeft) || (dir > 0 && freeRight)) continue;
       const start = dir < 0 ? x1 - 1 : x2 + 1;
-      for (let k = 0; k <= Math.round(W * 0.01); k++) {
-        const s0 = start + dir * k;
-        if (s0 < 0 || s0 >= W) break;
-        const b0 = pb(s0);
-        if (b0 < 0 || !grounded(s0, b0) || b0 < runBottom + H * 0.015 || b0 > runBottom + H * 0.12) continue;
-        let n = 0, e = s0;
-        while (e >= 0 && e < W) { const be = pb(e); if (be < 0 || Math.abs(be - b0) > tol) break; n++; e += dir; }
-        const after = e >= 0 && e < W ? pb(e) : -1;
-        if (n <= maxLeg && (after < 0 || after < b0 - tol)) return true;
-        break;
+      // The leg: the same piece reaching the floor just beside the stretch
+      // (its lowest point within 2.5% of the width — a splayed or tapered leg's
+      // bottom edge slopes, Nov 2026: a round table read as floating)...
+      let s0 = -1, b0 = -1;
+      for (let k = 0; k <= Math.round(W * 0.025); k++) {
+        const c = start + dir * k;
+        if (c < 0 || c >= W) break;
+        const bc = pb(c);
+        if (bc < 0 || !grounded(c, bc) || bc < runBottom + H * 0.015 || bc > runBottom + H * 0.12) continue;
+        if (bc > b0) { b0 = bc; s0 = c; }
+      }
+      if (s0 < 0) continue;
+      // ...and then rising again (or the piece ending) a little further out —
+      // a bed running along beside a bedside table doesn't, so it is no leg.
+      for (let j = 1; j <= Math.round(W * 0.04); j++) {
+        const e = s0 + dir * j;
+        if (e < 0 || e >= W) return true; // the photo edge
+        const be = pb(e);
+        if (be < 0 || be < b0 - H * 0.03) return true;
       }
     }
     return false;
@@ -4049,6 +4067,47 @@ export async function seamUnderFurniture(original: Buffer, staged: Buffer, furni
   return runs;
 }
 
+// ── Carry-over placement check (Nov 2026) ──────────────────────────────────
+// Did Gemini put the furniture where our code placed it? Compared on the main
+// piece (the bed or sofa — the largest piece standing on the floor): its
+// width, area, position and top edge. Gemini resizing it (Bedroom 18: 0.78x
+// wide) or moving it elsewhere (07 bedroom: the bed under the window) fails;
+// a small shift that fits the room better passes (07 bedroom staging 2: 0.95x,
+// 2% across). Limits set from those owner-reviewed examples.
+export const CARRY_MATCH_MIN_WIDTH = Number(process.env.STAGE2_CARRY_MATCH_MIN_WIDTH || 0.84);
+export const CARRY_MATCH_MAX_WIDTH = Number(process.env.STAGE2_CARRY_MATCH_MAX_WIDTH || 1.19);
+export const CARRY_MATCH_MAX_SHIFT_PCT = Number(process.env.STAGE2_CARRY_MATCH_MAX_SHIFT_PCT || 4.5);
+export const CARRY_MATCH_MAX_TOP_PCT = Number(process.env.STAGE2_CARRY_MATCH_MAX_TOP_PCT || 3.5);
+export const CARRY_MATCH_MIN_AREA = Number(process.env.STAGE2_CARRY_MATCH_MIN_AREA || 0.86);
+export const CARRY_MATCH_MAX_AREA = Number(process.env.STAGE2_CARRY_MATCH_MAX_AREA || 1.2);
+export function carryPlacementMatch(placed: Uint8Array, carried: Uint8Array, w: number, h: number): { ok: boolean; why: string; widthRatio: number; areaRatio: number; shiftPct: number; topPct: number } {
+  const W = 400, H = Math.max(8, Math.round((W * h) / w));
+  const small = (m: Uint8Array) => {
+    const o = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) o[y * W + x] = m[Math.min(h - 1, Math.floor(((y + 0.5) * h) / H)) * w + Math.min(w - 1, Math.floor(((x + 0.5) * w) / W))];
+    return erode(o, W, H, 2); // pieces that only touch count apart
+  };
+  const main = (m: Uint8Array) => {
+    const c = labelComponents(m, W, H).sort((a, b) => b.pixels.length - a.pixels.length)[0];
+    if (!c) return null;
+    let x1 = W, x2 = 0, y1 = H;
+    for (const i of c.pixels) { const x = i % W, y = (i - x) / W; if (x < x1) x1 = x; if (x > x2) x2 = x; if (y < y1) y1 = y; }
+    return { x1, x2, y1, area: c.pixels.length };
+  };
+  const A = main(small(placed)), B = main(small(carried));
+  if (!A || !B) return { ok: false, why: "no furniture to compare", widthRatio: 0, areaRatio: 0, shiftPct: 0, topPct: 0 };
+  const widthRatio = +((B.x2 - B.x1 + 1) / Math.max(1, A.x2 - A.x1 + 1)).toFixed(2);
+  const areaRatio = +(B.area / Math.max(1, A.area)).toFixed(2);
+  const shiftPct = +((((B.x1 + B.x2) / 2 - (A.x1 + A.x2) / 2) / W) * 100).toFixed(1);
+  const topPct = +(((B.y1 - A.y1) / H) * 100).toFixed(1);
+  const off: string[] = [];
+  if (widthRatio < CARRY_MATCH_MIN_WIDTH || widthRatio > CARRY_MATCH_MAX_WIDTH) off.push(`main piece ${widthRatio}x as wide`);
+  if (areaRatio < CARRY_MATCH_MIN_AREA || areaRatio > CARRY_MATCH_MAX_AREA) off.push(`${areaRatio}x the size`);
+  if (Math.abs(shiftPct) > CARRY_MATCH_MAX_SHIFT_PCT) off.push(`moved ${shiftPct}% across`);
+  if (Math.abs(topPct) > CARRY_MATCH_MAX_TOP_PCT) off.push(`top ${topPct}% higher/lower`);
+  return { ok: off.length === 0, why: off.length ? off.join(", ") : "furniture where it was placed", widthRatio, areaRatio, shiftPct, topPct };
+}
+
 // ── Bring all the furniture forward together (Nov 2026) ────────────────────
 // When Gemini drew the floor higher than the real one, it drew the room as if
 // the walls were further away, and sized the furniture for that. Everything it
@@ -4069,7 +4128,7 @@ export type GroupNeed = { x1Pct: number; x2Pct: number; needPct: number };
 // one there, %): the fit keeps every one just below the real skirting, and a
 // slight tilt lets one end move less than the other.
 export type GroupPoint = { xPct: number; needPct: number };
-export async function planGroupForward(original: Buffer, needs: GroupNeed[], furniture: Uint8Array, w: number, h: number, extra: GroupPoint[] = []): Promise<SkirtingLineUp & { shiftPct?: number }> {
+export async function planGroupForward(original: Buffer, needs: GroupNeed[], furniture: Uint8Array, w: number, h: number, extra: GroupPoint[] = [], maxGrow: number = GROUP_SHIFT_MAX_GROW): Promise<SkirtingLineUp & { shiftPct?: number }> {
   const W = 800, H = Math.max(8, Math.round((W * h) / w));
   const line = await realFloorLine(await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer(), W, H);
   const vy = SKIRTING_HORIZON * h;
@@ -4115,7 +4174,7 @@ export async function planGroupForward(original: Buffer, needs: GroupNeed[], fur
   const tol = h * 0.003;
   let best: { k: number; s: number; cx: number; score: number } | null = null;
   for (const cx of centres) for (const tl of tilts) {
-    for (let kk = 1.0; kk <= 1 + GROUP_SHIFT_MAX_GROW + 1e-9; kk += 0.0025) {
+    for (let kk = 1.0; kk <= 1 + maxGrow + 1e-9; kk += 0.0025) {
       let ok = true, over = 0;
       for (const p of pts) {
         const nx = cx + kk * (p.x - cx), ny = vy + kk * (p.yGem - vy) + tl * (nx - cx);
@@ -4134,7 +4193,7 @@ export async function planGroupForward(original: Buffer, needs: GroupNeed[], fur
   const k = best ? best.k : Infinity, vx = best ? best.cx : w / 2, tilt = best ? best.s : 0;
   let at: GroupNeed | null = null, yGemAt = 0;
   if (best) { const p0 = (strict.length ? strict : pts).reduce((q, p) => (p.nd.needPct > q.nd.needPct ? p : q)); at = p0.nd; yGemAt = p0.yGem; }
-  if (!at) return { ok: false, why: `would have to bring the furniture forward more than ${Math.round(GROUP_SHIFT_MAX_GROW * 100)}% bigger — too far` };
+  if (!at) return { ok: false, why: `would have to bring the furniture forward more than ${Math.round(maxGrow * 100)}% bigger — too far` };
   const shiftPct = +(((vy + k * (yGemAt - vy) - yGemAt) / h) * 100).toFixed(1);
   return {
     ok: true, why: "Gemini's floor higher than the real one", select, k: +k.toFixed(4), vx, vy, s: tilt, tiltDeg: +((Math.atan(tilt) * 180) / Math.PI).toFixed(2),
