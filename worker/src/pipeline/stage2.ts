@@ -46,6 +46,9 @@ type Stage2GenerationPlan = {
   escalated: boolean;
 };
 
+/** Marks a re-stage hint that goes at the top of the Stage 2 prompt (see below). */
+export const RETRY_PRIORITY_TAG = "[PRIORITY] ";
+
 export type StructuralReviewProResult = {
   result: "PASS" | "FAIL";
   confidence: number;
@@ -1143,9 +1146,20 @@ ${nanoRoomProgramGuidance.itemBudget} Staging style: ${nanoRoomProgramGuidance.s
   // line, a wall and a door, or changed the flooring, to obey it).
   let retryCorrectionSuffix = "";
 
-  const validRetryCorrectionHints = (opts.retryCorrectionHints || []).filter(
+  const allRetryHints = (opts.retryCorrectionHints || []).filter(
     (h): h is string => typeof h === "string" && h.trim().length > 0
   );
+  // A hint marked [PRIORITY] goes at the very TOP (Nov 2026): the previous
+  // attempt pushed a wall back or raised the floor to fit the furniture. It
+  // only ever tells Gemini to keep the room as it is and let furniture run
+  // off the photo — it backs the structure locks up, unlike the old "legs
+  // must touch the floor" that outranked them (see above).
+  const priorityRetryHints = allRetryHints.filter((h) => h.startsWith(RETRY_PRIORITY_TAG)).map((h) => h.slice(RETRY_PRIORITY_TAG.length).trim());
+  const validRetryCorrectionHints = allRetryHints.filter((h) => !h.startsWith(RETRY_PRIORITY_TAG));
+  if (priorityRetryHints.length > 0) {
+    promptPrefixBlocks.push(`PRIORITY FOR THIS ATTEMPT — READ FIRST\n\n${priorityRetryHints.join("\n\n")}`);
+    nLog("[STAGE2_RETRY_PRIORITY_INJECTED]", { jobId: opts.jobId, imageId: opts.imageId, attempt: attemptNumber, count: priorityRetryHints.length });
+  }
   if (validRetryCorrectionHints.length > 0) {
     retryCorrectionSuffix = `PREVIOUS ATTEMPT CORRECTION — DO NOT REPEAT\n\n${validRetryCorrectionHints.join("\n\n")}\n\nFix this ONLY by moving, resizing, replacing or leaving out furniture. Every rule above still applies in full: the camera, walls, doors, door frames, windows, floor line, skirting boards and flooring stay exactly as they are in the input photo.`;
     nLog("[STAGE2_RETRY_CORRECTION_INJECTED]", {

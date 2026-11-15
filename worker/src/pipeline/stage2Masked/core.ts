@@ -1898,6 +1898,27 @@ Respond with ONLY a JSON object: { "furniturePresent": "yes" | "no", "doorAccess
  * the bed run off the edge") was wrong for roomy photos and pushed the bed in
  * front of the entry (Oct 2026, job_56b49ee9).
  */
+// Re-stage hint for the TOP of the next prompt (Nov 2026), after an attempt
+// that moved a wall's floor line or left furniture floating — Gemini had
+// pushed a wall back or raised the floor to make room. It only says to keep
+// the room as it is and let furniture run off the photo, never anything like
+// "legs must touch the floor" (that, at the top, made Gemini move the floor).
+// Tagged so the Stage 2 prompt puts it first (RETRY_PRIORITY_TAG in stage2.ts).
+export const RETRY_PRIORITY_TAG = "[PRIORITY] ";
+export const RETRY_PRIORITY = String(process.env.STAGE2_RETRY_PRIORITY ?? "on").trim().toLowerCase() !== "off";
+export function retryPriorityHint(atXPct: number[] | null): string {
+  let where = "";
+  if (atXPct && atXPct.length === 2 && atXPct.every((v) => Number.isFinite(v))) {
+    const mid = (atXPct[0] + atXPct[1]) / 2;
+    where = mid < 33 ? " on the left of the photo" : mid > 67 ? " on the right of the photo" : " in the middle of the photo";
+  }
+  return `${RETRY_PRIORITY_TAG}The previous attempt was rejected because it changed the room to make the furniture fit: it raised the floor or pushed the wall back${where}, so the line where that wall meets the floor no longer matched the input photo.
+In this attempt:
+- Every wall, the line where each wall meets the floor, and the skirting boards stay exactly where the input photo shows them. Do not push any wall back, do not raise or lower the floor, and do not change the outline of the floor.
+- Make the furniture fit the room as it is. If the planned furniture does not fit, let it run off the edge of the photo — the bottom or side edge may cut off the foot of the bed, a bedside table or a rug — or use fewer or smaller pieces.
+- Every piece keeps its true real-world size.`;
+}
+
 export function floorMovedHint(check: { atXPct?: number[] } | null | undefined, opts: { tightShot?: boolean } = {}): string {
   const at = Array.isArray(check?.atXPct) && check!.atXPct!.length === 2 ? check!.atXPct! : null;
   let where = "";
