@@ -422,6 +422,9 @@ function tidyToOneBedsideTable(brief: any): any {
     .replace(/\b(both|two|the two|a pair of|pair of|each of the|matching) bedside tables\b/gi, "the single bedside table")
     .replace(/\bbedside tables\b/gi, "bedside table")
     .replace(/\bflanked by\b/gi, "beside")
+    // "the single bedside table on either side" (Nov 2026, Bedroom_02: Gemini
+    // read it as one on each side, the second right by the door).
+    .replace(/\s*(?:on|at) (?:either|each|both) sides?(?: of (?:the |its )?bed)?/gi, " beside the bed")
     .replace(/\bcente?red\b/gi, "placed");
   return {
     ...brief,
@@ -514,6 +517,26 @@ export function doorSideOfPhoto(brief: any): "left" | "right" | null {
 }
 
 export function makeBedPlanConservative(brief: RoomBrief, roomType: string): { brief: RoomBrief; changed: string[] } {
+  const r = makeBedPlanConservativeInner(brief, roomType);
+  // One bedside table in the plan, however it got there: no wording that
+  // invites a second, and say so plainly (Nov 2026, Bedroom_02).
+  const isTable = (it: any) => /bedside|night ?stand|side table/i.test(String(it?.item || ""));
+  const layout: any[] = Array.isArray((r.brief as any)?.layout) ? (r.brief as any).layout : [];
+  const tables = layout.filter(isTable);
+  if (/bed/i.test(roomType) && tables.length === 1 && Number((r.brief as any).bedSpace?.bedsideTables ?? 1) <= 1) {
+    const t = tables[0];
+    const side = /\bleft\b/i.test(String(t.placement || "")) ? "left" : /\bright\b/i.test(String(t.placement || "")) ? "right" : "";
+    const other = side === "left" ? "right" : side === "right" ? "left" : "other";
+    const only = `the only bedside table in the room — nothing on the ${other} side of the bed`;
+    let out: any = tidyToOneBedsideTable(r.brief);
+    out = { ...out, layout: out.layout.map((it: any) => (it === t || (isTable(it) && it.item === t.item && it.placement === t.placement) ? (/only bedside table/i.test(String(it.placement || "")) ? it : { ...it, placement: `${String(it.placement || "").replace(/\.\s*$/, "")} — ${only}` }) : it)) };
+    const changedText = JSON.stringify(out.relationships) !== JSON.stringify((r.brief as any).relationships) ? ["one bedside table: wording that invited a second removed"] : [];
+    return { brief: out, changed: [...r.changed, ...changedText] };
+  }
+  return r;
+}
+
+function makeBedPlanConservativeInner(brief: RoomBrief, roomType: string): { brief: RoomBrief; changed: string[] } {
   const changed: string[] = [];
   if (!/bed/i.test(String(roomType || "")) || !Array.isArray(brief?.layout)) return { brief, changed };
   const isBed = (it: any) => /\bbed\b/i.test(String(it?.item || "")) && !/bedside|side table|bed end|bench/i.test(String(it?.item || ""));

@@ -233,7 +233,9 @@ describe("bed fit and photo-edge rules", () => {
     const { brief, changed } = makeBedPlanConservative(p, "bedroom");
     expect(changed.length).toBe(2);
     const tables = brief.layout.filter((l: any) => /bedside/i.test(l.item));
-    expect(tables.map((t: any) => t.placement)).toEqual(["to the left of the bed against the right wall, near the far corner"]);
+    expect(tables.length).toBe(1);
+    expect(tables[0].placement).toMatch(/^to the left of the bed against the right wall, near the far corner/);
+    expect(tables[0].placement).toMatch(/only bedside table in the room — nothing on the right side/);
     const bed = brief.layout.find((l: any) => l.item === "Queen bed")!;
     expect(bed.placement).toMatch(/far corner/);
     expect(bed.placement).not.toMatch(/centered/);
@@ -493,3 +495,22 @@ describe("door beside the bed wall (Nov 2026, job_2575a584)", () => {
     expect(buildRoomBriefInstruction("bedroom")).toMatch(/never split one flat wall into two walls at a door/);
   });
 });
+
+describe("one bedside table: no wording that invites a second (Bedroom_02)", () => {
+  it("rewrites 'the single bedside table on either side' and says nothing goes on the other side", () => {
+    const brief: any = {
+      walls: [{ name: "the plain wall", description: "", usableForLargeFurniture: true, partlyVisible: false }],
+      layout: [
+        { item: "Queen bed (1.5 m wide)", placement: "against the plain wall, pushed to the far corner" },
+        { item: "Bedside table (0.5 m wide)", placement: "against the plain wall, to the left of the queen bed" },
+      ],
+      relationships: ["The queen bed is placed along the plain wall with the single bedside table on either side."],
+      bedSpace: { bed: "queen", bedsideTables: 1, wallMetres: 4, depthMetres: 4, wallRunsOffPhoto: false, measuredWith: "door", reason: "" },
+    };
+    const { brief: out }: any = require("../src/pipeline/roomBrief").makeBedPlanConservative(brief, "bedroom");
+    expect(out.relationships[0]).not.toMatch(/either side/);
+    const t: any = out.layout.find((l: any) => /bedside/i.test(l.item));
+    expect(t.placement).toMatch(/nothing on the right side of the bed/);
+  });
+});
+

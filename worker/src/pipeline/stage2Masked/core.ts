@@ -4127,19 +4127,26 @@ export async function planGroupForward(original: Buffer, needs: GroupNeed[], fur
 // at a slightly different angle or curve from the real one (it drew the room
 // a different shape), so the skirting beside the furniture is right at one
 // end and a little off at the other. This nudges each column of the moved
-// furniture up or down — a smooth curve, at most SKIRTING_FIT_MAX_PCT — until
-// Gemini's floor line meets the real one all along. Upright lines stay
-// upright; lines along the wall follow the real wall. No AI call.
+// furniture up or down along a straight line (a slight extra lean, at most
+// SKIRTING_FIT_MAX_LEAN_DEG; at most SKIRTING_FIT_MAX_PCT anywhere) so
+// Gemini's floor line meets the real one. Upright lines stay upright and
+// straight lines stay straight. No AI call.
 export const SKIRTING_FIT = String(process.env.STAGE2_SKIRTING_FIT ?? "on").trim().toLowerCase() !== "off";
 export const SKIRTING_FIT_MAX_PCT = Number(process.env.STAGE2_SKIRTING_FIT_MAX_PCT || 2.5);
+export const SKIRTING_FIT_MAX_LEAN_DEG = Number(process.env.STAGE2_SKIRTING_FIT_MAX_LEAN_DEG || 1.5);
 
-/** Gemini's floor line minus the real one beside the moved furniture (% of height), per column of `w`; NaN where unknown. */
+/** Gemini's floor line minus the real one beside and under the moved furniture (% of height), per 800-wide column; NaN where unknown. */
 export async function skirtingOffsetsInMoved(original: Buffer, movedStaged: Buffer, movedFloor: Uint8Array, movedArea: Uint8Array, w: number, h: number): Promise<Float32Array> {
   const sk = await measureSkirtingOffsets(original, movedStaged, movedFloor, w, h);
   const L = sk.colOffsets.length;
+  // Also Gemini's floor line in the gaps under the furniture (between a
+  // table's legs): beside it, the bed and tables often hide all the skirting
+  // (Bedroom 18). Stray edges (a rug, a valance) read far off: only small values.
+  const under = await geminiLineUnderColumns(original, movedStaged, movedFloor, w, h).catch(() => null);
   const out = new Float32Array(L).fill(NaN);
   for (let c = 0; c < L; c++) {
-    const v = sk.colOffsets[c];
+    let v: number | null = sk.colOffsets[c];
+    if (v == null && under && c < under.length && !Number.isNaN(under[c]) && Math.abs(under[c]) <= 4) v = -under[c];
     const f = sk.realLine[c];
     if (v == null || f < 0) continue;
     // Only where the moved picture shows Gemini's moved surroundings (its
@@ -4172,7 +4179,10 @@ export function fitSkirtingNudge(offsets: Float32Array, w: number, h: number): {
   };
   const xs = pts.map((p) => p[0]);
   const span = Math.max(...xs) - Math.min(...xs);
-  const deg = span >= 0.15 && pts.length >= 20 ? 2 : 1;
+  // A straight line only: a curve bent narrow pieces (a bedside table's top
+  // came out sloped, 07 bedroom replay). Its slope is limited below.
+  const deg = 1;
+  void span;
   let coef = solve(pts, deg);
   if (!coef) return null;
   const ev = (cf: number[], x: number) => cf.reduce((q, v, i) => q + v * x ** i, 0);
@@ -4182,6 +4192,13 @@ export function fitSkirtingNudge(offsets: Float32Array, w: number, h: number): {
   pts = pts.filter((p) => Math.abs(p[1] - ev(coef!, p[0])) <= cut + 1e-9);
   coef = solve(pts, deg) || coef;
   const lo = Math.min(...pts.map((p) => p[0])), hi = Math.max(...pts.map((p) => p[0]));
+  // At most SKIRTING_FIT_MAX_LEAN_DEG of extra lean (straight lines stay straight).
+  const maxSlope = (Math.tan((SKIRTING_FIT_MAX_LEAN_DEG * Math.PI) / 180) * w / h) * 100; // % of height per unit of x (0..1)
+  if (Math.abs(coef[1]) > maxSlope) {
+    const sl = Math.sign(coef[1]) * maxSlope;
+    const mx = pts.reduce((q, p) => q + p[0], 0) / pts.length, my = pts.reduce((q, p) => q + p[1], 0) / pts.length;
+    coef = [my - sl * mx, sl];
+  }
   const nudge = new Float32Array(w);
   const max = (SKIRTING_FIT_MAX_PCT / 100) * h;
   for (let x = 0; x < w; x++) {
