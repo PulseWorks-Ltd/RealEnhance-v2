@@ -8957,21 +8957,27 @@ export default function BatchProcessor({
                           result?.error,
                           result?.result?.error,
                         ]);
-                        const isFallbackAvailableDisplay =
+                        // A room that is never staged (a garage): not a failure — the
+                        // enhanced photo is the result, with the job's own message.
+                        const noStagingNote: string | null = [result?.meta, result?.result?.meta]
+                          .map((m: any) => (m?.fallbackReason === "nothing_to_stage" ? String(m?.userMessage || "This room is shown as it is, so we enhanced your photo without adding furniture.") : null))
+                          .find(Boolean) || null;
+                        const isFallbackAvailableDisplay = !noStagingNote && (
                           result?.displayState === "fallback_available" ||
                           (
                             stage2Expected &&
                             !stage2Url &&
                             (isRenderableFallbackArtifactUrl(stage1AUrl) || isRenderableFallbackArtifactUrl(stage1BUrl)) &&
                             hasStage2FailureOrExhaustedSignal
-                          );
+                          )
+                        );
                         const isError = (status === "failed" || isFallbackAvailableDisplay) && !hasCompletedEditArtifact;
                         const targetStage: StageKey = requestedFinalStage;
                         const targetUrlPresent = unifiedCompletion.targetUrlPresent;
 
                         const resolvedFinalUrl = unifiedCompletion.displayImageUrl || finalResultUrl;
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
-                        const isUiComplete = (!isError && isSuccessStatus && targetUrlPresent) || hasCompletedEditArtifact;
+                        const isUiComplete = (!isError && isSuccessStatus && targetUrlPresent) || hasCompletedEditArtifact || (!!noStagingNote && isSuccessStatus && !!resolvedFinalUrl);
                         const isIntermediateProcessing = false;
                         const intermediateStageMessage: string | null = null;
                         
@@ -9091,7 +9097,9 @@ export default function BatchProcessor({
                           declutterRequested: stage1BRequired,
                           furnitureReplacement,
                         });
-                        const displayStatus = isFallbackAvailableDisplay
+                        const displayStatus = noStagingNote && isSuccessStatus
+                          ? noStagingNote
+                          : isFallbackAvailableDisplay
                           ? "Sorry, we couldn't provide a staged image."
                           : isError
                           ? "Enhancement Failed"
