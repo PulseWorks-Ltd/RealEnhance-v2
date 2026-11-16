@@ -99,6 +99,17 @@ interface AgencyDetail {
   trialRemaining: number;
   addonBalance: number;
   lastActiveAt: string | null;
+  // Credits as the app charges them (this billing period), from the server.
+  credits?: {
+    periodKey: string;
+    includedLimit: number;
+    includedUsed: number;
+    includedRemaining: number;
+    extraUsed: number;
+    packCreditsRemaining: number;
+    listingPackCredits: number;
+    totalRemaining: number;
+  } | null;
   usage: {
     totalImagesProcessed: number;
     imagesThisMonth: number;
@@ -363,6 +374,29 @@ export default function AdminDashboard() {
     }
   }
 
+  // Re-read the agency's Stripe subscription and apply its plan and monthly
+  // credits here (for upgrades done in Stripe that never reached the app).
+  async function handleSyncStripe() {
+    if (!detail) return;
+    setAccountBusy(true);
+    try {
+      const r: any = await apiJson(`/api/admin/dashboard/agencies/${encodeURIComponent(detail.agencyId)}/sync-stripe`, {
+        method: "POST",
+      });
+      toast({
+        title: "Synced from Stripe",
+        description: `${detail.agencyName}: ${r?.planBefore || "none"} \u2192 ${r?.planAfter} (${r?.monthlyCredits} credits a month)` +
+          (r?.proration ? `. Upgraded with ${Math.round(r.proration.shareOfPeriodLeft * 100)}% of the period left: ${r.proration.periodLimit} plan credits this period` : "") +
+          (r?.credits ? `. ${r.credits.includedUsed} of ${r.credits.includedLimit} used this period, ${r.credits.totalRemaining} credits left.` : "."),
+      });
+      await openDetail(detail.agencyId);
+    } catch (err) {
+      toast({ title: "Couldn't sync from Stripe", description: apiErrorMessage(err, "Please try again."), variant: "destructive" });
+    } finally {
+      setAccountBusy(false);
+    }
+  }
+
   async function handleMakeOwner(u: { id: string; email: string }) {
     if (!detail) return;
     if (!window.confirm(`Make ${u.email} the owner of ${detail.agencyName}? The current owner becomes an admin.`)) return;
@@ -539,7 +573,7 @@ export default function AdminDashboard() {
                 <SortableHead k="usedThisMonth" label="Used / Incl." sortKey={sortKey} sortDir={sortDir} toggle={toggleSort} />
                 <SortableHead k="remainingThisMonth" label="Remaining" sortKey={sortKey} sortDir={sortDir} toggle={toggleSort} />
                 <SortableHead k="trialRemaining" label="Trial Rem." sortKey={sortKey} sortDir={sortDir} toggle={toggleSort} />
-                <SortableHead k="addonBalance" label="Add-on" sortKey={sortKey} sortDir={sortDir} toggle={toggleSort} />
+                <SortableHead k="addonBalance" label="Extra" sortKey={sortKey} sortDir={sortDir} toggle={toggleSort} />
                 <SortableHead k="lastActiveAt" label="Last Active" sortKey={sortKey} sortDir={sortDir} toggle={toggleSort} />
                 <TableHead className="w-[100px]">Flags</TableHead>
               </TableRow>
@@ -652,9 +686,27 @@ export default function AdminDashboard() {
                 <DL label="Created" value={fmtDate(detail.createdAt)} />
               </Section>
 
+              {/* Credits, as the app charges them */}
+              {detail.credits && (
+                <Section title="Credits (this billing period)">
+                  <DL
+                    label="Period"
+                    value={
+                      detail.credits.periodKey.length === 10
+                        ? `From ${fmtDate(detail.credits.periodKey)}`
+                        : `Calendar month ${detail.credits.periodKey} (billing dates unknown)`
+                    }
+                  />
+                  <DL label="Plan credits used" value={`${detail.credits.includedUsed} of ${detail.credits.includedLimit}`} />
+                  <DL label="Plan credits left" value={detail.credits.includedRemaining} />
+                  <DL label="Extra pack credits left" value={detail.credits.packCreditsRemaining + detail.credits.listingPackCredits} />
+                  <DL label="Total credits left" value={detail.credits.totalRemaining} />
+                </Section>
+              )}
+
               {/* Usage */}
               <Section title="Usage">
-                <DL label="This Month" value={detail.usage.imagesThisMonth} />
+                <DL label="This Period" value={detail.usage.imagesThisMonth} />
                 <DL label="Lifetime" value={detail.usage.totalImagesProcessed} />
                 <DL label="Retries" value={detail.usage.retryCount} />
                 <DL label="Edits" value={detail.usage.editCount} />
@@ -667,7 +719,18 @@ export default function AdminDashboard() {
                 <DL label="Period Start" value={fmtDate(detail.currentPeriodStart)} />
                 <DL label="Period End" value={fmtDate(detail.currentPeriodEnd)} />
                 <DL label="Trial Remaining" value={detail.trialRemaining} />
-                <DL label="Add-on Balance" value={detail.addonBalance} />
+                <DL label="Extra Credits Left" value={detail.addonBalance} />
+                <div className="pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSyncStripe}
+                    disabled={accountBusy || !detail.stripeCustomerId}
+                    data-testid="admin-sync-stripe"
+                  >
+                    {accountBusy ? "Syncing..." : "Sync from Stripe"}
+                  </Button>
+                </div>
               </Section>
 
               {/* Users */}

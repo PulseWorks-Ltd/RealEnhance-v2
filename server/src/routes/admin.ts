@@ -4,6 +4,13 @@
 import { Router, type Request, type Response } from "express";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import { pool } from "../db/index.js";
+import Stripe from "stripe";
+import { syncAgencyFromStripeSubscription } from "../services/subscriptionSync.js";
+import { getCreditSummary, type CreditSummary } from "../services/usageLedger.js";
+
+const adminStripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: process.env.STRIPE_API_VERSION as Stripe.StripeConfig["apiVersion"] | undefined })
+  : null;
 import { getUserById } from "../services/users.js";
 import { AccountAdminError, changeUserLoginEmail, transferAgencyOwnership } from "../services/accountAdmin.js";
 import { PLAN_LIMITS } from "@realenhance/shared/plans.js";
@@ -231,13 +238,35 @@ router.get("/agencies", requireAuth, requireSiteAdmin, async (_req: Request, res
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
+    // Credits as the app actually charges them: this agency's billing period
+    // and plan limit, plus extra packs (not calendar months).
+    const summaries = new Map<string, CreditSummary>();
+    await Promise.all(
+      agencies.map(async (agency) => {
+        try {
+          summaries.set(agency.agencyId, await getCreditSummary(agency.agencyId));
+        } catch (err) {
+          console.warn(`[admin] credit summary failed for ${agency.agencyId}:`, err);
+        }
+      })
+    );
+
     const result = agencies.map((agency) => {
-      const monthlyIncluded = getMonthlyIncluded(agency.planTier);
+      const credit = summaries.get(agency.agencyId);
       const usage = usageMap.get(agency.agencyId);
-      const usedThisMonth = usage ? usage.includedUsed + usage.addonUsed : 0;
-      const remainingThisMonth = Math.max(0, monthlyIncluded - (usage?.includedUsed || 0));
+      const monthlyIncluded = credit ? credit.includedLimit : getMonthlyIncluded(agency.planTier);
+      const usedThisMonth = credit
+        ? credit.includedUsed + credit.extraUsed
+        : usage ? usage.includedUsed + usage.addonUsed : 0;
+      const remainingThisMonth = credit
+        ? credit.includedRemaining
+        : Math.max(0, monthlyIncluded - (usage?.includedUsed || 0));
       const trial = trialMap.get(agency.agencyId);
-      const addonBalance = accountMap.get(agency.agencyId) ?? 0;
+      // Extra credits they can actually spend (packs + listing packs). The old
+      // addon_images_balance column is a legacy tally the app doesn't spend from.
+      const addonBalance = credit
+        ? credit.packCreditsRemaining + credit.listingPackCredits
+        : accountMap.get(agency.agencyId) ?? 0;
       const lastActiveAt = lastActiveMap.get(agency.agencyId) ?? null;
       const users = userMap.get(agency.agencyId) ?? [];
       const usagePercent = monthlyIncluded > 0 ? usedThisMonth / monthlyIncluded : 0;
@@ -349,16 +378,24 @@ router.get("/agencies/:agencyId", requireAuth, requireSiteAdmin, async (req: Req
       })(),
     ]);
 
+    const credit = await getCreditSummary(agencyId).catch((err) => {
+      console.warn(`[admin] credit summary failed for ${agencyId}:`, err);
+      return null;
+    });
     const usageRow = usageRes.rows[0];
-    const imagesThisMonth = usageRow
-      ? Number(usageRow.included_used || 0) + Number(usageRow.addon_used || 0)
-      : 0;
+    const imagesThisMonth = credit
+      ? credit.includedUsed + credit.extraUsed
+      : usageRow
+        ? Number(usageRow.included_used || 0) + Number(usageRow.addon_used || 0)
+        : 0;
     const totalImagesProcessed = Number(lifetimeRes.rows[0]?.total || 0);
     const trialRow = trialRes.rows[0];
     const trialRemaining = trialRow
       ? Math.max(0, Number(trialRow.trial_credits_total || 0) - Number(trialRow.trial_credits_used || 0))
       : 0;
-    const addonBalance = Number(accountRes.rows[0]?.addon_images_balance || 0);
+    const addonBalance = credit
+      ? credit.packCreditsRemaining + credit.listingPackCredits
+      : Number(accountRes.rows[0]?.addon_images_balance || 0);
     const retryCount = Number(jobStatsRes.rows[0]?.retries || 0);
     const editCount = Number(jobStatsRes.rows[0]?.edits || 0);
     const lastActiveAt = jobStatsRes.rows[0]?.last_active ?? null;
@@ -373,9 +410,12 @@ router.get("/agencies/:agencyId", requireAuth, requireSiteAdmin, async (req: Req
       currentPeriodEnd: agency.currentPeriodEnd ?? null,
       createdAt: agency.createdAt,
       seats: usersFromRedis.length,
-      monthlyIncluded,
+      monthlyIncluded: credit ? credit.includedLimit : monthlyIncluded,
       usedThisMonth: imagesThisMonth,
-      remainingThisMonth: Math.max(0, monthlyIncluded - (Number(usageRow?.included_used) || 0)),
+      remainingThisMonth: credit
+        ? credit.includedRemaining
+        : Math.max(0, monthlyIncluded - (Number(usageRow?.included_used) || 0)),
+      credits: credit,
       trialRemaining,
       addonBalance,
       lastActiveAt,
@@ -565,6 +605,24 @@ router.post("/users/:userId/change-email", requireAuth, requireSiteAdmin, async 
  * POST /agencies/:agencyId/transfer-ownership  { userId }
  * Site admin: make another member the agency's owner.
  */
+/**
+ * Re-read an agency's Stripe subscription and apply its plan and monthly
+ * credits in the app (Nov 2026: an upgrade done in Stripe that never reached
+ * the app). Also repairs the subscription's metadata so Stripe's webhooks
+ * find the agency from then on.
+ */
+router.post("/agencies/:agencyId/sync-stripe", requireAuth, requireSiteAdmin, async (req: Request, res: Response) => {
+  try {
+    if (!adminStripe) return res.status(503).json({ error: "Stripe not configured" });
+    const result = await syncAgencyFromStripeSubscription(adminStripe, String(req.params.agencyId));
+    const credits = await getCreditSummary(result.agencyId).catch(() => null);
+    return res.json({ ok: true, ...result, credits });
+  } catch (err: any) {
+    console.error("[admin] sync from Stripe failed:", err?.message || err);
+    return res.status(400).json({ error: err?.message || "Sync failed" });
+  }
+});
+
 router.post("/agencies/:agencyId/transfer-ownership", requireAuth, requireSiteAdmin, async (req: Request, res: Response) => {
   try {
     const actor = String(((req as any).user as UserRecord)?.email || "site-admin");

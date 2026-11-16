@@ -16,6 +16,7 @@ import {
 } from "./pilotPromos.js";
 import type { PilotPromoInfo } from "@realenhance/shared/pilotPromos.js";
 import { getLifetimeMonthlyBonus } from "./lifetimeBonus.js";
+import { getPeriodLimitOverride } from "./upgradeProration.js";
 
 export type ReservationStatus = "reserved" | "committed" | "consumed" | "released" | "partially_released";
 
@@ -145,9 +146,16 @@ async function getPlanLimitForAgency(agencyId: string): Promise<number> {
 
   const tier = (agency?.planTier as PlanTier) || "starter";
   const limits = PLAN_LIMITS[tier];
+  // An upgrade part-way through the billing period gives the new plan's extra
+  // credits only for the share of the period left (as Stripe charges it).
+  let planCredits = limits.mainAllowance;
+  if (agency?.currentPeriodStart) {
+    const override = await getPeriodLimitOverride(agencyId, agency.currentPeriodStart.slice(0, 10));
+    if (override !== null) planCredits = Math.min(override, limits.mainAllowance);
+  }
   // Lifetime bonus codes add to the monthly allowance while subscribed.
   const bonus = await getLifetimeMonthlyBonus(agencyId);
-  return limits.mainAllowance + bonus;
+  return planCredits + bonus;
 }
 
 async function getBillingCycleKey(agencyId: string): Promise<string> {
@@ -179,7 +187,51 @@ async function lockAgencyAccount(client: PoolClient, agencyId: string) {
   return res.rows[0];
 }
 
+// Period keys are the billing period's start date (YYYY-MM-DD) when the app
+// knows it, else the calendar month (YYYY-MM). When an agency first moves
+// from the calendar-month fallback to its real billing period (Nov 2026: the
+// period dates had not been read from Stripe), carry the usage across so the
+// switch doesn't hand out a fresh allowance mid-month. A later date key after
+// a date key is a genuine renewal and starts fresh.
+async function findCarryOverRow(
+  db: { query: PoolClient["query"] },
+  agencyId: string,
+  monthKey: string,
+): Promise<{ yyyymm: string; included_used: number; addon_used: number } | null> {
+  if (monthKey.length !== 10) return null;
+  const existing = await db.query(
+    `SELECT 1 FROM agency_month_usage WHERE agency_id = $1 AND yyyymm = $2`,
+    [agencyId, monthKey]
+  );
+  if (existing.rowCount) return null;
+  const latest = await db.query(
+    `SELECT yyyymm, included_used, addon_used FROM agency_month_usage
+      WHERE agency_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+    [agencyId]
+  );
+  const row = latest.rows[0];
+  if (!row || String(row.yyyymm).length !== 7) return null;
+  return {
+    yyyymm: String(row.yyyymm),
+    included_used: Math.max(0, Number(row.included_used || 0)),
+    addon_used: Math.max(0, Number(row.addon_used || 0)),
+  };
+}
+
 async function ensureMonthUsage(client: PoolClient, agencyId: string, monthKey: string, includedLimit: number) {
+  const carry = await findCarryOverRow(client, agencyId, monthKey);
+  if (carry) {
+    await client.query(
+      `INSERT INTO agency_month_usage (agency_id, yyyymm, included_limit, included_used, addon_used)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (agency_id, yyyymm) DO NOTHING;`,
+      [agencyId, monthKey, includedLimit, carry.included_used, carry.addon_used]
+    );
+    console.log(
+      `[USAGE] agency ${agencyId}: moved from calendar month ${carry.yyyymm} to billing period ${monthKey}; ` +
+        `carried over ${carry.included_used} included + ${carry.addon_used} extra used`
+    );
+  }
   await client.query(
     `INSERT INTO agency_month_usage (agency_id, yyyymm, included_limit)
      VALUES ($1, $2, $3)
@@ -793,5 +845,57 @@ export async function detachTrialUsageFromIncludedAllowanceInTransaction(
     monthKey,
     includedUsed: Number(updateRes.rows[0]?.included_used ?? 0),
     detachedAmount,
+  };
+}
+
+export type CreditSummary = {
+  periodKey: string;
+  includedLimit: number;
+  includedUsed: number;
+  includedRemaining: number;
+  extraUsed: number;
+  packCreditsRemaining: number;
+  listingPackCredits: number;
+  totalRemaining: number;
+};
+
+/**
+ * What an agency can spend right now, read the same way reserveAllowance
+ * reads it (same period key, same plan limit), without changing anything.
+ * Used by the admin panel (Nov 2026: it used to count calendar months and
+ * could disagree with what the app actually charged).
+ */
+export async function getCreditSummary(agencyId: string): Promise<CreditSummary> {
+  const periodKey = await getBillingCycleKey(agencyId);
+  const includedLimit = await getPlanLimitForAgency(agencyId);
+  const rowRes = await pool.query(
+    `SELECT included_used, addon_used FROM agency_month_usage WHERE agency_id = $1 AND yyyymm = $2`,
+    [agencyId, periodKey]
+  );
+  let includedUsed = Math.max(0, Number(rowRes.rows[0]?.included_used || 0));
+  let extraUsed = Math.max(0, Number(rowRes.rows[0]?.addon_used || 0));
+  if (!rowRes.rowCount) {
+    const carry = await findCarryOverRow(pool, agencyId, periodKey);
+    if (carry) {
+      includedUsed = carry.included_used;
+      extraUsed = carry.addon_used;
+    }
+  }
+  const acctRes = await pool.query(
+    `SELECT listing_pack_credits FROM agency_accounts WHERE agency_id = $1`,
+    [agencyId]
+  );
+  const listingPackCredits = Math.max(0, Number(acctRes.rows[0]?.listing_pack_credits || 0));
+  const packCreditsRemaining = Math.max(0, await getTotalBundleRemaining(agencyId, periodKey));
+  const includedRemaining = Math.max(0, includedLimit - includedUsed);
+  return {
+    periodKey,
+    includedLimit,
+    includedUsed,
+    includedRemaining,
+    extraUsed,
+    packCreditsRemaining,
+    listingPackCredits,
+    totalRemaining: includedRemaining + packCreditsRemaining + listingPackCredits,
   };
 }
