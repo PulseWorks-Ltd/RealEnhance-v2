@@ -24,6 +24,9 @@ describe("billing rules (BILLING_DECLUTTER_STAGE_EXTRA_CREDIT=on: staged image =
   });
   it("refunds (0) when staging fell back to the enhanced image", () => {
     expect(computeCharge({ ...interior, stage1B: false, stage2: false, completionType: "fallback_1a" as any, finalDeliveredStage: "1A", requestedBeyond1A: true })).toEqual({ amount: 0, reason: "interior_fallback_1a_refund" });
+    // A garage (never staged) or a room where staging had nothing to add: the
+    // enhanced photo is the intended result, billed like "Enhance only" (Nov 2026).
+    expect(computeCharge({ ...interior, stage1B: false, stage2: false, completionType: "optimized_1a_success" as any, finalDeliveredStage: "1A", requestedBeyond1A: true }).amount).toBe(1);
   });
   it("charges 1 for exteriors whatever was asked", () => {
     expect(computeCharge({ stage1A: true, stage1B: true, stage2: true, sceneType: "exterior" }).amount).toBe(1);
