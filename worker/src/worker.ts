@@ -4219,7 +4219,7 @@ async function completePartialJob(params: {
         parentImageId: payloadAny.galleryParentImageId || null,
         source: "stage2",
         stagesCompleted,
-        completionType: finalStage === "1B" ? "fallback_1b" : "fallback_1a",
+        completionType: finalStage === "1B" ? "fallback_1b" : reason === "nothing_to_stage" ? "optimized_1a_success" : "fallback_1a",
         publicUrl: resultUrl,
         thumbnailUrl: thumbnail.thumbnailUrl,
         originalUrl: historyOriginalUrl,
@@ -4242,6 +4242,10 @@ async function completePartialJob(params: {
   const isEnhancementJob = (billingContext?.payload as any)?.type === "enhance";
   const isFreeManualRetry = (billingContext?.payload as any)?.retryType === "manual_retry";
   const completionType: "fallback_1b" | "fallback_1a" = finalStage === "1B" ? "fallback_1b" : "fallback_1a";
+  // A room that is never staged (a garage), or one where staging found
+  // nothing to add: the enhanced photo IS the result, billed like "Enhance
+  // only" (1 credit) — not refunded as a failed staging (owner, Nov 2026).
+  const nothingToStage = reason === "nothing_to_stage";
   const finalDeliveredStage: "1A" | "1B" = finalStage;
   const requestedBeyond1A = !!(
     (billingContext?.payload as any)?.options?.declutter ||
@@ -4259,6 +4263,7 @@ async function completePartialJob(params: {
     ((billingContext?.stage1BUserSelected === true) || (billingContext?.geminiHasFurniture === true));
   const shouldChargeDeliveredFallback =
     isExterior ||
+    nothingToStage ||
     completionType === "fallback_1b" ||
     (completionType === "fallback_1a" && !requestedBeyond1A);
   const actualCharge =
@@ -4271,6 +4276,7 @@ async function completePartialJob(params: {
   const reservationStage12Success =
     completionType === "fallback_1b" ||
     (completionType === "fallback_1a" && !requestedBeyond1A) ||
+    nothingToStage ||
     isExterior;
 
   try {
@@ -4322,7 +4328,8 @@ async function completePartialJob(params: {
         stage1BSuccess: billingStage1BSuccess,
         stage2Success: billingStage2Success,
         sceneType: billingContext?.sceneType || "interior",
-        completionType,
+        // "optimized_1a_success": the enhanced photo is the intended result (billable).
+        completionType: nothingToStage && completionType === "fallback_1a" ? "optimized_1a_success" : completionType,
         finalDeliveredStage,
         requestedBeyond1A,
         stage1BUserSelected: billingContext?.stage1BUserSelected === true,
