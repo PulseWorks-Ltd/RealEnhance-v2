@@ -1,6 +1,8 @@
 // server/src/routes/stripe.ts
 // Stripe webhook handler for bundles and subscriptions
 
+import { subPeriodStart, subPeriodEnd, invoiceSubscriptionId } from "../services/stripeShapes.js";
+import { recordUpgradeProration } from "../services/upgradeProration.js";
 import { Router, raw, type Request, type Response } from "express";
 import Stripe from "stripe";
 import { createImageBundle } from "@realenhance/shared/usage/imageBundles.js";
@@ -269,8 +271,8 @@ router.post(
             agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
 
             // Safely convert Unix timestamps to ISO strings
-            const periodStart = (subscription as any).current_period_start;
-            const periodEnd = (subscription as any).current_period_end;
+            const periodStart = subPeriodStart(subscription);
+            const periodEnd = subPeriodEnd(subscription);
             if (periodStart) {
               agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
             }
@@ -456,8 +458,8 @@ router.post(
           agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
 
           // Safely convert Unix timestamps to ISO strings
-          const periodStart = (subscription as any).current_period_start;
-          const periodEnd = (subscription as any).current_period_end;
+          const periodStart = subPeriodStart(subscription);
+          const periodEnd = subPeriodEnd(subscription);
           if (periodStart) {
             agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
           }
@@ -473,8 +475,25 @@ router.post(
               newPriceId,
               `${event.type} agency=${agencyId}`
             );
+            const previousTier = agency.planTier;
             agency.planTier = resolvedTier;
             await upsertAgencyAllowance(agency.agencyId, resolvedTier);
+            // Upgrade part-way through the period: extra credits for the share
+            // of the period left only, as Stripe charges it.
+            if (event.type === "customer.subscription.updated" && previousTier && previousTier !== resolvedTier) {
+              try {
+                await recordUpgradeProration({
+                  agencyId,
+                  fromTier: previousTier,
+                  toTier: resolvedTier,
+                  periodStartSec: subPeriodStart(subscription),
+                  periodEndSec: subPeriodEnd(subscription),
+                  changeSec: event.created,
+                });
+              } catch (prorErr) {
+                console.warn(`[STRIPE] upgrade proration failed for agency ${agencyId}`, prorErr);
+              }
+            }
           }
 
           await updateAgency(agency);
@@ -489,7 +508,7 @@ router.post(
         case "invoice.payment_succeeded": {
           // Merged duplicate case: handles both credit granting AND agency status/period updates
           const invoice = event.data.object as Stripe.Invoice;
-          const subscriptionId = (invoice as any).subscription as string | null;
+          const subscriptionId = invoiceSubscriptionId(invoice);
 
           if (!subscriptionId) {
             console.warn(`[STRIPE] invoice.payment_succeeded missing subscription for invoice ${invoice.id}`);
@@ -504,7 +523,10 @@ router.post(
             break;
           }
 
-          const priceId = ((invoice.lines.data[0] as any)?.price?.id) || (subscription.items.data[0] as any)?.price?.id || null;
+          // The subscription's own price is the current plan. An invoice's first line
+          // can be a proration for the OLD plan (e.g. "Unused time on Starter" after
+          // an upgrade), so it is only a fallback.
+          const priceId = (subscription.items.data[0] as any)?.price?.id || ((invoice.lines.data[0] as any)?.price?.id) || null;
           const mapped = priceId ? findPlanByPriceId(priceId) : null;
           const planTier = mapped?.planTier
             || ((subscription.metadata as any)?.planTier as PlanTier)
@@ -545,8 +567,8 @@ router.post(
               }
               agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
 
-              const periodStart = (subscription as any).current_period_start;
-              const periodEnd = (subscription as any).current_period_end;
+              const periodStart = subPeriodStart(subscription);
+              const periodEnd = subPeriodEnd(subscription);
               if (periodStart) {
                 agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
               }

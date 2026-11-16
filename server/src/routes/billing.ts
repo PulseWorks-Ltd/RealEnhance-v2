@@ -1,6 +1,7 @@
 // server/src/routes/billing.ts
 // Stripe subscription checkout and billing portal
 
+import { subPeriodStart, subPeriodEnd } from "../services/stripeShapes.js";
 import { Router, type Request, type Response } from "express";
 import Stripe from "stripe";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
@@ -32,6 +33,7 @@ import {
 } from "../services/pilotPromos.js";
 import { PILOT_PROMOS } from "@realenhance/shared/pilotPromos.js";
 import { pool } from "../db/index.js";
+import { syncAgencyFromStripeSubscription } from "../services/subscriptionSync.js";
 import { findLifetimeBonusCode, redeemLifetimeBonusCode } from "../services/lifetimeBonus.js";
 
 const router = Router();
@@ -132,8 +134,8 @@ function selectBestSubscription(subscriptions: Stripe.Subscription[]): Stripe.Su
     const rankDiff = subscriptionStatusPriority(b.status) - subscriptionStatusPriority(a.status);
     if (rankDiff !== 0) return rankDiff;
 
-    const aPeriodStart = Number((a as any).current_period_start || 0);
-    const bPeriodStart = Number((b as any).current_period_start || 0);
+    const aPeriodStart = Number(subPeriodStart(a) || 0);
+    const bPeriodStart = Number(subPeriodStart(b) || 0);
     if (bPeriodStart !== aPeriodStart) return bPeriodStart - aPeriodStart;
 
     return Number(b.created || 0) - Number(a.created || 0);
@@ -391,8 +393,8 @@ router.post("/checkout-subscription", requireAuth, async (req: Request, res: Res
         agency.subscriptionStatus = "ACTIVE";
         if (stripeCustomerId) agency.stripeCustomerId = stripeCustomerId;
 
-        const updatedPeriodStart = (updatedSubscription as any).current_period_start;
-        const updatedPeriodEnd = (updatedSubscription as any).current_period_end;
+        const updatedPeriodStart = subPeriodStart(updatedSubscription);
+        const updatedPeriodEnd = subPeriodEnd(updatedSubscription);
         if (updatedPeriodStart) {
           agency.currentPeriodStart = new Date(updatedPeriodStart * 1000).toISOString();
         }
@@ -924,8 +926,8 @@ router.post("/reconcile-subscription", requireAuth, async (req: Request, res: Re
     agency.planTier = planTier;
     agency.subscriptionStatus = mapStripeStatusToInternal(best.status as StripeSubscriptionStatus);
 
-    const periodStart = (best as any).current_period_start;
-    const periodEnd = (best as any).current_period_end;
+    const periodStart = subPeriodStart(best);
+    const periodEnd = subPeriodEnd(best);
     if (periodStart) {
       agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
     }
@@ -1081,17 +1083,27 @@ router.post("/upgrade", requireAuth, async (req: Request, res: Response) => {
       proration_behavior: "create_prorations",
       metadata: {
         ...subscription.metadata,
+        agencyId: agency.agencyId,
         planTier: targetPlan.planTier,
       },
     });
+
+    // Update the app's own record now, not only when Stripe's webhook arrives
+    // (Nov 2026: Harcourts Reforma upgraded in Stripe but stayed on Starter
+    // in the app). The webhook still runs and does the same, harmlessly.
+    try {
+      await syncAgencyFromStripeSubscription(stripe, agency.agencyId, updated, { changeSec: Math.floor(Date.now() / 1000) });
+    } catch (syncErr: any) {
+      console.error("[BILLING] upgrade synced to Stripe but not to the app:", syncErr?.message || syncErr);
+    }
 
     return res.json({
       ok: true,
       subscriptionId: updated.id,
       newPriceId,
       planTier: targetPlan.planTier,
-      currentPeriodEnd: (updated as any).current_period_end
-        ? new Date((updated as any).current_period_end * 1000).toISOString()
+      currentPeriodEnd: subPeriodEnd(updated)
+        ? new Date(subPeriodEnd(updated)! * 1000).toISOString()
         : null,
     });
   } catch (error: any) {
@@ -1158,8 +1170,8 @@ router.post("/subscription/change-plan", requireAuth, async (req: Request, res: 
       subscriptionId: updated.id,
       prorationBehavior,
       newPriceId,
-      currentPeriodEnd: (updated as any).current_period_end
-        ? new Date((updated as any).current_period_end * 1000).toISOString()
+      currentPeriodEnd: subPeriodEnd(updated)
+        ? new Date(subPeriodEnd(updated)! * 1000).toISOString()
         : null,
     });
   } catch (error: any) {
