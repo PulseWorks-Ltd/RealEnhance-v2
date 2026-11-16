@@ -8,6 +8,16 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
@@ -142,6 +152,8 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
   const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOption[]>([]);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
+  // The plan chosen in the Upgrade Plan list, waiting for "Confirm upgrade".
+  const [confirmUpgrade, setConfirmUpgrade] = useState<UpgradeOption | null>(null);
   const [listingPackCredits, setListingPackCredits] = useState<number>(0);
   const [heroPackLoading, setHeroPackLoading] = useState(false);
   const [listingPackLoading, setListingPackLoading] = useState(false);
@@ -724,6 +736,56 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           </div>
         </CardContent>
 
+        <AlertDialog open={!!confirmUpgrade} onOpenChange={(open) => { if (!open && !upgradeLoading) setConfirmUpgrade(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Upgrade to {confirmUpgrade ? formatPlanDisplayName(confirmUpgrade.planTier, confirmUpgrade.displayName) : ""}?
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  {confirmUpgrade && (
+                    <>
+                      <p>
+                        You're moving from{" "}
+                        <span className="font-medium text-foreground">
+                          {formatPlanDisplayName(subscription?.planTier ?? null, subscription?.planDisplayName)}
+                        </span>{" "}
+                        to{" "}
+                        <span className="font-medium text-foreground">
+                          {formatPlanDisplayName(confirmUpgrade.planTier, confirmUpgrade.displayName)}
+                        </span>
+                        : {confirmUpgrade.monthlyAllowance} credits a month for{" "}
+                        {confirmUpgrade.priceFormatted || `$${(confirmUpgrade.price / 100).toFixed(2)}`} a month.
+                      </p>
+                      <p>
+                        The upgrade takes effect straight away and uses the card already on file. You'll be charged
+                        the difference for the rest of this billing period
+                        {subscription?.currentPeriodEnd ? ` (until ${new Date(subscription.currentPeriodEnd).toLocaleDateString()})` : ""}
+                        {" "}on your next invoice, then the new monthly price after that.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={upgradeLoading}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={upgradeLoading || manageDisabled}
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!confirmUpgrade) return;
+                  await handleUpgrade(confirmUpgrade.priceId);
+                  setConfirmUpgrade(null);
+                }}
+              >
+                {upgradeLoading ? "Upgrading..." : "Confirm upgrade"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         <Dialog open={upgradeOpen} onOpenChange={setUpgradeOpen}>
           <DialogContent>
             <DialogHeader>
@@ -753,7 +815,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
                     <Button
                       size="sm"
                       disabled={upgradeLoading || manageDisabled}
-                      onClick={() => handleUpgrade(option.priceId)}
+                      onClick={() => setConfirmUpgrade(option)}
                     >
                       {upgradeLoading ? "Upgrading..." : `Upgrade to ${option.displayName}`}
                     </Button>
