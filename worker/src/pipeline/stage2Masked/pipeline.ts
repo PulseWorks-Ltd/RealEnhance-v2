@@ -14,7 +14,7 @@
 //                    the real doorways?
 
 import { RELIGHT_FINAL, compositeRelight } from "./relight";
-import { roomAllowsEmptyLayout } from "../roomBrief";
+import { roomAllowsEmptyLayout, roomIsLightStaging } from "../roomBrief";
 import { NEAR_WALL_CROP_ENABLED, detectNearWallStrip, writeCroppedInput, remapBoxedItems, pasteBackIntoFullPhoto, type NearWallCrop } from "./nearWallStrip";
 import fs from "fs";
 import path from "path";
@@ -1709,6 +1709,10 @@ export async function runMaskedStage2Job(p: {
         ) {
           row.floatingAccepted = true;
           p.warn?.(`[${ctx.name}] last attempt: publishing — furniture ends only ${Math.max(...row.floatingCheck.runs.map((r: any) => r.gapPct))}% above the floor line (at most ${FLOAT_ACCEPT_LAST_GAP_PCT}% accepted)`);
+        }
+        if (row.floatingCheck.floating && !floorPlan?.ok && !row.floatingAccepted && roomIsLightStaging(p.roomType)) {
+          row.floatingAccepted = true;
+          p.log?.(`[${ctx.name}] light staging (${p.roomType}): "floating" pieces not treated as a failure — towels on rails, wall-hung basins and baths on feet sit above the floor`);
         }
         if (carryMismatch) {
           // (reason already given; the moved result is used instead)

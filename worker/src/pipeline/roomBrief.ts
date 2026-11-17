@@ -94,10 +94,10 @@ export function roomLabelFor(roomType: string): string {
 function roomTypeGuidance(roomType: string): string {
   const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
   const living = `LIVING AREA: a sofa (and an armchair if there is room), a coffee table and a rug, arranged as one conversation group. If the room has a TV wall bracket, the TV is mounted ON that bracket and the seating faces it; a low TV unit may sit on the floor below it. Without a bracket, put a TV unit flat against a solid, clearly visible wall opposite the seating, parallel to it — or, if no wall suits a TV, face the seating toward the window or fireplace and add no TV. Never stand a TV unit against a wall the photo doesn't show (for example a side wall imagined just past the photo edge). A visible wall that carries on past the photo edge is fine — the TV unit just stands on its visible part. If no visible wall suits a TV, leave the TV out. Never mount a TV on a wall with a window; on such a wall a TV may only stand on a low unit, below the window sill, never in front of the glass.
-SOFA PLACEMENT, in this order: (1) its back against a plain solid wall with no door, doorway or sliding door along that stretch, facing the TV or focal point; (2) in an open-plan room only, a free-standing sofa may divide the living area from the dining area, with its back at least one door-width (about 0.8 m) from any walking path; (3) never in front of, across or touching a door, a doorway, the opening side of a sliding door, or the walking path between two doors. A piece may stand in front of a fixed glass panel beside a sliding door's opening. A sofa may sit in front of a window with its back overlapping the bottom of the glass, as long as most of the window stays visible.
+SOFA PLACEMENT, in this order: (1) its back against a plain solid wall with NO door, doorway, sliding door or French doors anywhere along that wall, facing the TV or focal point; (2) its back against a wall with a window and no door — the sofa back may overlap the bottom of the glass, as long as most of the window stays visible; (3) in an open-plan room, or when no wall qualifies, a free-standing sofa facing the TV or focal point (in an open-plan room it may divide the living area from the dining area), with its back at least one door-width (about 0.8 m) from any walking path. NEVER put a sofa, couch or lounge suite against a wall that has a door, doorway, sliding door or French doors anywhere along it — not even at the far end of a long wall away from the door — and never in front of, across or touching a door, a doorway, the opening side of a sliding door, or the walking path between two doors. Mark every wall with a door on it "usableForLargeFurniture": false.
 DOOR SWING AND PATHS: every door must still be able to close and every doorway and sliding door stays walkable. The open door leaf, its frame, the floor it sweeps, the opening side of every sliding door, and a clear path about one door-width wide between the doors and to the kitchen stay completely clear — no sofa, armchair, coffee table, TV unit or rug edge may block them. Keep a TV unit at least one door-width from any door frame.
 MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide. A 3-seater sofa is about 2.75 door-widths long, a 2-seater about 2, an armchair about 1; the coffee table needs about half a door-width of space in front of the sofa. Photos make walls look longer than they are; when space is at all tight use a 2-seater and leave out the armchair.
-WHEN THE SOFA WALL IS SHORT OR ENDS AT A DOOR: never centre the sofa on it. Push it to the far end, away from the door — against the corner or out to the edge of the photo, letting the photo edge cut off part of it (a foreground sofa partly cut off by the photo edge looks natural).
+WHEN THE SOFA WALL IS SHORT: never centre the sofa on it. Push it to one end — against the corner or out to the edge of the photo, letting the photo edge cut off part of it (a foreground sofa partly cut off by the photo edge looks natural).
 In "placement", always say what the sofa's back is against (or that it is free-standing between the areas) and where it sits relative to the nearest door (for example "back against the plain left wall, leaving a clear path to the sliding door on its right").`;
   const dining = `DINING AREA: a dining table with 4–6 chairs, freestanding with room to pull the chairs out — never pushed flat against a wall. Only when a ceiling light fitting is clearly visible in the dining area itself (and listed in "landmarks") may the placement say the table is centred under that light, naming it. Otherwise never mention lights, pendants or light fittings for the dining table — describe its position by the walls, windows, kitchen bench and walkways instead (a mention of a light makes the image AI invent one).
 DINING CLEARANCE: leave about one door-width (0.8 m) of clear floor on every side of the table so the chairs can be pulled out. The table and chairs never stand in a door's swing, across a sliding door's path, in a doorway, or on the walking line between two doorways or between the entrance and the kitchen.
@@ -115,15 +115,14 @@ DINING SPACE CHECK: first judge the open floor you can actually see. If a 4-seat
   if (key === "kitchen") return kitchenOnly;
   if (key.startsWith("bedroom")) {
     return `BEDROOM: a bed with its headboard against a solid, clearly visible wall — not across a window or in front of a door or wardrobe — with a bedside table and lamp beside it.
-BED WALL CHOICE, in this order: (1) a plain wall with no door, doorway, wardrobe door or window anywhere along it; (2) a long plain stretch of a wall that has a door at one end — from the room corner (or photo edge) up to the door frame — when the whole bed and its bedside table(s) fit on that stretch with at least one more door-width of clear wall before the door frame (measure it in door-widths, below); the bed then sits at the corner end, away from the door, and that wall is "usableForLargeFurniture": true; (3) only if neither exists, a wall with a window — the headboard and pillows may overlap the bottom of the glass, but most of the window stays visible and nothing hangs above the headboard. A plain stretch that fits beats a window wall. Never put the bed or a bedside table beside, in front of or within one door-width of a door, doorway or wardrobe door; a wall whose plain stretch is too short for that is "usableForLargeFurniture": false.
-DOOR SWING: every door must still be able to close. The open door leaf, its frame and the floor it sweeps when it closes stay completely clear — no bed, headboard, bedside table or lamp may touch, overlap or stand in front of them, even partly. Measure the plain wall available for the bed from the photo edge or room corner up to the door frame, minus the door's swing. If the bed with two bedside tables does not fit there, do this, in order, until it fits: (1) keep only the bedside table on the side away from the door; (2) choose a smaller bed; (3) slide the bed further away from the door, letting the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.
-MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide and 2 m tall. Photos make walls look longer than they are — most of all a wall that runs toward the camera in a wide-angle photo, whose near end is squeezed into a short stretch of the picture — so measure the plain stretch in door-widths, using the door nearest it, before choosing: a queen bed with two bedside tables needs about 3.5 door-widths of plain wall (2.8 m), a queen with one table about 2.8, a double with one table about 2.4, a single with one table about 1.6 — plus one more door-width of clear wall between the setup and any door frame on the same wall. If unsure, choose the next smaller bed type (drawn at its true size).
+BED WALL CHOICE, in this order: (1) a plain wall with no door, doorway, sliding door, wardrobe door or window anywhere along it; (2) only if none exists, a wall with a window and no door — the headboard and pillows may overlap the bottom of the glass, but most of the window stays visible and nothing hangs above the headboard. NEVER put the headboard against a wall that has a door, doorway, sliding door or wardrobe door anywhere along it — not even on a long plain stretch at the far end away from the door. Mark every wall with a door on it "usableForLargeFurniture": false. If no wall qualifies, plan NO bed: light styling only (a rug, a plant, artwork on plain wall), and say so in "bedSpace" "reason". Never put a bedside table beside, in front of or within one door-width of a door, doorway or wardrobe door.
+DOOR SWING: every door must still be able to close. The open door leaf, its frame and the floor it sweeps when it closes stay completely clear — no bed, headboard, bedside table or lamp may touch, overlap or stand in front of them, even partly. If the bed with two bedside tables does not fit on the chosen wall, do this, in order, until it fits: (1) keep only one bedside table; (2) choose a smaller bed; (3) slide the bed toward the corner, letting the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.
+MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide and 2 m tall. Photos make walls look longer than they are — most of all a wall that runs toward the camera in a wide-angle photo, whose near end is squeezed into a short stretch of the picture — so measure the plain stretch in door-widths, using the door nearest it, before choosing: a queen bed with two bedside tables needs about 3.5 door-widths of plain wall (2.8 m), a queen with one table about 2.8, a double with one table about 2.4, a single with one table about 1.6. If unsure, choose the next smaller bed type (drawn at its true size).
 CHECK THE DEPTH TOO, NOT JUST THE WALL: the bed sticks out from the headboard wall about 2.6 door-widths (2.1 m) for a queen or double, 2.4 for a single, and still needs about one door-width (0.8 m) of clear floor beyond its foot to walk past. Measure the visible floor from the chosen wall to the opposite wall, cupboard or photo edge in that direction. If it is not clearly deep enough, that wall is wrong for the bed even when it is the plain one: in a narrow room, turn the bed so it runs along the room's LONGEST direction, with the headboard against a shorter end wall — even one with a window (low headboard below the sill) — rather than across the narrow width. A bed that fits beats the plain-wall preference. Never plan furniture that only fits if the walls, skirting or floor are moved.
 FURNITURE NEEDS VISIBLE FLOOR UNDER IT: follow the headboard wall's skirting line. Where it runs off the bottom or side edge of the photo, the wall beyond that point has no visible floor in front of it — nothing can stand there (this is where a bedside table usually gets wrongly placed). The usable wall is only the stretch whose skirting AND the floor in front of it are both visible. Fit the bed and tables on that stretch, pushed toward the far corner, using one or no bedside table, and let the photo edge cut off the foot or near side of the bed if needed. If even that is too short, put the headboard against another wall (even a window wall, with a low headboard below the sill).
 NEVER CHANGE THE ROOM TO FIT THE FURNITURE: skirting lines, wall corners and the floor edge stay exactly where they are. If the furniture does not fit, use fewer pieces or a smaller kind of piece (always at its true size), or let the photo edge cut it off.
 SINGLE BEDS ARE NORMAL: many bedrooms, especially in older New Zealand houses, realistically take only a single bed. When a double would leave no clear walkway along at least one long side, or would need the bed pushed hard against two walls, plan a single bed (one bedside table or none), typically along the longest plain wall.
 BE CONSERVATIVE, NOT OPTIMISTIC: an under-furnished bedroom looks fine; a crowded one, or one with a blocked door, is a failure. Plan TWO bedside tables only when the plain wall is clearly long enough for them with room to spare. When space is at all tight, plan ONE bedside table (on the side away from any door), and NONE if even one would crowd a door, wardrobe or window. Choose the smaller bed whenever in doubt.
-WHEN THE BED WALL ENDS AT A DOOR: never centre the bed on that wall. Push the whole setup to the far end, away from the door — against the room corner or out to the edge of the photo, letting the photo edge cut off the far bedside table or the side of the bed — and describe it that way in "layout" (for example "pushed to the far left end of the left wall, partly cut off by the left edge of the photo, leaving a clear gap before the door").
 BED SPACE CHECK: first judge the open floor you can actually see, and record your measurements in "bedSpace" (wallMetres, depthMetres, measuredWith) — they are checked. Measure the headboard wall by its VISIBLE length only — if it runs off the edge of the photo, the hidden part does not count, so a bed and bedside tables must fit within what is shown (they may run slightly past the photo edge, but never need more room than the visible wall). Choose the largest bed that still leaves a clear walkway along at least one long side and past the foot of the bed, and lets the door and wardrobe open fully: king, else queen, else double, else single. Then bedside tables: one on each side if both sides have room, one if only one side does, none if neither (never squeeze one in front of a door, wardrobe or window). Name the bed size in the layout item (for example "Double bed"). Record your decision in "bedSpace".
 Optionally a dresser, a chair or a bench at the end of the bed, only if there is still clear floor after all of the above. Keep the paths to the door and the wardrobe clear.`;
   }
@@ -137,7 +136,7 @@ WHEN THE DESK WALL IS SHORT OR ENDS AT A DOOR: never centre the desk on it. Push
   if (key.startsWith("bathroom")) return `BATHROOM: add no furniture — the "layout" stays empty. Styling is limited to small touches (towels, a bath mat, a soap dispenser, a small plant), which are handled separately.`;
   if (key === "laundry") return `LAUNDRY: add no furniture or appliances — the "layout" stays empty. Styling is limited to small touches (a laundry basket, folded towels, a plant), which are handled separately.`;
   if (key === "pantry" || key === "closet") return `${key === "pantry" ? "PANTRY" : "CLOSET"}: add no furniture — the "layout" stays empty. Styling is limited to a few neat items on the existing shelves, which are handled separately.`;
-  if (key === "garage") return `GARAGE: show it clean and empty — the "layout" stays empty. Do not add cars, furniture, shelving or tools.`;
+  if (key === "garage") return `GARAGE: light staging only — keep it clean, open and uncluttered, with the floor mostly clear. No cars, sofas, beds, tables or other large furniture. At most a few small, tidy touches against a solid, clearly visible wall: a slim storage shelf with a few neat boxes, a bicycle, or a potted plant — the "layout" may stay empty. Keep the garage door and every other door clear.`;
   if (key === "staircase") return `STAIRCASE: add no furniture on or around the stairs — the "layout" stays empty unless a landing has clear floor away from every step, where one small plant stand or bench may go.`;
   if (key === "hallway" || key === "entryway") return `${key === "hallway" ? "HALLWAY" : "ENTRYWAY"}: at most one slim console table or bench against a solid, clearly visible wall, and only if the walkway stays wide and every door can open fully. Otherwise the "layout" stays empty.`;
   if (key === "sunroom") return `SUNROOM: relaxed seating facing the windows or the view — a small sofa or two armchairs, a coffee or side table and a rug, with plants. Keep the doors and walkway clear.`;
@@ -198,9 +197,25 @@ Return ONLY a JSON object:
  * re-stage (Nov 2026, Harcourts batch: two garages failed 4 times each).
  * Staging is skipped and the enhanced photo delivered instead.
  */
-export function roomGetsNoStaging(roomType: string): boolean {
+// Every room type in the app's list can be staged (owner, Nov 2026): rooms
+// without a full furniture plan (garage, bathroom, laundry...) get light
+// staging — small pieces only. Kept so the "nothing to stage" path stays
+// available, but no room type uses it now.
+export function roomGetsNoStaging(_roomType: string): boolean {
+  return false;
+}
+
+/**
+ * Rooms staged lightly — small touches, no large furniture. Their pieces sit
+ * on rails, benches, shelves and wall-hung fixtures (towels on a rail, a
+ * plant on a vanity), and Gemini often redraws the fixtures themselves (a
+ * claw-foot bath, a wall-hung basin), so the "furniture floating" check reads
+ * normal things as floating (Nov 2026, Harcourts: two bathrooms failed 3
+ * attempts each on that alone). It doesn't stop these rooms.
+ */
+export function roomIsLightStaging(roomType: string): boolean {
   const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
-  return key === "garage";
+  return key.startsWith("bathroom") || ["laundry", "pantry", "closet", "garage", "staircase", "hallway", "entryway"].includes(key);
 }
 
 /** What the user is told when a room isn't staged (never says "AI"). */
@@ -222,7 +237,7 @@ function finishingTouchesFor(roomType: string): string {
   if (key.startsWith("bathroom")) return `neatly folded towels on the existing rails or vanity, a bath mat, a soap dispenser and a small plant`;
   if (key === "kitchen" || key === "laundry") return `a few items on the benches (a bowl of fruit, a plant, a chopping board${key === "laundry" ? ", a laundry basket, folded towels" : ""})`;
   if (key === "pantry" || key === "closet") return key === "pantry" ? `neat jars and baskets on the existing shelves` : `a few clothes on hangers and folded items or baskets on the existing shelves`;
-  if (key === "garage") return `nothing — leave the garage clean and empty`;
+  if (key === "garage") return `a few neat storage boxes, a potted plant and a doormat by the internal door — nothing large`;
   if (key === "staircase" || key === "hallway" || key === "entryway") return `a runner rug where the floor is clear, a plant, and ${art}`;
   return `a rug under the seating, bed or dining table, a floor or table lamp, cushions and a throw, a plant, books and small decor on surfaces, and ${art}`;
 }
@@ -336,7 +351,9 @@ export function checkRoomBrief(brief: RoomBrief, roomType: string): string[] {
     issues.push("the TV must be mounted on the existing TV wall bracket — say so in its placement");
   }
 
-  if (key.startsWith("bedroom") && !brief.layout.some((l) => /\bbed\b/i.test(l.item))) issues.push("a bedroom needs a bed in the layout — choose the largest size that fits");
+  const everyWallHasDoor = Array.isArray(brief.walls) && brief.walls.length > 0 && brief.walls.every((w) => wallHasDoor(w) || w?.usableForLargeFurniture === false);
+  if (key.startsWith("bedroom") && !everyWallHasDoor && !brief.layout.some((l) => /\bbed\b/i.test(l.item))) issues.push("a bedroom needs a bed in the layout — choose the largest size that fits");
+  issues.push(...checkNoDoorWallForBedOrSofa(brief));
   const expectsDining = /dining/.test(key) && !noDiningRoom;
   const dining = brief.layout.find((l) => /\bdining\b|\btable\b/i.test(l.item) && !/\b(coffee|side|bedside|console)\b/i.test(l.item));
   if (expectsDining && !dining) issues.push("this room type needs a dining table in the layout");
@@ -811,6 +828,57 @@ export function makeLivingPlanConservative(brief: RoomBrief, roomType: string): 
     };
   });
   return { brief: { ...brief, layout }, changed };
+}
+
+// Door words on a wall, after removing phrases that say there is none
+// ("plain wall with no doors") or that only point at a door elsewhere
+// ("opposite the door").
+const DOOR_WORDS = /\b(doors?|doorways?|door ?frames?|sliders?|ranch sliders?|entry|entrance)\b/i;
+const NO_DOOR_PHRASE = /\b(?:no|without|free of|clear of|away from|opposite|facing|across from)\s+(?:any\s+|the\s+|a\s+|an\s+)?(?:[\w-]+\s+){0,4}(?:doors?|doorways?|door ?frames?|openings?|sliders?|entry|entrance)\b/gi;
+export function wallHasDoor(wall: { name?: string; description?: string } | null | undefined): boolean {
+  const text = `${String(wall?.name || "")}. ${String(wall?.description || "")}`.replace(NO_DOOR_PHRASE, " ");
+  return DOOR_WORDS.test(text);
+}
+
+/** The walls (from "walls") a placement names, longest names first. */
+function wallsNamedIn(placement: string, walls: Array<{ name: string; description: string }>): Array<{ name: string; description: string }> {
+  const text = String(placement || "").toLowerCase();
+  return [...walls]
+    .filter((w) => String(w?.name || "").trim().length >= 6)
+    .sort((a, b) => b.name.length - a.name.length)
+    .filter((w) => text.includes(String(w.name).toLowerCase().trim()));
+}
+
+const BED_ITEM = /\bbed\b/i;
+const NOT_BED = /bedside|bed ?head|bedding|bed ?linen|bench|throw|cushion/i;
+const SOFA_ITEM = /\bsofa\b|couch|sectional|loveseat|lounge suite|chaise/i;
+
+/**
+ * Beds and sofas never stand against a wall with a door on it (owner, Nov
+ * 2026). The planner used to allow "a long plain stretch of a wall that has
+ * a door at one end", and Gemini then put the bed across the door anyway
+ * (Harcourts Bedroom 12: bed planned on "the wall with the entry door frame",
+ * failed twice on the door). Read in code from the planner's own wall names.
+ */
+export function checkNoDoorWallForBedOrSofa(brief: RoomBrief): string[] {
+  if (!Array.isArray(brief?.layout) || !Array.isArray(brief?.walls)) return [];
+  const issues: string[] = [];
+  for (const it of brief.layout) {
+    const item = String(it?.item || "");
+    const isBed = BED_ITEM.test(item) && !NOT_BED.test(item);
+    const isSofa = SOFA_ITEM.test(item);
+    if (!isBed && !isSofa) continue;
+    const placement = String(it?.placement || "");
+    // A free-standing sofa isn't against a wall; the door-path rules cover it.
+    if (isSofa && /free-?standing/i.test(placement) && !/\bback against\b/i.test(placement)) continue;
+    const doorWall = wallsNamedIn(placement, brief.walls).find((w) => wallHasDoor(w));
+    if (doorWall) {
+      issues.push(
+        `the ${isBed ? "bed" : "sofa"} is planned against "${doorWall.name}", which has a door or doorway on it. ${isBed ? "A bed's headboard" : "A sofa, couch or lounge suite"} never goes against a wall with a door anywhere along it — choose a wall with no door (a plain wall, else a window wall with ${isBed ? "a low headboard below the sill" : "the sofa back below the sill"})${isBed ? `; if no wall qualifies, plan no bed and use light styling only` : `, or stand the sofa free, facing the focal point, clear of every walking path`}, and mark "${doorWall.name}" "usableForLargeFurniture": false`,
+      );
+    }
+  }
+  return issues;
 }
 
 /** Soft check: the sofa must say what its back is against (or that it divides the areas). */

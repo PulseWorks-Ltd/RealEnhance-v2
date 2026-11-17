@@ -2453,13 +2453,8 @@ Beyond the hallway rules above and the structural constraints above, use your ow
   return { prompt, fallbackReason: null, extra: {} };
 }
 
-// Garage — scope decision (see Task report): defaulted to the
-// conservative option, structural-protection-only with an explicit
-// "add nothing" instruction, since garages aren't typically staged with
-// decor the way living spaces are and no time was available to confirm
-// otherwise before this ships. If a lighter organizational-decor pass is
-// wanted instead, this is the one function to change — nothing else in
-// the room-type routing depends on which choice this makes.
+// Garage — light staging (owner, Nov 2026: every room type can be staged;
+// rooms without a full furniture plan get small touches, no large furniture).
 function buildGaragePrompt(
   protectedFeatureSection: string
 ): { prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> } {
@@ -2467,15 +2462,15 @@ function buildGaragePrompt(
 
 ${CATEGORY_A_LOCKS}${protectedFeatureSection}
 
-GARAGE — STRUCTURAL PROTECTION ONLY, NO STAGING (must be followed exactly)
+GARAGE — LIGHT STAGING ONLY (must be followed exactly)
 
-* Do NOT add any furniture, decor, storage items, vehicles, tools, or any other object to this photo. This is a decluttering/structural-protection-only pass, not a staging pass — garages are not staged with decor the way living spaces are.
-* Do not add anything beyond what is already present in the photo. If the photo looks empty or sparse, leave it that way.
+* Light staging: keep the garage clean, open and uncluttered with the floor mostly clear. Add at most a few small, tidy touches against a solid, clearly visible wall — a slim storage shelf with a few neat boxes, a bicycle, or a potted plant — and a doormat by the internal door.
+* Do NOT add cars, sofas, beds, tables or any other large furniture, and nothing in front of the garage door or any other door.
 * All structural constraints above still apply in full: do not alter walls, flooring, the garage door, windows, built-in shelving/racking, or any other fixed element.
 
 EVERYTHING ELSE
 
-There is no "everything else" for this room type — add nothing beyond what is already in the photo.`;
+Nothing else — small touches only, as above.`;
 
   return { prompt, fallbackReason: null, extra: {} };
 }
