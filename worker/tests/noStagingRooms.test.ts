@@ -7,6 +7,7 @@ import {
   wallHasDoor,
   checkNoDoorWallForBedOrSofa,
   checkRoomBrief,
+  checkBedFits,
   buildRoomBriefInstruction,
 } from "../src/pipeline/roomBrief";
 
@@ -41,7 +42,7 @@ describe("every room type can be staged (owner, Nov 2026)", () => {
   });
 });
 
-describe("beds and sofas never against a wall with a door (owner, Nov 2026)", () => {
+describe("beds and sofas against walls with doors (owner, Nov 2026)", () => {
   const wall = (name: string, description = "", usable = true) => ({ name, description, usableForLargeFurniture: usable, partlyVisible: false });
   it("reads door walls from the planner's own wall names and descriptions", () => {
     expect(wallHasDoor(wall("the wall on the left of the photo with the entry door frame"))).toBe(true);
@@ -58,7 +59,7 @@ describe("beds and sofas never against a wall with a door (owner, Nov 2026)", ()
       bedSpace: { bed: "single", bedsideTables: 0, wallMetres: 2, depthMetres: 3 },
     };
     expect(checkNoDoorWallForBedOrSofa(brief)).toHaveLength(1);
-    expect(checkRoomBrief(brief, "bedroom").join(" ")).toMatch(/never goes against a wall with a door/);
+    expect(checkRoomBrief(brief, "bedroom").join(" ")).toMatch(/Use a wall with no door first/);
   });
   it("accepts a bed on a plain wall", () => {
     const brief: any = {
@@ -87,17 +88,42 @@ describe("beds and sofas never against a wall with a door (owner, Nov 2026)", ()
     };
     expect(checkNoDoorWallForBedOrSofa(brief)).toHaveLength(0);
   });
-  it("a bedroom where every wall has a door may go without a bed (light styling)", () => {
+  it("a bed may use a long plain stretch of a door wall when no door-free wall exists (Harcourts Bedroom 08)", () => {
+    const brief: any = {
+      walls: [wall("the plain wall on the left with the power outlet", "long plain wall with the entry door at its far end"), wall("the wall on the right with the sliding wardrobe doors")],
+      layout: [{ item: "Double bed (1.4 m wide)", placement: "headboard against the plain wall on the left with the power outlet, pushed to the near end away from the entry door" }],
+    };
+    expect(checkNoDoorWallForBedOrSofa(brief)).toHaveLength(0);
+  });
+  it("never a wardrobe wall or a balcony/sliding-door wall, even as the last resort", () => {
+    const wardrobe: any = {
+      walls: [wall("the wall on the right with the sliding wardrobe doors"), wall("the wall on the left with the entry door")],
+      layout: [{ item: "Double bed", placement: "headboard against the wall on the right with the sliding wardrobe doors" }],
+    };
+    expect(checkNoDoorWallForBedOrSofa(wardrobe)).toHaveLength(1);
+    const balcony: any = {
+      walls: [wall("the far wall with the sliding balcony door"), wall("the wall on the right with the entry door")],
+      layout: [{ item: "Single bed", placement: "headboard against the far wall with the sliding balcony door, beside the glass" }],
+    };
+    expect(checkNoDoorWallForBedOrSofa(balcony)).toHaveLength(1);
+  });
+  it("a bedroom always needs a bed", () => {
     const brief: any = {
       walls: [wall("the wall on the left with the entry door"), wall("the wall on the right with the built-in wardrobe", "sliding wardrobe doors")],
       layout: [{ item: "Rug", placement: "on the open floor in the middle of the room" }],
     };
-    expect(checkRoomBrief(brief, "bedroom").join(" ")).not.toMatch(/needs a bed/);
+    expect(checkRoomBrief(brief, "bedroom").join(" ")).toMatch(/needs a bed/);
+  });
+  it("a single bed fits a 2.6 m deep room (Harcourts Bedroom 09) and narrow-room advice never points at a door wall", () => {
+    expect(checkBedFits({ bedSpace: { bed: "single", bedsideTables: 1, wallMetres: 3.2, depthMetres: 2.6 } } as any)).toHaveLength(0);
+    const tooDeep = checkBedFits({ bedSpace: { bed: "double", bedsideTables: 1, wallMetres: 3.2, depthMetres: 2.6 } } as any).join(" ");
+    expect(tooDeep).toMatch(/never onto a wall with a door, sliding door or balcony door/);
   });
   it("the planner instructions no longer allow the door-wall stretch", () => {
     const bed = buildRoomBriefInstruction("bedroom");
-    expect(bed).not.toMatch(/a long plain stretch of a wall that has a door at one end/);
-    expect(bed).toMatch(/NEVER put the headboard against a wall that has a door/);
+    expect(bed).toMatch(/\(3\) only if neither exists, a long plain stretch of a wall that has a door/);
+    expect(bed).toMatch(/A wall of wardrobe doors is never a bed wall/);
+    expect(bed).toMatch(/Never turn it onto an end wall that has a door/);
     const living = buildRoomBriefInstruction("living_dining");
     expect(living).toMatch(/NEVER put a sofa, couch or lounge suite against a wall that has a door/);
   });
