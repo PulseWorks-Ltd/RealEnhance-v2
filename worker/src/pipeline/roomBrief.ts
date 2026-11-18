@@ -115,13 +115,14 @@ DINING SPACE CHECK: first judge the open floor you can actually see. If a 4-seat
   if (key === "kitchen") return kitchenOnly;
   if (key.startsWith("bedroom")) {
     return `BEDROOM: a bed with its headboard against a solid, clearly visible wall — not across a window or in front of a door or wardrobe — with a bedside table and lamp beside it.
-BED WALL CHOICE, in this order: (1) a plain wall with no door, doorway, sliding door, wardrobe door or window anywhere along it; (2) only if none exists, a wall with a window and no door — the headboard and pillows may overlap the bottom of the glass, but most of the window stays visible and nothing hangs above the headboard. NEVER put the headboard against a wall that has a door, doorway, sliding door or wardrobe door anywhere along it — not even on a long plain stretch at the far end away from the door. Mark every wall with a door on it "usableForLargeFurniture": false. If no wall qualifies, plan NO bed: light styling only (a rug, a plant, artwork on plain wall), and say so in "bedSpace" "reason". Never put a bedside table beside, in front of or within one door-width of a door, doorway or wardrobe door.
-DOOR SWING: every door must still be able to close. The open door leaf, its frame and the floor it sweeps when it closes stay completely clear — no bed, headboard, bedside table or lamp may touch, overlap or stand in front of them, even partly. If the bed with two bedside tables does not fit on the chosen wall, do this, in order, until it fits: (1) keep only one bedside table; (2) choose a smaller bed; (3) slide the bed toward the corner, letting the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.
-MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide and 2 m tall. Photos make walls look longer than they are — most of all a wall that runs toward the camera in a wide-angle photo, whose near end is squeezed into a short stretch of the picture — so measure the plain stretch in door-widths, using the door nearest it, before choosing: a queen bed with two bedside tables needs about 3.5 door-widths of plain wall (2.8 m), a queen with one table about 2.8, a double with one table about 2.4, a single with one table about 1.6. If unsure, choose the next smaller bed type (drawn at its true size).
-CHECK THE DEPTH TOO, NOT JUST THE WALL: the bed sticks out from the headboard wall about 2.6 door-widths (2.1 m) for a queen or double, 2.4 for a single, and still needs about one door-width (0.8 m) of clear floor beyond its foot to walk past. Measure the visible floor from the chosen wall to the opposite wall, cupboard or photo edge in that direction. If it is not clearly deep enough, that wall is wrong for the bed even when it is the plain one: in a narrow room, turn the bed so it runs along the room's LONGEST direction, with the headboard against a shorter end wall — even one with a window (low headboard below the sill) — rather than across the narrow width. A bed that fits beats the plain-wall preference. Never plan furniture that only fits if the walls, skirting or floor are moved.
+BED WALL CHOICE, in this order: (1) a plain wall with no door, doorway, sliding door, wardrobe door or window anywhere along it; (2) only if none exists, a wall with a window and no door — the headboard and pillows may overlap the bottom of the glass, but most of the window stays visible and nothing hangs above the headboard; (3) only if neither exists, a long plain stretch of a wall that has a door at one end — from the room corner (or photo edge) up to the door frame — when the whole bed and its bedside table(s) fit on that stretch with at least one more door-width of clear wall before the door frame (measure it in door-widths, below); the bed then sits at the corner end, away from the door, and that wall is "usableForLargeFurniture": true. A wall of wardrobe doors is never a bed wall, and a bed never goes against the wall a sliding door or balcony door is in. Never put the bed or a bedside table beside, in front of or within one door-width of a door, doorway or wardrobe door; a door wall whose plain stretch is too short for that is "usableForLargeFurniture": false. A bedroom always gets a bed: use the smallest bed (a single) before giving up on a wall.
+DOOR SWING: every door must still be able to close. The open door leaf, its frame and the floor it sweeps when it closes stay completely clear — no bed, headboard, bedside table or lamp may touch, overlap or stand in front of them, even partly. On a wall with a door, measure the plain wall available for the bed from the photo edge or room corner up to the door frame, minus the door's swing. If the bed with two bedside tables does not fit on the chosen wall, do this, in order, until it fits: (1) keep only the bedside table on the side away from any door; (2) choose a smaller bed; (3) slide the bed toward the corner, away from any door, letting the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.
+MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide and 2 m tall. Photos make walls look longer than they are — most of all a wall that runs toward the camera in a wide-angle photo, whose near end is squeezed into a short stretch of the picture — so measure the plain stretch in door-widths, using the door nearest it, before choosing: a queen bed with two bedside tables needs about 3.5 door-widths of plain wall (2.8 m), a queen with one table about 2.8, a double with one table about 2.4, a single with one table about 1.6 — on a wall with a door, plus one more door-width of clear wall between the setup and the door frame. If unsure, choose the next smaller bed type (drawn at its true size).
+CHECK THE DEPTH TOO, NOT JUST THE WALL: the bed sticks out from the headboard wall about 2.6 door-widths (2.1 m) for a queen or double, 2.4 for a single, and still needs about one door-width (0.8 m) of clear floor beyond its foot to walk past. Measure the visible floor from the chosen wall to the opposite wall, cupboard or photo edge in that direction. If it is not clearly deep enough, that wall is wrong for the bed even when it is the plain one: in a narrow room, turn the bed so it runs along the room's LONGEST direction, with the headboard against a shorter end wall — even one with a window (low headboard below the sill) — rather than across the narrow width. Never turn it onto an end wall that has a door, sliding door or balcony door in it: if the only end wall has one, keep the headboard on the long plain wall and use a single bed. A bed that fits beats the plain-wall preference. Never plan furniture that only fits if the walls, skirting or floor are moved.
 FURNITURE NEEDS VISIBLE FLOOR UNDER IT: follow the headboard wall's skirting line. Where it runs off the bottom or side edge of the photo, the wall beyond that point has no visible floor in front of it — nothing can stand there (this is where a bedside table usually gets wrongly placed). The usable wall is only the stretch whose skirting AND the floor in front of it are both visible. Fit the bed and tables on that stretch, pushed toward the far corner, using one or no bedside table, and let the photo edge cut off the foot or near side of the bed if needed. If even that is too short, put the headboard against another wall (even a window wall, with a low headboard below the sill).
 NEVER CHANGE THE ROOM TO FIT THE FURNITURE: skirting lines, wall corners and the floor edge stay exactly where they are. If the furniture does not fit, use fewer pieces or a smaller kind of piece (always at its true size), or let the photo edge cut it off.
 SINGLE BEDS ARE NORMAL: many bedrooms, especially in older New Zealand houses, realistically take only a single bed. When a double would leave no clear walkway along at least one long side, or would need the bed pushed hard against two walls, plan a single bed (one bedside table or none), typically along the longest plain wall.
+WHEN THE BED WALL HAS A DOOR (choice 3 only): never centre the bed on that wall. Push the whole setup to the far end, away from the door — against the room corner or out to the edge of the photo, letting the photo edge cut off the far bedside table or the side of the bed — and describe it that way in "layout" (for example "pushed to the far left end of the left wall, partly cut off by the left edge of the photo, leaving a clear gap before the door").
 BE CONSERVATIVE, NOT OPTIMISTIC: an under-furnished bedroom looks fine; a crowded one, or one with a blocked door, is a failure. Plan TWO bedside tables only when the plain wall is clearly long enough for them with room to spare. When space is at all tight, plan ONE bedside table (on the side away from any door), and NONE if even one would crowd a door, wardrobe or window. Choose the smaller bed whenever in doubt.
 BED SPACE CHECK: first judge the open floor you can actually see, and record your measurements in "bedSpace" (wallMetres, depthMetres, measuredWith) — they are checked. Measure the headboard wall by its VISIBLE length only — if it runs off the edge of the photo, the hidden part does not count, so a bed and bedside tables must fit within what is shown (they may run slightly past the photo edge, but never need more room than the visible wall). Choose the largest bed that still leaves a clear walkway along at least one long side and past the foot of the bed, and lets the door and wardrobe open fully: king, else queen, else double, else single. Then bedside tables: one on each side if both sides have room, one if only one side does, none if neither (never squeeze one in front of a door, wardrobe or window). Name the bed size in the layout item (for example "Double bed"). Record your decision in "bedSpace".
 Optionally a dresser, a chair or a bench at the end of the bed, only if there is still clear floor after all of the above. Keep the paths to the door and the wardrobe clear.`;
@@ -290,6 +291,11 @@ const BED_LENGTH_M: Record<string, number> = { king: 2.1, queen: 2.1, double: 2.
 const BED_WIDTH_M: Record<string, number> = { king: 1.85, queen: 1.55, double: 1.4, single: 0.95 };
 const BEDSIDE_TABLE_M = 0.5;
 const WALKWAY_M = 0.7;
+// A single bed is narrow enough to walk past with a little less room
+// (Nov 2026, Harcourts Bedroom 09: 2.6 m deep room, single + 0.7 m = 2.65 m
+// failed by 5 cm and the planner was told to turn the bed onto the
+// balcony-door wall).
+const WALKWAY_SINGLE_M = 0.6;
 
 /**
  * Does the planned bed fit the planner's own measurements? The planner keeps
@@ -306,9 +312,14 @@ export function checkBedFits(brief: RoomBrief): string[] {
   if (!BED_LENGTH_M[size]) return [];
   if (!(wall > 0) || !(depth > 0)) return ["bedSpace needs your measured wallMetres and depthMetres (measure against a door, window or other reference)"];
   const issues: string[] = [];
-  const needDepth = BED_LENGTH_M[size] + WALKWAY_M;
+  const walkway = size === "single" ? WALKWAY_SINGLE_M : WALKWAY_M;
+  const needDepth = BED_LENGTH_M[size] + walkway;
   if (depth < needDepth) {
-    issues.push(`by your own measurement the room is only ${depth} m deep from the headboard wall, but a ${size} bed sticks out ${BED_LENGTH_M[size]} m and needs ${WALKWAY_M} m to walk past its foot (${needDepth.toFixed(1)} m). Turn the bed so it runs along the room's longest direction (headboard against a shorter end wall — even a window wall, with a low headboard below the sill), or choose a smaller bed. Never plan furniture that only fits if a wall, skirting or the floor is moved`);
+    issues.push(
+      size === "single"
+        ? `by your own measurement the room is only ${depth} m deep from the headboard wall, but even a single bed sticks out ${BED_LENGTH_M[size]} m and needs ${walkway} m to walk past its foot (${needDepth.toFixed(2)} m). Turn the bed so it runs along the room's longest direction with the headboard against a shorter end wall that has no door (a window wall is fine, with a low headboard below the sill). If the only end wall has a door, sliding door or balcony door, keep the single bed where it is. Never plan furniture that only fits if a wall, skirting or the floor is moved`
+        : `by your own measurement the room is only ${depth} m deep from the headboard wall, but a ${size} bed sticks out ${BED_LENGTH_M[size]} m and needs ${walkway} m to walk past its foot (${needDepth.toFixed(1)} m). Choose a smaller bed (a single needs about ${(BED_LENGTH_M.single + WALKWAY_SINGLE_M).toFixed(2)} m), or turn the bed so it runs along the room's longest direction with the headboard against a shorter end wall that has no door (a window wall is fine, with a low headboard below the sill) — never onto a wall with a door, sliding door or balcony door. Never plan furniture that only fits if a wall, skirting or the floor is moved`,
+    );
   }
   const tables = Math.max(0, Math.min(2, Number(bs.bedsideTables) || 0));
   const needWall = BED_WIDTH_M[size] + tables * BEDSIDE_TABLE_M;
@@ -351,8 +362,9 @@ export function checkRoomBrief(brief: RoomBrief, roomType: string): string[] {
     issues.push("the TV must be mounted on the existing TV wall bracket — say so in its placement");
   }
 
-  const everyWallHasDoor = Array.isArray(brief.walls) && brief.walls.length > 0 && brief.walls.every((w) => wallHasDoor(w) || w?.usableForLargeFurniture === false);
-  if (key.startsWith("bedroom") && !everyWallHasDoor && !brief.layout.some((l) => /\bbed\b/i.test(l.item))) issues.push("a bedroom needs a bed in the layout — choose the largest size that fits");
+  if (key.startsWith("bedroom") && !brief.layout.some((l) => /\bbed\b/i.test(l.item))) {
+    issues.push("a bedroom needs a bed in the layout — use a wall with no door, else a window wall, else a long plain stretch of a wall with an ordinary door (bed pushed to the far end, clear of the door); choose a single bed if space is tight");
+  }
   issues.push(...checkNoDoorWallForBedOrSofa(brief));
   const expectsDining = /dining/.test(key) && !noDiningRoom;
   const dining = brief.layout.find((l) => /\bdining\b|\btable\b/i.test(l.item) && !/\b(coffee|side|bedside|console)\b/i.test(l.item));
@@ -851,6 +863,7 @@ function wallsNamedIn(placement: string, walls: Array<{ name: string; descriptio
 
 const BED_ITEM = /\bbed\b/i;
 const NOT_BED = /bedside|bed ?head|bedding|bed ?linen|bench|throw|cushion/i;
+const WARDROBE_OR_SLIDER = /wardrobe|closet|sliding|slider|balcony|french door|glass door|patio/i;
 const SOFA_ITEM = /\bsofa\b|couch|sectional|loveseat|lounge suite|chaise/i;
 
 /**
@@ -872,9 +885,20 @@ export function checkNoDoorWallForBedOrSofa(brief: RoomBrief): string[] {
     // A free-standing sofa isn't against a wall; the door-path rules cover it.
     if (isSofa && /free-?standing/i.test(placement) && !/\bback against\b/i.test(placement)) continue;
     const doorWall = wallsNamedIn(placement, brief.walls).find((w) => wallHasDoor(w));
+    // Beds (owner, Nov 2026): a long plain stretch of a door wall is allowed
+    // as the last resort, when no wall without a door can take the bed —
+    // most NZ bedrooms have a door, a wardrobe and a window, and the strict
+    // rule left two Harcourts bedrooms with no bed. Never a wardrobe wall or
+    // the wall a sliding/balcony door is in. Sofas keep the strict rule.
+    if (doorWall && isBed && !WARDROBE_OR_SLIDER.test(`${doorWall.name} ${doorWall.description}`)) {
+      const doorFreeWall = brief.walls.some((w) => w !== doorWall && !wallHasDoor(w) && w?.usableForLargeFurniture !== false);
+      if (!doorFreeWall) continue;
+    }
     if (doorWall) {
       issues.push(
-        `the ${isBed ? "bed" : "sofa"} is planned against "${doorWall.name}", which has a door or doorway on it. ${isBed ? "A bed's headboard" : "A sofa, couch or lounge suite"} never goes against a wall with a door anywhere along it — choose a wall with no door (a plain wall, else a window wall with ${isBed ? "a low headboard below the sill" : "the sofa back below the sill"})${isBed ? `; if no wall qualifies, plan no bed and use light styling only` : `, or stand the sofa free, facing the focal point, clear of every walking path`}, and mark "${doorWall.name}" "usableForLargeFurniture": false`,
+        isBed
+          ? `the bed is planned against "${doorWall.name}", which has a door on it. Use a wall with no door first (a plain wall, else a window wall with a low headboard below the sill). Only when no such wall can take the bed may it go on a long plain stretch of a wall with an ordinary door, pushed to the far end with at least one door-width of clear wall before the door frame — never against a wall of wardrobe doors or the wall a sliding or balcony door is in`
+          : `the sofa is planned against "${doorWall.name}", which has a door or doorway on it. A sofa, couch or lounge suite never goes against a wall with a door anywhere along it — choose a wall with no door (a plain wall, else a window wall with the sofa back below the sill), or stand the sofa free, facing the focal point, clear of every walking path, and mark "${doorWall.name}" "usableForLargeFurniture": false`,
       );
     }
   }
