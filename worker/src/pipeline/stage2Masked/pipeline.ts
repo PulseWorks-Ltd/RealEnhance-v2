@@ -15,6 +15,20 @@
 
 import { RELIGHT_FINAL, compositeRelight } from "./relight";
 import { roomAllowsEmptyLayout, roomIsLightStaging } from "../roomBrief";
+
+// Pieces that stand on the floor. A plain kitchen whose plan has none of
+// these is styled on its benches only.
+const FLOOR_STANDING_ITEM = /stool|chair|table|sofa|couch|armchair|bench seat|ottoman|rug|mat|plant stand|floor plant|potted plant on the floor|trolley|cart|bed|desk|shelf unit|bookcase/i;
+
+/** True when nothing in the plan is meant to stand on the floor. */
+export function surfaceStylingOnly(roomType: string, brief: any): boolean {
+  if (roomIsLightStaging(roomType)) return true;
+  const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
+  if (key !== "kitchen") return false;
+  const layout = Array.isArray(brief?.layout) ? brief.layout : null;
+  if (!layout) return false; // no plan: stools may have been added — keep the checks
+  return !layout.some((it: any) => FLOOR_STANDING_ITEM.test(`${it?.item || ""}`));
+}
 import { NEAR_WALL_CROP_ENABLED, detectNearWallStrip, writeCroppedInput, remapBoxedItems, pasteBackIntoFullPhoto, type NearWallCrop } from "./nearWallStrip";
 import fs from "fs";
 import path from "path";
@@ -1329,6 +1343,10 @@ export async function runMaskedStage2Job(p: {
       let placementRejected = false;
       if (bedWall) {
         row.bedWall = { consensus: (bedWall as any).consensus, model: bedWall.model, plannedWall: plannedBedWall, wrongWall: (bedWall as any).wrongWall, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, ...((bedWall as any).underWindowAccepted ? { underWindowAccepted: true } : {}), coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
+        if ((bedWall as any).offPlanAccepted) {
+          row.bedWall.offPlanAccepted = true;
+          p.log?.(`[${ctx.name}] bed is on a different wall from the plan (${String(bedWall.answer?.headboardWall || "").slice(0, 80)}) but that wall has no door, no window is badly covered and the room is unchanged — accepted`);
+        }
         if (bedWall.failed) {
           const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture", (bedWall as any).wrongWall && `bed not on the planned wall (${plannedBedWall})`].filter(Boolean).join("; ");
           p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
@@ -1665,10 +1683,19 @@ export async function runMaskedStage2Job(p: {
         // Merging would paste a rug or bed onto the real wall.
         // (Not after the group shift: the furniture now stands at or below the
         // real floor line wherever Gemini's was higher.)
+        // Nothing planned to stand on the floor (a fitted kitchen styled with
+        // a bowl, a plant and a board on the bench; light-staging rooms):
+        // the pieces sit on benches, rails and shelves, so the floor checks
+        // read them as "floating" and measure the bench edge as a moved
+        // skirting (Nov 2026, Harcourts: two kitchens failed 3 attempts each
+        // and their retries too, with good Gemini pictures). The room-shape
+        // and the general floor-line check below still apply.
+        const surfaceOnly = surfaceStylingOnly(p.roomType, attemptBrief);
         if (FLOOR_MOVED_CHECK && !groupShifted) {
           row.floorMovedCheck = await checkFloorMoved(original, ctx.staged, layers.solid, w, h).catch((e: any) => ({ moved: false, error: String(e?.message || e) }));
-          // A clear offset beside furniture that wasn't lined up counts too.
-          const besides = skirtingLeft.filter((r) => Math.abs(r.dyPct) >= FLOOR_MOVED_RISE_PCT);
+          // A clear offset beside furniture that wasn't lined up counts too
+          // (not for bench-top styling: "beside" it is the bench, not a skirting).
+          const besides = surfaceOnly ? [] : skirtingLeft.filter((r) => Math.abs(r.dyPct) >= FLOOR_MOVED_RISE_PCT);
           if (!row.floorMovedCheck.moved && besides.length) {
             const r = [...besides].sort((a, b) => b.widthPct - a.widthPct)[0];
             row.floorMovedCheck = { ...row.floorMovedCheck, moved: true, besideFurniture: besides, longestRunPct: r.widthPct, maxRisePct: Math.abs(r.dyPct), atXPct: [Math.round(r.x1Pct), Math.round(r.x2Pct)] };
@@ -1710,9 +1737,9 @@ export async function runMaskedStage2Job(p: {
           row.floatingAccepted = true;
           p.warn?.(`[${ctx.name}] last attempt: publishing — furniture ends only ${Math.max(...row.floatingCheck.runs.map((r: any) => r.gapPct))}% above the floor line (at most ${FLOAT_ACCEPT_LAST_GAP_PCT}% accepted)`);
         }
-        if (row.floatingCheck.floating && !floorPlan?.ok && !row.floatingAccepted && roomIsLightStaging(p.roomType)) {
+        if (row.floatingCheck.floating && !floorPlan?.ok && !row.floatingAccepted && surfaceOnly) {
           row.floatingAccepted = true;
-          p.log?.(`[${ctx.name}] light staging (${p.roomType}): "floating" pieces not treated as a failure — towels on rails, wall-hung basins and baths on feet sit above the floor`);
+          p.log?.(`[${ctx.name}] ${p.roomType}: nothing planned on the floor — "floating" pieces not treated as a failure (items on benches, rails and shelves sit above the floor)`);
         }
         if (carryMismatch) {
           // (reason already given; the moved result is used instead)
