@@ -38,4 +38,19 @@ describe("bed on the wall the room plan chose (job_37bb979a)", () => {
     expect(evaluateBedWall({ bedPresent: "yes" }, null).failed).toBe(false);
     expect(isLayoutOrTransientFailure("bed not where the plan put it")).toBe(true);
   });
+  it("accepts a bed on a different wall when that wall is good (owner, Nov 2026: Harcourts job_8f63d481)", () => {
+    const planned = "the wall on the left of the photo with the large window";
+    // Gemini chose the plain wall beside the planned one, three times; all good stagings.
+    const ok = evaluateBedWall({ bedPresent: "yes", onPlannedWall: "no", headboardWall: "the plain wall on the left side of the room", doorOnHeadboardWall: "no", otherPlainWallAvailable: "no", headboardCoversWindow: "no", windowCoverage: "none", bedCoversDoor: "no", roomWidened: "no" }, planned);
+    expect(ok.wrongWall).toBe(true);
+    expect(ok.offPlanAccepted).toBe(true);
+    expect(ok.failed).toBe(false);
+    expect(ok.restageHints).toHaveLength(0);
+    // Still failed when the other wall is not good.
+    const base = { bedPresent: "yes", onPlannedWall: "no", doorOnHeadboardWall: "no", headboardCoversWindow: "no", bedCoversDoor: "no", roomWidened: "no" };
+    expect(evaluateBedWall({ ...base, doorOnHeadboardWall: "yes" }, planned).failed).toBe(true);
+    expect(evaluateBedWall({ ...base, bedCoversDoor: "yes" }, planned).failed).toBe(true);
+    expect(evaluateBedWall({ ...base, roomWidened: "yes" }, planned).failed).toBe(true);
+    expect(evaluateBedWall({ ...base, headboardCoversWindow: "yes", windowCoverage: "most" }, planned).failed).toBe(true);
+  });
 });

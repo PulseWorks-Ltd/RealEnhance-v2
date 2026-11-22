@@ -1813,13 +1813,18 @@ export function evaluateBedWall(raw: any, plannedWall: string | null = null) {
   const window = bed && yes(raw?.headboardCoversWindow) && !underWindowOk;
   const coversDoor = bed && yes(raw?.bedCoversDoor);
   const roomWidened = yes(raw?.roomWidened);
+  // Off the planned wall but a good wall (owner, Nov 2026: failing a good
+  // staging costs money): no door on it, no window badly covered, no door
+  // blocked, the room unchanged. The plan is the ideal, not a rule — the
+  // trace, floor and room-shape checks that follow still apply.
+  const offPlanAccepted = wrongWall && !yes(raw?.doorOnHeadboardWall) && !window && !coversDoor && !roomWidened;
   const hints: string[] = [];
   if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved, so furniture stood where the photo shows wall. The room is smaller than that layout needs. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller bed type (still at its true size), fewer or no bedside tables, turn the bed so it runs along the room's longest direction (headboard against a shorter wall, below any window sill), or let the edge of the photo cut it off.");
   if (coversDoor) hints.push("Your previous attempt placed the bed setup in front of a door: the bed, headboard or a bedside table overlapped the door, its frame or the space it swings through, so the door could not close. Every door, door leaf, doorway and wardrobe door must stay fully visible and clear. If the plain wall is too short, in this order: keep only the bedside table on the side away from the door; use a smaller bed type (still at its true size); or slide the bed further from the door and let the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.");
   if (doorWall) hints.push(`Your previous attempt put the bed's headboard against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the headboard against a plain wall that has no door, doorway or wardrobe door anywhere on it.`);
-  if (wrongWall) hints.push(`Your previous attempt put the bed against the wrong wall. Follow the layout: the bed's headboard goes against ${plannedWall}, and no part of the bed or bedside tables may reach past a corner of the room into another wall.`);
+  if (wrongWall && !offPlanAccepted) hints.push(`Your previous attempt put the bed against the wrong wall. Follow the layout: the bed's headboard goes against ${plannedWall}, and no part of the bed or bedside tables may reach past a corner of the room into another wall.`);
   if (window) hints.push("Your previous attempt hid too much of a window with the bed. The bed may stand under a window, but use a low headboard and low pillows so they cover only the bottom of the glass; keep most of the window, its frame and the curtains visible, and never paint or wall over a window.");
-  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, underWindowAccepted: bed && yes(raw?.headboardCoversWindow) && underWindowOk, coversDoor, roomWidened, wrongWall, failed: doorWall || window || coversDoor || roomWidened || wrongWall, restageHints: hints, answer: raw };
+  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, underWindowAccepted: bed && yes(raw?.headboardCoversWindow) && underWindowOk, coversDoor, roomWidened, wrongWall, offPlanAccepted, failed: doorWall || window || coversDoor || roomWidened || (wrongWall && !offPlanAccepted), restageHints: hints, answer: raw };
 }
 
 // ── Desk placement (studies / offices) ──────────────────────────────────────
