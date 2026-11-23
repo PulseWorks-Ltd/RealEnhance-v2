@@ -3086,7 +3086,9 @@ export default function BatchProcessor({
           }
         });
       }
-      setGlobalGoal(savedState.goal);
+      // The Special Requirements box was removed (Nov 2026); don't bring back
+      // an old typed request the user can no longer see or clear.
+      setGlobalGoal("");
       setPreserveStructure?.(savedState.settings.preserveStructure);
       setAllowStaging(savedState.settings.allowStaging);
       if (typeof savedState.settings.allowRetouch === "boolean") {
@@ -8288,20 +8290,6 @@ export default function BatchProcessor({
                         </select>
                       </div>
 
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="specific-requirements-input-left">
-                          Special Requirements
-                        </label>
-                        <textarea
-                          id="specific-requirements-input-left"
-                          className="w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-700"
-                          rows={5}
-                          placeholder="e.g., brighten interior, realistic daylight, preserve existing style"
-                          value={globalGoal}
-                          onChange={(e) => setGlobalGoal(e.target.value)}
-                          data-testid="textarea-global-goal"
-                        />
-                      </div>
                     </div>
                   </div>
                 </aside>

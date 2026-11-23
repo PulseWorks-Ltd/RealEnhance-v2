@@ -63,6 +63,7 @@ import {
   type LightingDecision,
 } from "./ai/exteriorEnvironmentAnalyzer";
 import { applyExteriorRelighting } from "./ai/exteriorRelighting";
+import { applyExteriorColourFinish, exteriorColourFinishEnabled } from "./ai/exteriorColourFinish";
 import { detectRoomType } from "./ai/room-detector";
 import { classifyScene } from "./validators/scene-classifier";
 import {
@@ -9040,6 +9041,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   if (exteriorLightingDecision?.shouldRelight) {
     path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
+  }
+
+  // Exterior colour finish (code only — colour and tone, never content); not
+  // for dusk shots, which have their own look. See exteriorColourFinish.ts.
+  if (stage1ASceneLabel === "exterior" && !stage1ADuskExteriorEnabled && exteriorColourFinishEnabled()) {
+    path1A = await applyExteriorColourFinish(path1A);
   }
 
   // (The window/door survey now starts before Stage 1A — see above.)
