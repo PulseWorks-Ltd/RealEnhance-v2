@@ -2037,6 +2037,11 @@ export function livingDoorRestageHint(blockedWhatRaw: string, doors: DoorOpening
   parts.push(plan.usableWalls.length
     ? `If a large piece must stand against a wall, use only: ${plan.usableWalls.join(", ")}.`
     : "No wall in this room is free for large furniture: keep the sofa and other large pieces free-standing in the open room as the layout says, and never move them toward a wall that has a door or doorway on it.");
+  // A sofa that ended up against glass or a door (Nov 2026, job_97e405cc:
+  // twice against the sliding door): say where it goes in the picture.
+  if (!plan.usableWalls.length && /sofa|couch|lounge|settee/i.test(blockedWhat) && /sliding|glass|slider|patio|door/i.test(blockedWhat)) {
+    parts.push("Place the sofa free-standing in the foreground of the photo, on the open floor nearest the camera, with its back toward the camera and its seat facing into the room — at least two door-widths (about 1.6 m) away from the glass and from every door. Never put the sofa's back against glass or a door.");
+  }
   return parts.join(" ");
 }
 

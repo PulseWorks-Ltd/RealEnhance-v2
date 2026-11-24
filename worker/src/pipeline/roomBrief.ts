@@ -94,7 +94,7 @@ export function roomLabelFor(roomType: string): string {
 function roomTypeGuidance(roomType: string): string {
   const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
   const living = `LIVING AREA: a sofa (and an armchair if there is room), a coffee table and a rug, arranged as one conversation group. If the room has a TV wall bracket, the TV is mounted ON that bracket and the seating faces it; a low TV unit may sit on the floor below it. Without a bracket, put a TV unit flat against a solid, clearly visible wall opposite the seating, parallel to it — or, if no wall suits a TV, face the seating toward the window or fireplace and add no TV. Never stand a TV unit against a wall the photo doesn't show (for example a side wall imagined just past the photo edge). A visible wall that carries on past the photo edge is fine — the TV unit just stands on its visible part. If no visible wall suits a TV, leave the TV out. Never mount a TV on a wall with a window; on such a wall a TV may only stand on a low unit, below the window sill, never in front of the glass.
-SOFA PLACEMENT, in this order: (1) its back against a plain solid wall with NO door, doorway, sliding door or French doors anywhere along that wall, facing the TV or focal point; (2) its back against a wall with a window and no door — the sofa back may overlap the bottom of the glass, as long as most of the window stays visible; (3) in an open-plan room, or when no wall qualifies, a free-standing sofa facing the TV or focal point (in an open-plan room it may divide the living area from the dining area), with its back at least one door-width (about 0.8 m) from any walking path. NEVER put a sofa, couch or lounge suite against a wall that has a door, doorway, sliding door or French doors anywhere along it — not even at the far end of a long wall away from the door — and never in front of, across or touching a door, a doorway, the opening side of a sliding door, or the walking path between two doors. Mark every wall with a door on it "usableForLargeFurniture": false.
+SOFA PLACEMENT, in this order: (1) its back against a plain solid wall with NO door, doorway, sliding door or French doors anywhere along that wall, facing the TV or focal point; (2) its back against a wall with a window and no door — the sofa back may overlap the bottom of the glass, as long as most of the window stays visible; (3) in an open-plan room, or when no wall qualifies, a free-standing sofa facing the TV or focal point (in an open-plan room it may divide the living area from the dining area), with its back at least one door-width (about 0.8 m) from any walking path. For a free-standing sofa, say exactly WHERE in the photo it stands and which way its BACK points — for example "free-standing in the foreground of the photo, nearest the camera, with its back toward the camera, about two door-widths (1.6 m) from the sliding glass door". Never describe it only by what it faces, and never write that it faces or is oriented toward a door, sliding door or glass: the image AI then stands the sofa against the glass, across the door. NEVER put a sofa, couch or lounge suite against a wall that has a door, doorway, sliding door or French doors anywhere along it — not even at the far end of a long wall away from the door — and never in front of, across or touching a door, a doorway, the opening side of a sliding door, or the walking path between two doors. Mark every wall with a door on it "usableForLargeFurniture": false.
 DOOR SWING AND PATHS: every door must still be able to close and every doorway and sliding door stays walkable. The open door leaf, its frame, the floor it sweeps, the opening side of every sliding door, and a clear path about one door-width wide between the doors and to the kitchen stay completely clear — no sofa, armchair, coffee table, TV unit or rug edge may block them. Keep a TV unit at least one door-width from any door frame.
 MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide. A 3-seater sofa is about 2.75 door-widths long, a 2-seater about 2, an armchair about 1; the coffee table needs about half a door-width of space in front of the sofa. Photos make walls look longer than they are; when space is at all tight use a 2-seater and leave out the armchair.
 WHEN THE SOFA WALL IS SHORT: never centre the sofa on it. Push it to one end — against the corner or out to the edge of the photo, letting the photo edge cut off part of it (a foreground sofa partly cut off by the photo edge looks natural).
@@ -905,6 +905,11 @@ export function checkNoDoorWallForBedOrSofa(brief: RoomBrief): string[] {
   return issues;
 }
 
+// A free-standing sofa described as facing a door or glass gets drawn
+// against the glass, across the door (Nov 2026, Harcourts job_97e405cc:
+// "oriented to face toward the large sliding glass door", twice).
+const FACES_DOOR = /\b(?:fac(?:e|es|ing)|orient(?:ed|ated)?|turned|pointing|looking)\b[^.;]{0,60}?\b(?:doors?|sliding|slider|glass|patio)\b/i;
+
 /** Soft check: the sofa must say what its back is against (or that it divides the areas). */
 export function checkSofaPlacement(brief: RoomBrief, roomType: string): string[] {
   if (!/living/i.test(String(roomType || "")) || !Array.isArray(brief?.layout)) return [];
@@ -913,6 +918,9 @@ export function checkSofaPlacement(brief: RoomBrief, roomType: string): string[]
   const pl = String(sofa.placement || "");
   if (!/\bwall\b|\bback\b|free-?standing|divid|separat/i.test(pl)) {
     return ["the sofa's placement must say what its back is against (for example \"back against the plain left wall\") or that it stands free between the living and dining areas, and where it sits relative to the nearest door"];
+  }
+  if (/free-?standing/i.test(pl) && FACES_DOOR.test(pl)) {
+    return ["describe the free-standing sofa by WHERE it stands in the photo and which way its BACK points (for example \"free-standing in the foreground of the photo, nearest the camera, with its back toward the camera, about 1.6 m from the sliding glass door\") — not by facing or being oriented toward a door, sliding door or glass"];
   }
   return [];
 }

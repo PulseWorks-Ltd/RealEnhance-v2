@@ -1,3 +1,6 @@
+// Must stay first: puts every log message on one line, drops routine detail
+// and masks secrets, to stay inside the log host's rate limit (see logTrim.ts).
+import "./utils/logTrim";
 import { GEMINI_STRONG_TEXT_MODEL, auditModelEnvVars } from "./ai/modelDefaults";
 import type { ComplianceVerdict } from "./ai/compliance";
 import { Worker, Job } from "bullmq";
