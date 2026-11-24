@@ -128,3 +128,40 @@ describe("beds and sofas against walls with doors (owner, Nov 2026)", () => {
     expect(living).toMatch(/NEVER put a sofa, couch or lounge suite against a wall that has a door/);
   });
 });
+
+import { makeCompactBedroomPlan, isCompactBedroom, buildStage2PromptFromRoomBrief } from "../src/pipeline/roomBrief";
+// Nov 2026, job_d3a47050: a small bedroom planned with a queen bed, bedside
+// table, lamp and rug; Gemini moved the walls to make room.
+describe("compact bedrooms: bed, artwork and a plant only", () => {
+  const wall = (name: string) => ({ name, description: "", usableForLargeFurniture: true, partlyVisible: false });
+  const brief: any = {
+    walls: [wall("the plain wall on the left between the entry doorway and the far corner"), wall("the wall straight ahead with the window")],
+    bedSpace: { bed: "queen", bedsideTables: 1, wallMetres: 2.8, depthMetres: 2.9 },
+    layout: [
+      { item: "Queen bed (1.5 m wide, 2.05 m long)", placement: "against the plain wall on the left between the entry doorway and the far corner, toward the far corner" },
+      { item: "Bedside table (0.5 m wide)", placement: "in the far corner to the right of the bed" },
+      { item: "Table lamp", placement: "on the bedside table" },
+      { item: "Area rug (2.0 m by 2.4 m)", placement: "partly under the bed" },
+    ],
+    relationships: ["The rug sits under the lower two-thirds of the bed."],
+  };
+  it("trims a small bedroom to bed, art and plant", () => {
+    const { brief: out, changed } = makeCompactBedroomPlan(brief, "bedroom");
+    const items = out.layout.map((l: any) => l.item).join(" | ");
+    expect(items).toMatch(/Double bed/);
+    expect(items).not.toMatch(/rug|Bedside|lamp/i);
+    expect(items).toMatch(/art/i);
+    expect(items).toMatch(/plant/i);
+    expect(out.compactRoom).toEqual({ wallMetres: 2.8, depthMetres: 2.9 });
+    expect(out.relationships.join(" ")).not.toMatch(/rug/i);
+    expect(changed.length).toBeGreaterThan(0);
+    const prompt = buildStage2PromptFromRoomBrief(out, { roomType: "bedroom" });
+    expect(prompt).toMatch(/SMALL BEDROOM/);
+    expect(prompt).not.toMatch(/a rug under the seating/);
+  });
+  it("leaves normal-sized bedrooms alone", () => {
+    expect(isCompactBedroom({ ...brief, bedSpace: { bed: "queen", bedsideTables: 2, wallMetres: 3.6, depthMetres: 3.4 } }, "bedroom")).toBe(false);
+    expect(isCompactBedroom(brief, "living_room")).toBe(false);
+    expect(makeCompactBedroomPlan({ ...brief, bedSpace: { bed: "queen", wallMetres: 3.6, depthMetres: 3.4 } }, "bedroom").changed).toHaveLength(0);
+  });
+});

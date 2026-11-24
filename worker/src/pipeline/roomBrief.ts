@@ -59,6 +59,9 @@ export type RoomBrief = {
   keepUntouched: string[];
   // Set in code (never by the model) when the photo shows very little floor.
   tightShot?: { floorPct: number };
+  // Set in code: a small bedroom by the planner's own measurements (see
+  // makeCompactBedroomPlan) — bed, artwork and a plant only.
+  compactRoom?: { wallMetres: number; depthMetres: number };
 };
 
 export type RoomBriefUsage = { model: string; inputTokens: number; outputTokens: number; thinkingTokens: number; latencyMs: number };
@@ -718,6 +721,68 @@ export const TIGHT_SHOT_MAX_FLOOR_PCT = Number(process.env.STAGE2_TIGHT_SHOT_MAX
 
 // Rooms where the floor line is a fair measure. Kitchens are left out: the
 // cabinet plinths read as the floor line, so the floor looks smaller than it is.
+// ── Compact bedrooms (owner, Nov 2026) ─────────────────────────────────────
+// A small bedroom gets the bed only, an artwork above it and an indoor plant
+// in a corner: no rug, no bedside tables or lamps. With them, Gemini made
+// room by moving the walls (job_d3a47050: the far-right wall pushed out with
+// a step in its skirting for the rug, and a bedside table over the wall by
+// the door). Decided in code from the planner's own measurements: the
+// visible-floor share can't tell (there the hallway floor made it 27%).
+export const COMPACT_BEDROOM_ENABLED = String(process.env.STAGE2_COMPACT_BEDROOM ?? "on").trim().toLowerCase() !== "off";
+const COMPACT_MAX_DEPTH_M = Number(process.env.STAGE2_COMPACT_MAX_DEPTH_M || 3.0);
+const COMPACT_MAX_WALL_M = Number(process.env.STAGE2_COMPACT_MAX_WALL_M || 2.6);
+
+export function isCompactBedroom(brief: RoomBrief, roomType: string): boolean {
+  if (!COMPACT_BEDROOM_ENABLED || !/^bedroom/i.test(String(roomType || ""))) return false;
+  const bs: any = (brief as any)?.bedSpace;
+  const depth = Number(bs?.depthMetres), wall = Number(bs?.wallMetres);
+  if (!(depth > 0) || !(wall > 0)) return false;
+  return depth < COMPACT_MAX_DEPTH_M || wall < COMPACT_MAX_WALL_M;
+}
+
+const COMPACT_DROP = /\brug\b|\bcarpet\b|\bmat\b|bedside|night ?stand|side table|\blamp\b|dresser|drawers|chair|bench|ottoman|stool|desk|wardrobe|bookcase|shelf/i;
+
+export function makeCompactBedroomPlan(brief: RoomBrief, roomType: string): { brief: RoomBrief; changed: string[] } {
+  const changed: string[] = [];
+  if (!Array.isArray(brief?.layout) || !isCompactBedroom(brief, roomType)) return { brief, changed };
+  const bs: any = (brief as any).bedSpace;
+  const isBed = (it: any) => /\bbed\b/i.test(String(it?.item || "")) && !/bedside|bed end|bench|bedding|throw|cushion/i.test(String(it?.item || ""));
+  let layout = brief.layout.filter((it: any) => {
+    if (isBed(it) || !COMPACT_DROP.test(String(it?.item || ""))) return true;
+    changed.push(`dropped "${String(it.item || "").slice(0, 50)}"`);
+    return false;
+  });
+  // A smaller bed: a queen or king becomes a double.
+  layout = layout.map((it: any) => {
+    if (!isBed(it) || !/\b(super ?king|king|queen)\b/i.test(String(it.item))) return it;
+    changed.push(`"${String(it.item).slice(0, 40)}" -> double bed`);
+    return { ...it, item: "Double bed (1.4 m wide, 2.0 m long)" };
+  });
+  const bed = layout.find(isBed);
+  const bedWall = bed ? wallsNamedIn(String(bed.placement || ""), (brief.walls || []) as any)[0]?.name : undefined;
+  // Words left in the bed's placement about the dropped pieces would bring them back.
+  layout = layout.map((it: any) => it === bed
+    ? { ...it, placement: String(it.placement || "").replace(/[^.;—]*\b(bedside|night ?stand|rug|lamp)\b[^.;—]*[.;—]?/gi, "").replace(/\s{2,}/g, " ").trim() || String(it.placement || "") }
+    : it);
+  if (!layout.some((it: any) => /art|picture|print|painting/i.test(String(it?.item || "")))) {
+    layout.push({ item: "Framed wall art (0.8 m wide)", placement: `centred above the headboard${bedWall ? ` on ${bedWall}` : ""}, on plain wall only` });
+    changed.push("added artwork above the bed");
+  }
+  if (!layout.some((it: any) => /plant/i.test(String(it?.item || "")))) {
+    layout.push({ item: "Tall potted indoor plant", placement: "standing on the floor in the corner of the room furthest from every door, clear of the window and the walking path" });
+    changed.push("added a plant in the corner");
+  }
+  const dropWords = (t: string) => !/\b(bedside|night ?stand|rug|lamp)\b/i.test(String(t || ""));
+  const out: any = {
+    ...brief,
+    layout,
+    relationships: (brief.relationships || []).filter(dropWords),
+    bedSpace: { ...bs, bedsideTables: 0, ...(/king|queen/i.test(String(bs?.bed || "")) ? { bed: "double" } : {}) },
+    compactRoom: { wallMetres: Number(bs.wallMetres), depthMetres: Number(bs.depthMetres) },
+  };
+  return { brief: out, changed };
+}
+
 export function tightShotApplies(roomType: string): boolean {
   const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
   return !/kitchen|bath|laundry|pantry|closet|garage|stair|hall|entry/.test(key);
@@ -1024,6 +1089,11 @@ export async function buildRoomBrief(params: {
       brief = deskRule.brief;
       console.log("[ROOM_BRIEF_CONSERVATIVE_DESK]", JSON.stringify({ changed: deskRule.changed }));
     }
+    const compactRule = makeCompactBedroomPlan(brief, params.roomType);
+    if (compactRule.changed.length) {
+      brief = compactRule.brief;
+      console.log("[ROOM_BRIEF_COMPACT_BEDROOM]", JSON.stringify({ bedSpace: (brief as any).bedSpace, changed: compactRule.changed }));
+    }
     if (tight) {
       const tightRule = makeTightShotPlan(brief, params.roomType, floorPct!);
       brief = tightRule.brief;
@@ -1207,6 +1277,9 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     ...(brief.tightShot
       ? [``, `TIGHT SHOT — this photo shows very little floor. Put furniture only on the floor that is visible. Let the bottom or side edge of the photo cut off the foot or near side of the bed or other large pieces, exactly as in a real photo taken from the doorway. Add no rug. The floor, skirting boards and walls stay exactly where they are — never raise the floor or push a wall back to make more room.`]
       : []),
+    ...(brief.compactRoom
+      ? [``, `SMALL BEDROOM — add only the bed, the artwork above it and the plant listed above. No rug, no bedside table, no lamp, no other furniture. Keep the floor around the bed clear. Every wall, corner and skirting board stays exactly where it is — never push a wall out or bend a skirting line to make room.`]
+      : []),
     ...(avoid.length ? [``, `AVOID IN THIS ROOM`, ...avoid.map((a) => `- ${a}`)] : []),
     ``,
     `KEEP EXACTLY AS IN THE PHOTO`,
@@ -1219,7 +1292,9 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     `- A piece may be partly cut off by the edge of the photo, or partly hidden behind a wall, doorframe, bench or other fixed feature, exactly as real furniture would be. Keep each piece in its planned spot — only how much of it shows may change, never its real-world size.`,
     ``,
     `FINISHING TOUCHES`,
-    `You may add a few small finishing touches that suit this room: ${brief.tightShot ? finishingTouchesFor(opts.roomType).replace(/^a rug under the seating, bed or dining table, /, "") : finishingTouchesFor(opts.roomType)}. Do not add any other large furniture${brief.tightShot ? " and no rug" : ""}, and do not move the pieces listed above.`,
+    brief.compactRoom
+      ? `You may dress the bed with bedding, cushions and a throw. Add nothing else — no rug, no lamp, no bedside table — and do not move the pieces listed above.`
+      : `You may add a few small finishing touches that suit this room: ${brief.tightShot ? finishingTouchesFor(opts.roomType).replace(/^a rug under the seating, bed or dining table, /, "") : finishingTouchesFor(opts.roomType)}. Do not add any other large furniture${brief.tightShot ? " and no rug" : ""}, and do not move the pieces listed above.`,
     ``,
     `The result must look like a real, professionally staged listing photograph of this exact room.`,
   ].join("\n");
