@@ -288,6 +288,15 @@ const CUT_UNDER_MIN_PCT = Number(process.env.CUT_UNDER_MIN_PCT || 40);          
 const FLOOR_OVER_WALL_SHARE = Number(process.env.STAGE2_FLOOR_OVER_WALL_SHARE || 0.4);
 // A changed area under traced furniture that the trace left out (legs, a
 // base, or the piece's shadow/reflection on the floor).
+// A small piece of furniture missed by the trace (a bedside table's base or
+// legs) is taken from Gemini's picture on EVERY attempt, not just the last
+// (owner, Nov 2026: Harcourts job_a900475d failed three good bedrooms on ~1%
+// gaps; six extra stagings in one day's logs). Larger gaps still re-stage.
+// STAGE2_FILL_CUT_ANY_ATTEMPT_MAX_PCT=0 turns this off.
+const FILL_CUT_ANY_ATTEMPT_MAX_PCT = Number(process.env.STAGE2_FILL_CUT_ANY_ATTEMPT_MAX_PCT ?? 2);
+export function isFillableCutAnyAttempt(m: any): boolean {
+  return FILL_CUT_ANY_ATTEMPT_MAX_PCT > 0 && isCutUnder(m) && m.areaPct <= FILL_CUT_ANY_ATTEMPT_MAX_PCT;
+}
 function isCutUnder(m: any): boolean {
   return m.areaPct >= CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT && (m.shadowPct || 0) < CUT_UNDER_MAX_SHADOW_PCT;
 }
@@ -698,7 +707,7 @@ export async function traceLayers(ctx: MaskedContext) {
     const px: ArrayLike<number>[] = (tightFloor as any).missedPixels || [];
     const filled: any[] = [];
     list.forEach((m, k) => {
-      if (!px[k] || !((ctx.fillMissedUnder && isCutUnder(m)) || isSmallMissedUnder(m))) return;
+      if (!px[k] || !((ctx.fillMissedUnder && isCutUnder(m)) || isFillableCutAnyAttempt(m) || isSmallMissedUnder(m))) return;
       if (overWallShare(px[k]) >= FLOOR_OVER_WALL_SHARE) return; // Gemini's floor over the real wall
       const piece = px[k];
       for (let j = 0; j < piece.length; j++) { floor[piece[j]] = 1; tightFloor[piece[j]] = 1; }
@@ -709,7 +718,7 @@ export async function traceLayers(ctx: MaskedContext) {
       if (big.length) row.missedUnderFilled = big;
       const small = filled.filter((m) => !isCutUnder(m));
       if (small.length) row.smallMissedUnderFilled = small;
-      log(ctx, `[${ctx.name}] took ${filled.map((m) => `${m.areaPct}%`).join(", ")} under furniture from Gemini's picture (missed by the trace${big.length ? "; last attempt" : ""})`);
+      log(ctx, `[${ctx.name}] took ${filled.map((m) => `${m.areaPct}%`).join(", ")} under furniture from Gemini's picture (missed by the trace)`);
     }
   }
   {
@@ -1720,9 +1729,10 @@ export async function runMaskedStage2Job(p: {
         // DSC07855 failed 3 jobs on a glossy floor's reflection); the area was
         // taken from Gemini's picture in traceLayers. Every other check still
         // applies.
-        if (row.furnitureCutByTrace && row.missedUnderFilled?.length) {
+        if (row.furnitureCutByTrace && row.missedUnderFilled?.length
+          && (finalAttempt(eff) || (row.furnitureCutByTrace as any[]).every(isFillableCutAnyAttempt))) {
           row.furnitureCutByTraceAccepted = true;
-          p.warn?.(`[${ctx.name}] last attempt: publishing, with the area missed by the trace taken from Gemini's picture`);
+          p.log?.(`[${ctx.name}] publishing, with the area missed by the trace (${(row.furnitureCutByTrace as any[]).map((m) => `${m.areaPct}%`).join(", ")}) taken from Gemini's picture${finalAttempt(eff) ? " (last attempt)" : ""}`);
         }
         // Last attempt: a piece that hangs only a hair above the real floor
         // line is published. The check can't tell a sofa's back leg (rightly
