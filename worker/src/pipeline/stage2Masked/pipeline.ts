@@ -294,6 +294,19 @@ const FLOOR_OVER_WALL_SHARE = Number(process.env.STAGE2_FLOOR_OVER_WALL_SHARE ||
 // gaps; six extra stagings in one day's logs). Larger gaps still re-stage.
 // STAGE2_FILL_CUT_ANY_ATTEMPT_MAX_PCT=0 turns this off.
 const FILL_CUT_ANY_ATTEMPT_MAX_PCT = Number(process.env.STAGE2_FILL_CUT_ANY_ATTEMPT_MAX_PCT ?? 2);
+// Disputed door verdicts (owner, Nov 2026): when the early placement check's
+// votes are split (two of three say a door is blocked, one says it is
+// passable), the attempt is not rejected on the spot. The same check runs
+// again on the finished image and decides (Harcourts job_0a1ff9bf: a dining
+// set by wide patio doors, 2 to 1 against, while the owner saw the doors
+// clear). A unanimous "blocked" still re-stages straight away.
+// STAGE2_DEFER_DISPUTED_DOOR=off turns this off.
+const DEFER_DISPUTED_DOOR = String(process.env.STAGE2_DEFER_DISPUTED_DOOR ?? "on").trim().toLowerCase() !== "off";
+/** Split vote: the checkers disagreed and at least one said the door is passable. */
+export function isDisputedVote(r: any): boolean {
+  const v = r?.consensus?.votes;
+  return Array.isArray(v) && v.length >= 3 && v.some((x: any) => x === false) && v.some((x: any) => x === true);
+}
 export function isFillableCutAnyAttempt(m: any): boolean {
   return FILL_CUT_ANY_ATTEMPT_MAX_PCT > 0 && isCutUnder(m) && m.areaPct <= FILL_CUT_ANY_ATTEMPT_MAX_PCT;
 }
@@ -1360,13 +1373,19 @@ export async function runMaskedStage2Job(p: {
       }
       const bedWall = await bedWallP;
       let placementRejected = false;
+      const deferredDoor: Array<"bed" | "desk" | "living"> = [];
       if (bedWall) {
         row.bedWall = { consensus: (bedWall as any).consensus, model: bedWall.model, plannedWall: plannedBedWall, wrongWall: (bedWall as any).wrongWall, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, ...((bedWall as any).underWindowAccepted ? { underWindowAccepted: true } : {}), coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
         if ((bedWall as any).offPlanAccepted) {
           row.bedWall.offPlanAccepted = true;
           p.log?.(`[${ctx.name}] bed is on a different wall from the plan (${String(bedWall.answer?.headboardWall || "").slice(0, 80)}) but that wall has no door, no window is badly covered and the room is unchanged — accepted`);
         }
-        if (bedWall.failed) {
+        const bedDoorOnly = bedWall.failed && bedWall.coversDoor && !bedWall.bedOnDoorWall && !bedWall.coversWindow && !(bedWall as any).roomWidened && !((bedWall as any).wrongWall && !(bedWall as any).offPlanAccepted);
+        if (DEFER_DISPUTED_DOOR && bedDoorOnly && isDisputedVote(bedWall)) {
+          deferredDoor.push("bed");
+          row.bedWall.deferred = true;
+          p.log?.(`[${ctx.name}] door verdict disputed (votes ${JSON.stringify((bedWall as any).consensus?.votes)}): bed by a door — carrying on; the check runs again on the finished image`);
+        } else if (bedWall.failed) {
           const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture", (bedWall as any).wrongWall && `bed not on the planned wall (${plannedBedWall})`].filter(Boolean).join("; ");
           p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
           reasons.push((bedWall as any).roomWidened ? "room changed to fit the bed" : (bedWall as any).wrongWall && !bedWall.bedOnDoorWall && !bedWall.coversWindow && !bedWall.coversDoor ? "bed not where the plan put it" : "bed against a door wall or window");
@@ -1377,7 +1396,11 @@ export async function runMaskedStage2Job(p: {
       const deskDoor = await deskDoorP;
       if (deskDoor) {
         row.deskDoor = { consensus: (deskDoor as any).consensus, model: deskDoor.model, coversDoor: deskDoor.coversDoor, deskOnDoorWall: deskDoor.deskOnDoorWall, roomWidened: deskDoor.roomWidened, answer: deskDoor.answer, ...(deskDoor as any).error ? { error: (deskDoor as any).error } : {} };
-        if (deskDoor.failed) {
+        if (DEFER_DISPUTED_DOOR && deskDoor.failed && deskDoor.coversDoor && !deskDoor.deskOnDoorWall && !deskDoor.roomWidened && isDisputedVote(deskDoor)) {
+          deferredDoor.push("desk");
+          row.deskDoor.deferred = true;
+          p.log?.(`[${ctx.name}] door verdict disputed (votes ${JSON.stringify((deskDoor as any).consensus?.votes)}): desk by a door — carrying on; the check runs again on the finished image`);
+        } else if (deskDoor.failed) {
           const what = [deskDoor.coversDoor && "desk setup covers a door", deskDoor.deskOnDoorWall && "desk on a wall with a door", deskDoor.roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
           p.warn?.(`[${ctx.name}] desk placement rejected: ${what} — ${String(deskDoor.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
           reasons.push(deskDoor.roomWidened ? "room changed to fit the desk" : "desk blocking a door");
@@ -1388,7 +1411,11 @@ export async function runMaskedStage2Job(p: {
       const livingDoor = await livingDoorP;
       if (livingDoor) {
         row.livingDoor = { consensus: (livingDoor as any).consensus, model: livingDoor.model, blocksDoor: livingDoor.blocksDoor, roomWidened: livingDoor.roomWidened, answer: livingDoor.answer, ...(livingDoor as any).error ? { error: (livingDoor as any).error } : {} };
-        if (livingDoor.failed) {
+        if (DEFER_DISPUTED_DOOR && livingDoor.failed && livingDoor.blocksDoor && !livingDoor.roomWidened && isDisputedVote(livingDoor)) {
+          deferredDoor.push("living");
+          row.livingDoor.deferred = true;
+          p.log?.(`[${ctx.name}] door verdict disputed (votes ${JSON.stringify((livingDoor as any).consensus?.votes)}): ${String(livingDoor.answer?.blockedWhat || "furniture by a door").slice(0, 100)} — carrying on; the check runs again on the finished image`);
+        } else if (livingDoor.failed) {
           const what = [livingDoor.blocksDoor && `furniture blocks a door (${String(livingDoor.answer?.blockedWhat || "").slice(0, 80)})`, livingDoor.roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
           p.warn?.(`[${ctx.name}] living/dining placement rejected: ${what} — ${String(livingDoor.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
           reasons.push(livingDoor.roomWidened ? "room changed to fit the furniture" : "furniture blocking a door");
@@ -1812,6 +1839,27 @@ export async function runMaskedStage2Job(p: {
             } else {
               p.warn?.(`[${ctx.name}] floor patch rejected: ${fp.notes.join("; ")}`);
               reasons.push("furniture floating");
+            }
+          }
+          // Disputed early door verdicts: the same check, on the finished image, decides.
+          if (reasons.length === 0 && deferredDoor.length && final) {
+            const doorsNow = (await getDoors()) || [];
+            for (const kind of deferredDoor) {
+              const re: any = kind === "living"
+                ? await askLivingDoor(ctx.originalPath, final, doorsNow, dir, `${ctx.name}-final`, livingPlan)
+                : kind === "bed"
+                  ? await askBedWall(ctx.originalPath, final, doorsNow, dir, `${ctx.name}-final`, plannedBedWall)
+                  : await askDeskDoor(ctx.originalPath, final, doorsNow, dir, `${ctx.name}-final`);
+              const failed = kind === "bed" ? Boolean(re.coversDoor && re.failed) : Boolean(re.failed);
+              const slot = kind === "living" ? "livingDoor" : kind === "bed" ? "bedWall" : "deskDoor";
+              row[slot].finalRecheck = { votes: re.consensus?.votes, failed, answer: re.answer };
+              if (failed) {
+                row[slot].restageHints = re.restageHints;
+                reasons.push(kind === "living" ? "furniture blocking a door" : kind === "bed" ? "bed against a door wall or window" : "desk blocking a door");
+                p.warn?.(`[${ctx.name}] disputed door verdict confirmed on the finished image (votes ${JSON.stringify(re.consensus?.votes)}) — re-staging`);
+              } else {
+                p.log?.(`[${ctx.name}] disputed door verdict cleared on the finished image (votes ${JSON.stringify(re.consensus?.votes)}) — the door is passable`);
+              }
             }
           }
           if (reasons.length === 0) {

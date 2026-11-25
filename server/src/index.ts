@@ -1,3 +1,6 @@
+// Must stay first: one line per log message, routine polling detail dropped,
+// secrets masked (see utils/logTrim.ts).
+import "./utils/logTrim.js";
 // server/src/index.ts
 import path from "path";
 import { fileURLToPath } from "url";
@@ -380,7 +383,11 @@ async function main() {
   app.use(cors(corsOptions));
   app.options("*", cors(corsOptions));
   app.use(helmet());
-  app.use(morgan("dev"));
+  // Job-progress polling (every few seconds per open page) isn't logged when
+  // it succeeds: it was most of the server's log lines (Nov 2026).
+  app.use(morgan("dev", {
+    skip: (req, res) => req.method === "GET" && /^\/api\/status\/batch\b/.test(req.originalUrl || req.url) && res.statusCode < 400,
+  }));
   app.use(cookieParser());
 
   // Standard JSON parsing for all routes except Stripe webhook.
