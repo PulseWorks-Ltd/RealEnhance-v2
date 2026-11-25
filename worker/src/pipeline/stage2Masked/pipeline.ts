@@ -680,6 +680,10 @@ export async function traceLayers(ctx: MaskedContext) {
   const stagedRgb = await sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).blur(1).raw().toBuffer();
   if (tightFloor && GAP_ROOM_CHECK) {
     const g = dropRoomColouredGaps(tightFloor, tracedOnly, stagedRgb, w, h);
+    // Keep the areas the trace may have missed (and their pixels): the new
+    // mask didn't carry them, so the small-gap fill below never ran (Nov 2026:
+    // every "cut off by the trace" re-staged, even on the last attempt).
+    for (const k of ["possiblyMissedByTrace", "missedPixels", "changedMap"]) (g.mask as any)[k] = (tightFloor as any)[k];
     tightFloor = g.mask;
     if (g.droppedPct > 0) { row.roomGapsDroppedPct = g.droppedPct; log(ctx, `[${ctx.name}] holes in furniture showing Gemini's room (not furniture) left to the real photo: ${g.droppedPct}% of image`); }
   }
@@ -707,8 +711,14 @@ export async function traceLayers(ctx: MaskedContext) {
     const px: ArrayLike<number>[] = (tightFloor as any).missedPixels || [];
     const filled: any[] = [];
     list.forEach((m, k) => {
-      if (!px[k] || !((ctx.fillMissedUnder && isCutUnder(m)) || isFillableCutAnyAttempt(m) || isSmallMissedUnder(m))) return;
-      if (overWallShare(px[k]) >= FLOOR_OVER_WALL_SHARE) return; // Gemini's floor over the real wall
+      if (!px[k] || !((ctx.fillMissedUnder && isCutUnder(m)) || isFillableCutAnyAttempt(m) || isSmallMissedUnder(m))) {
+        if (isCutUnder(m)) log(ctx, `[${ctx.name}] missed area ${m.areaPct}% at x ${Math.round(m.box[0] * 100)}-${Math.round(m.box[2] * 100)}% not filled: ${!px[k] ? "no pixels" : `over ${FILL_CUT_ANY_ATTEMPT_MAX_PCT}% (re-stage)`}`);
+        return;
+      }
+      if (overWallShare(px[k]) >= FLOOR_OVER_WALL_SHARE) { // Gemini's floor over the real wall
+        log(ctx, `[${ctx.name}] missed area ${m.areaPct}% at x ${Math.round(m.box[0] * 100)}-${Math.round(m.box[2] * 100)}% not filled: mostly Gemini's floor over the real wall`);
+        return;
+      }
       const piece = px[k];
       for (let j = 0; j < piece.length; j++) { floor[piece[j]] = 1; tightFloor[piece[j]] = 1; }
       filled.push(m);
@@ -1471,7 +1481,7 @@ export async function runMaskedStage2Job(p: {
         const closeUpFilled = !row.closeUpRetrace?.rejected && (row.closeUpRetrace?.addedPctOfImage || 0) >= 0.5 * cutUnder.reduce((s, m) => s + m.areaPct, 0);
         if (cutUnder.length && !closeUpFilled) {
           row.furnitureCutByTrace = cutUnder;
-          p.warn?.(`[${ctx.name}] part of a piece missed by the trace (${cutUnder.map((m) => `${m.areaPct}% under furniture at x ${Math.round(m.box[0] * 100)}-${Math.round(m.box[2] * 100)}%`).join("; ")}) — re-staging`);
+          p.warn?.(`[${ctx.name}] part of a piece missed by the trace (${cutUnder.map((m) => `${m.areaPct}% under furniture at x ${Math.round(m.box[0] * 100)}-${Math.round(m.box[2] * 100)}%`).join("; ")}) — re-staging unless it can be filled from Gemini's picture`);
         }
         // Floating furniture: a piece whose legs stop short of the REAL floor
         // (Gemini drew the floor/wall line higher or lower). Where the join can
