@@ -17,3 +17,16 @@ describe("small tracing gaps are filled from Gemini's picture on any attempt", (
     expect(isFillableCutAnyAttempt({ areaPct: 1.2, underFurniturePct: 20, shadowPct: 0 })).toBe(false);
   });
 });
+
+import { isDisputedVote } from "../src/pipeline/stage2Masked/pipeline";
+// Nov 2026, Harcourts job_0a1ff9bf: a 2-to-1 "door blocked" vote on an early
+// check is not final; the check runs again on the finished image.
+describe("disputed door verdicts", () => {
+  it("a split vote is disputed; unanimous or error-only votes are not", () => {
+    expect(isDisputedVote({ consensus: { votes: [true, false, true], calls: 3 } })).toBe(true);
+    expect(isDisputedVote({ consensus: { votes: [false, true, true], calls: 3 } })).toBe(true);
+    expect(isDisputedVote({ consensus: { votes: [true, true], calls: 2 } })).toBe(false);
+    expect(isDisputedVote({ consensus: { votes: [true, null, true], calls: 3 } })).toBe(false);
+    expect(isDisputedVote({})).toBe(false);
+  });
+});

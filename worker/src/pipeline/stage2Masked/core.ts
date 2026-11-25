@@ -1886,6 +1886,9 @@ async function askDeskDoorOnce(emptyPath: string, stagedImage: Buffer, doors: Do
 // TV units and dining sets. STAGE2_LIVING_DOOR_CHECK=0 turns it off.
 export const LIVING_DOOR_CHECK = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_LIVING_DOOR_CHECK || "").trim().toLowerCase());
 
+// Living/dining door check (owner, Nov 2026): "blocked" only when a door is
+// clearly obstructed; partly, slightly or possibly obstructed is "passable"
+// (job_0a1ff9bf: a dining set beside wide patio doors failed 2 attempts).
 export function buildLivingDoorPrompt(doors: DoorOpening[]): string {
   const list = doors.length
     ? doors.map((d) => `- ${d.id}: ${d.description} (${d.type}), box [${d.bbox.map((v) => v.toFixed(2)).join(", ")}]`).join("\n")
@@ -1897,10 +1900,10 @@ ${list}
 Look at the furniture in Image 2 and the room in Image 1, and answer:
 1. furniturePresent: did staging add a sofa, armchair, coffee table, TV unit or dining table?
 2. doorAccess: for the door or doorway most affected by the sofa, armchair, coffee table, TV unit, sideboard, dining table or dining chairs in Image 2, judge it the way a buyer walking through the home would:
-   - "blocked": a person could NOT walk through it normally — a piece stands right in the doorway or the walking path through it, an open door could not swing or close, the opening of a sliding door is covered, or a door/doorway was painted over or is missing in Image 2;
-   - "passable": a piece stands in front of part of it or hides part of it in the photo, but there is still a clear walking path to it and through it (for example a free-standing sofa with room to walk around it);
+   - "blocked": ONLY when the door is CLEARLY and OBVIOUSLY obstructed — a piece stands squarely in the doorway or directly across the only way through it, so a person plainly could not walk through; an open door plainly could not swing or close; the opening of a sliding door is fully covered; or a door/doorway was painted over or is missing in Image 2;
+   - "passable": everything short of that — a piece stands near the door, in front of part of it, or hides part of it in the photo; the path is narrower but a person could still walk around the piece to the door and through it; or you are not sure;
    - "clear": nothing is near it.
-   For a sliding door, only its OPENING counts; furniture in front of a FIXED glass panel beside the opening is fine. Furniture that only LOOKS close because of the camera angle, but stands well clear in the room, is "clear".
+   Answer "blocked" only when you are certain. A door that is only slightly, partly or possibly obstructed is "passable". For a sliding or multi-panel glass door, only its OPENING panel counts; furniture in front of a fixed glass panel beside the opening is fine, and when you cannot tell which panel opens, the door is "passable" as long as part of it can still be reached and walked through. Furniture that only LOOKS close because of the camera angle, but stands well clear in the room, is "clear".
 3. blockedWhat: which piece and which door, or "none". Describe the door in plain words and say where it is in the photo (for example "the armchair blocks the white door at the far right edge of the photo"), not only its id.
 4. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that a piece stands where Image 1 shows wall or skirting board? Answer "yes" only for a real change to the room, not for shadows or furniture covering things.
 Respond with ONLY a JSON object: { "furniturePresent": "yes" | "no", "doorAccess": "blocked" | "passable" | "clear", "blockedWhat": string, "roomWidened": "yes" | "no", "reason": string }`;
