@@ -17,7 +17,10 @@
 // LOG_TRIM=off restores the old behaviour.
 
 const ENABLED = String(process.env.LOG_TRIM ?? "on").trim().toLowerCase() !== "off";
-const MAX_LEN = Math.max(500, Number(process.env.LOG_TRIM_MAX_CHARS || 4000));
+const MAX_LEN = Math.max(500, Number(process.env.LOG_TRIM_MAX_CHARS || 20000));
+// Full job reports are never cut: they are what a job is reviewed from
+// (Nov 2026: a 4,000-character cap cut the staging report mid-JSON).
+const NEVER_CUT = ["[STAGE2_MASKED_RESULT]", "[STAGE2_MASKED_SUMMARY]", "[CREDIT_FINALIZED]"];
 
 // Messages starting with (or, for the regexes, matching) these are dropped
 // when logged with console.log / info / debug.
@@ -113,7 +116,7 @@ export function trimLogMessage(args: unknown[], level: "log" | "warn" | "error")
   if (level === "log" && SEPARATOR_ONLY.test(line)) return null;
   if (!line.trim()) return null;
   line = maskSecrets(line);
-  if (line.length > MAX_LEN) line = `${line.slice(0, MAX_LEN)}… [${line.length - MAX_LEN} more chars]`;
+  if (line.length > MAX_LEN && !NEVER_CUT.some((t) => line!.startsWith(t))) line = `${line.slice(0, MAX_LEN)}… [${line.length - MAX_LEN} more chars]`;
   return line;
 }
 

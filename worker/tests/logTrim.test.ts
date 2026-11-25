@@ -31,3 +31,12 @@ describe("log trimming (keeps logs inside the log host's rate limit)", () => {
     expect(line).not.toMatch(/\n/);
   });
 });
+
+describe("job reports are never cut", () => {
+  it("keeps a long staging report whole", () => {
+    const report = { jobId: "job_1", reports: [{ text: "x".repeat(30000) }] };
+    const line = trimLogMessage(["[STAGE2_MASKED_RESULT]", JSON.stringify(report)], "log")!;
+    expect(line.endsWith("}")).toBe(true);
+    expect(JSON.parse(line.slice("[STAGE2_MASKED_RESULT] ".length)).reports[0].text).toHaveLength(30000);
+  });
+});
