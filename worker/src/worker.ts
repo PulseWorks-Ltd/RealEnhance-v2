@@ -11663,6 +11663,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             `outcome="${r.outcome || (r.error ? "error" : "?")}"`,
             r.maskPct ? `furniture=${r.maskPct.furniture}%` : null,
             r.closeUpRetrace ? `closeUpAdded=${r.closeUpRetrace.addedPctOfImage ?? 0}%` : null,
+            r.bareRoomRetrace ? `bareRoomAdded=${r.bareRoomRetrace.rejected ? `rejected(${r.bareRoomRetrace.rejected})` : `${r.bareRoomRetrace.addedPctOfImage ?? 0}%`}` : null,
             r.framingCheck ? `roomReshaped=${r.framingCheck.framingChanged ? "YES" : "no"}(median ${r.framingCheck.medianDiff})` : null,
             r.checkedBlend ? `final=${r.checkedBlend.usedAppBuiltInstead ? "app-built" : "checked-blend"}(repairs ${r.checkedBlend.repairPct}%)` : null,
             r.doorAccess?.result ? `doors="${r.doorAccess.result}"` : null,
