@@ -23,6 +23,9 @@ describe("log trimming (keeps logs inside the log host's rate limit)", () => {
   it("masks secrets", () => {
     expect(maskSecrets("[WORKER] Redis: redis://default:abcDEF123456@redis.internal:6379")).toBe("[WORKER] Redis: redis://default:***@redis.internal:6379");
     expect(maskSecrets("key: AKIA3Y3FABCDEFGH")).toBe("key: AKIA***");
+    // ...but download links keep working (the debug links in the logs)
+    const link = "https://b.s3.amazonaws.com/x.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA3Y3FABCDEFGH%2F20261126%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Expires=86400";
+    expect(maskSecrets(link)).toBe(link);
     expect(maskSecrets("https://x/y?key=AbCdEf123456&a=1")).toBe("https://x/y?key=***&a=1");
   });
   it("formats errors on one line", () => {

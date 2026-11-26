@@ -416,6 +416,33 @@ export function buildTracePrompt(roomType: string, targets: string, kind: TraceK
   ].join("\n");
 }
 
+// The same question asked the other way round: mark the bare ROOM, so the
+// furniture is what is left. Used only as a back-up when the furniture traces
+// left a furniture-sized changed area untraced (Nov 2026, job_1268d850: every
+// furniture trace — main, close-up, and 14 test re-runs with reworded or
+// plan-listing prompts — drew a bedside table and its lampshade in black, and
+// the published photo had carpet where the table was and a half lamp; asked
+// for the bare room instead, Gemini left the table out of the room 3 times in 4).
+export function buildBareRoomTracePrompt(roomType: string): string {
+  return [
+    "Generate a binary mask IMAGE.",
+    "Output the mask as an IMAGE ONLY. No text, no JSON, no explanation.",
+    "",
+    "You are given two images of the same room from the same camera position:",
+    "1. STAGED_IMAGE — the room after virtual staging, with furniture added.",
+    "2. EMPTY_IMAGE — the same room before staging.",
+    "",
+    "Mask rule: WHITE = the bare room you can SEE in the STAGED_IMAGE — floor and carpet, walls, ceiling, windows, doors, skirting boards, curtains, blinds, light fittings, and anything hung on walls (artwork, mirrors). BLACK = every piece of furniture and decor standing in the room that was added by staging: beds and headboards, bedside tables, lamps and lampshades, pillows and throws, rugs, sofas, chairs, tables, plants, and items on furniture.",
+    "",
+    "Critical rules:",
+    "- Every added piece is BLACK, including pieces in front of, beside or overlapping other pieces, and pieces cut off by the edge of the photo",
+    "- Trace each piece tightly along its own visible edges",
+    "- Shadows on the floor or walls are WHITE",
+    "- Match the perspective and dimensions of the STAGED_IMAGE exactly",
+    `Room type: ${roomType.replace(/_/g, " ")}`,
+  ].join("\n");
+}
+
 // Turns Gemini's mask image into a 0/1 mask at the original photo size.
 // Transparent pixels count as black; if most of the frame comes back white the
 // model has flipped the colours, so it is inverted (the continuity branch

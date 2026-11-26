@@ -67,7 +67,11 @@ const DROP_ANY_LEVEL = ["[stage1A] artifact_consistency", "[MEMORY_PHASE_PEAK_WA
 export function maskSecrets(text: string): string {
   return text
     .replace(/(\b[a-z][a-z0-9+.-]*:\/\/)([^:@\/\s]+):([^@\/\s]+)@/gi, "$1$2:***@")
-    .replace(/\b(AKIA|ASIA)[0-9A-Z]{2,}\b/g, "$1***")
+    // AWS key ids are masked, except inside a time-limited download link
+    // (X-Amz-Credential=...): masking it there broke every debug link in the
+    // logs (Nov 2026). An access key id is an account name, not a password;
+    // the link itself expires after a day.
+    .replace(/(?<!X-Amz-Credential=)\b(AKIA|ASIA)[0-9A-Z]{2,}\b/g, "$1***")
     .replace(/\b(key|apikey|api_key|token|secret|password)=([^&\s"']{6,})/gi, "$1=***")
     .replace(/\bAIza[0-9A-Za-z_\-]{20,}\b/g, "AIza***")
     .replace(/\bsk_(live|test)_[0-9A-Za-z]{8,}\b/g, "sk_$1_***");

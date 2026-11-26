@@ -55,6 +55,7 @@ import {
   tracePassesFor,
   lightTracePassesFor,
   buildTracePrompt,
+  buildBareRoomTracePrompt,
   buildMirrorPrompt,
   buildApplianceSpacePrompt,
   buildHarmonisePrompt,
@@ -379,9 +380,14 @@ const CLOSEUP_TARGETS =
   "every piece of furniture and decor that was added in the staged image — beds, sofas, chairs, tables, bedside tables, dressers, lamps, rugs, plants, cushions and items on furniture — including pieces only partly in view at the edge of the photo";
 
 async function closeUpRetrace(ctx: MaskedContext, floor: Mask, exclude: Uint8Array, minSpeck: number): Promise<Mask> {
-  const { original, staged, w, h, row } = ctx;
   if (!CLOSEUP_RETRACE || ctx.lightTrace) return floor;
-  const probe = await fillChangedGaps(floor, original, staged, w, h);
+  const probe = await fillChangedGaps(floor, ctx.original, ctx.staged, ctx.w, ctx.h);
+  const out = await closeUpCropRetrace(ctx, floor, exclude, minSpeck, probe);
+  return BARE_ROOM_RETRACE ? bareRoomRetrace(ctx, out, exclude, minSpeck, probe) : out;
+}
+
+async function closeUpCropRetrace(ctx: MaskedContext, floor: Mask, exclude: Uint8Array, minSpeck: number, probe: Mask): Promise<Mask> {
+  const { original, staged, w, h, row } = ctx;
   const missed: Array<{ areaPct: number; touchingFurniturePct: number; box: number[] }> = ((probe as any).possiblyMissedByTrace || []).filter(
     (m: any) => m.areaPct >= CLOSEUP_MIN_AREA_PCT && m.touchingFurniturePct >= CLOSEUP_MIN_TOUCHING_PCT
   );
@@ -525,6 +531,140 @@ async function closeUpRetrace(ctx: MaskedContext, floor: Mask, exclude: Uint8Arr
   }
   row.closeUpRetrace.addedPctOfImage = +((addedPx / (w * h)) * 100).toFixed(2);
   log(ctx, `[${ctx.name}] close-up re-trace: ${missed.length} possibly-missed area(s); added ${row.closeUpRetrace.addedPctOfImage}% of image as furniture`);
+  return out;
+}
+
+// Back-up trace: the bare room (see buildBareRoomTracePrompt). Runs only when,
+// after the main and close-up traces, a furniture-sized changed area next to
+// the furniture is still mostly untraced — so it costs one extra trace call
+// on those photos only, and changes nothing on any other. What it may add is
+// held to the same limits as the close-up: only where Gemini's picture really
+// differs from the empty room, never wall art or reflections, only pieces
+// that cover the flagged area, and a size cap. Wall, floor, doors and windows
+// are WHITE in this trace, so a wall Gemini moved is never taken as furniture.
+// What it adds is kept apart for the room-shape check like the close-up's.
+// STAGE2_BARE_ROOM_RETRACE=off turns it off.
+const BARE_ROOM_RETRACE = String(process.env.STAGE2_BARE_ROOM_RETRACE ?? "on").trim().toLowerCase() !== "off";
+const BARE_ROOM_MIN_MISSED_PCT = 0.5;   // untraced area left (percent of photo) that triggers it
+const BARE_ROOM_MAX_SHADOW_PCT = 60;   // a flagged area that is mostly shadow doesn't count
+const BARE_ROOM_PIECE_COVER = 0.25;     // a piece must cover this share of a flagged area
+const BARE_ROOM_MIN_CHANGED_SHARE = 0.5; // ...and be at least half new content (not the real room)
+const BARE_ROOM_MAX_ADD_FACTOR = 4;     // may add at most 4x the flagged area...
+const BARE_ROOM_MAX_ADD_FLOOR_PCT = 6;  // ...or 6% of the photo, whichever is larger (the flagged
+                                        // area can be a sliver of the piece: job_1268d850's table,
+                                        // both lamps and headboard were 5.4% for a 0.9% flag)
+
+async function bareRoomRetrace(ctx: MaskedContext, floor: Mask, exclude: Uint8Array, minSpeck: number, probe: Mask): Promise<Mask> {
+  const { original, staged, w, h, row } = ctx;
+  const list: any[] = (probe as any).possiblyMissedByTrace || [];
+  const px: ArrayLike<number>[] = (probe as any).missedPixels || [];
+  const still: number[] = [];
+  list.forEach((m, k) => {
+    if (!px[k] || m.areaPct < CLOSEUP_MIN_AREA_PCT || m.touchingFurniturePct < CLOSEUP_MIN_TOUCHING_PCT) return;
+    // Only a piece standing BESIDE the furniture: areas under it (legs, a
+    // base) are already taken from Gemini's picture by the missed-area fill,
+    // and areas that are mostly shadow are not furniture. (Tested on five
+    // other Nov 2026 attempts: all of their flagged areas were one or the
+    // other, and the back-up trace found nothing to add — a wasted call.)
+    if ((m.shadowPct ?? 0) >= BARE_ROOM_MAX_SHADOW_PCT || (m.underFurniturePct ?? 0) >= CUT_UNDER_MIN_PCT) return;
+    let covered = 0;
+    for (let j = 0; j < px[k].length; j++) covered += floor[px[k][j]];
+    if (covered < 0.5 * px[k].length) still.push(k);
+  });
+  const stillPct = still.reduce((s, k) => s + list[k].areaPct, 0);
+  if (stillPct < BARE_ROOM_MIN_MISSED_PCT) return floor;
+  row.bareRoomRetrace = { missedPct: +stillPct.toFixed(2) };
+
+  let raw: Buffer | null = null;
+  if (ctx.offline || ctx.traceReplay) {
+    raw = (ctx.traceReplay || ctx.io.load)?.("3_trace_bareroom_raw.png") ?? null;
+    if (!raw) log(ctx, `[${ctx.name}] FROM_RUN: no saved bare-room trace — skipping it`);
+  } else {
+    const meta = await sharp(staged).metadata();
+    const stagedMime = meta.format === "jpeg" ? "image/jpeg" : meta.format === "png" ? "image/png" : "image/webp";
+    raw = await callGeminiImage({
+      model: TRACE_MODEL,
+      parts: [
+        { text: buildBareRoomTracePrompt(ctx.roomType) },
+        { text: "STAGED_IMAGE" }, imagePart(staged, stagedMime),
+        { text: "EMPTY_IMAGE" }, imagePart(original, ctx.originalMime),
+      ],
+      imageSize: TRACE_IMAGE_SIZE,
+      aspectRatio: ctx.aspectRatio,
+    })
+      .then((res) => {
+        row.bareRoomRetrace.costUsd = approxOutputCost(res.usage);
+        row.traceCostUsd = Number(((row.traceCostUsd || 0) + (row.bareRoomRetrace.costUsd || 0)).toFixed(4));
+        return res.image;
+      })
+      .catch((e) => {
+        warn(ctx, `[${ctx.name}] bare-room re-trace failed: ${String(e?.message || e).slice(0, 200)}`);
+        return null;
+      });
+  }
+  if (!raw) return floor;
+  save(ctx, "3_trace_bareroom_raw.png", raw);
+  const bin = await binarizeTraceResponse(raw, w, h);
+  if (bin.invalid) {
+    warn(ctx, `[${ctx.name}] bare-room trace REJECTED: not a mask (${bin.midtonePct}% mid-tones)`);
+    row.bareRoomRetrace.rejected = "not a mask";
+    return floor;
+  }
+  // Which way round: the one that agrees best with the furniture already traced.
+  const asIs = bin.mask, flipped = invert(bin.mask);
+  const agree = (m: Uint8Array) => {
+    let inter = 0, uni = 0;
+    for (let i = 0; i < w * h; i++) { if (m[i] && floor[i]) inter++; if (m[i] || floor[i]) uni++; }
+    return uni ? inter / uni : 0;
+  };
+  const aAsIs = agree(asIs), aFlip = agree(flipped);
+  const furniture = aAsIs >= aFlip ? asIs : flipped;
+  row.bareRoomRetrace.agreesWithTrace = +Math.max(aAsIs, aFlip).toFixed(2);
+  if (Math.max(aAsIs, aFlip) < 0.5) {
+    // It doesn't match the furniture the main trace found: not trusted.
+    warn(ctx, `[${ctx.name}] bare-room trace REJECTED: it matches the traced furniture only ${Math.round(Math.max(aAsIs, aFlip) * 100)}%`);
+    row.bareRoomRetrace.rejected = "does not match the traced furniture";
+    return floor;
+  }
+  const changedMap: Uint8Array | undefined = (probe as any).changedMap;
+  const nearChanged = changedMap ? dilate(changedMap, w, h, Math.max(1, Math.round(w * 0.004))) : null;
+  const added = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) if (furniture[i] && !floor[i] && !exclude[i]) added[i] = 1;
+  const flagged = new Int32Array(w * h).fill(-1);
+  for (const k of still) for (let j = 0; j < px[k].length; j++) flagged[px[k][j]] = k;
+  // "Changed" is judged per piece, not per pixel: after the lighting match a
+  // light timber table can read close to the carpet in places, and cutting
+  // those pixels out left the table's front as carpet (job_1268d850 replay).
+  // A piece must still be mostly new content to be taken.
+  const keep: number[][] = [];
+  const pieces: Array<{ pct: number; changedPct: number; kept: boolean }> = [];
+  for (const piece of labelComponents(added, w, h)) {
+    if (piece.pixels.length < minSpeck) continue;
+    const hits = new Map<number, number>();
+    let changed = 0;
+    for (const i of piece.pixels) {
+      if (flagged[i] >= 0) hits.set(flagged[i], (hits.get(flagged[i]) || 0) + 1);
+      if (!nearChanged || nearChanged[i]) changed++;
+    }
+    if (![...hits].some(([k, n]) => n >= BARE_ROOM_PIECE_COVER * px[k].length)) continue;
+    const changedShare = changed / piece.pixels.length;
+    const kept = changedShare >= BARE_ROOM_MIN_CHANGED_SHARE;
+    pieces.push({ pct: +((piece.pixels.length / (w * h)) * 100).toFixed(2), changedPct: Math.round(changedShare * 100), kept });
+    if (kept) keep.push(piece.pixels);
+  }
+  row.bareRoomRetrace.pieces = pieces;
+  const addPx = keep.reduce((s, p) => s + p.length, 0);
+  const maxAdd = Math.max(BARE_ROOM_MAX_ADD_FACTOR * (stillPct / 100) * w * h, w * h * (BARE_ROOM_MAX_ADD_FLOOR_PCT / 100));
+  if (addPx > maxAdd) {
+    const why = `would add ${((addPx / (w * h)) * 100).toFixed(1)}% of the photo, more than the ${((maxAdd / (w * h)) * 100).toFixed(1)}% allowed`;
+    warn(ctx, `[${ctx.name}] bare-room trace REJECTED: ${why}`);
+    row.bareRoomRetrace.rejected = why;
+    return floor;
+  }
+  const out = Uint8Array.from(floor);
+  for (const p of keep) for (const i of p) out[i] = 1;
+  row.bareRoomRetrace.addedPctOfImage = +((addPx / (w * h)) * 100).toFixed(2);
+  log(ctx, `[${ctx.name}] bare-room re-trace: ${stillPct.toFixed(2)}% still untraced next to the furniture; added ${row.bareRoomRetrace.addedPctOfImage}% of image as furniture`);
   return out;
 }
 
